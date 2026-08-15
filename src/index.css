@@ -1,0 +1,130 @@
+@import "tailwindcss";
+
+@layer utilities {
+  /* Custom scrollbar styling for chat windows */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: rgba(15, 23, 42, 0.6);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(100, 116, 139, 0.5);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(245, 158, 11, 0.8);
+  }
+
+  /* Gender avatar ring borders */
+  .avatar-ring-male {
+    box-shadow: 0 0 0 2px #3b82f6; /* Blue ring for male */
+  }
+  .avatar-ring-female {
+    box-shadow: 0 0 0 2px #ec4899; /* Pink ring for female */
+  }
+  .avatar-ring-other {
+    box-shadow: 0 0 0 2px #f8fafc; /* White ring for other */
+  }
+
+  /* Yemeni motif ambient background gradient */
+  .yemen-gradient {
+    background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #172554 100%);
+  }
+}
+
+/* Animations */
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Theme Color Customizations */
+.theme-light {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+.theme-light .bg-slate-950,
+.theme-light .bg-slate-900 {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+.theme-light .bg-slate-950\/60,
+.theme-light .bg-slate-950\/80,
+.theme-light .bg-slate-800 {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+.theme-light .text-slate-100,
+.theme-light .text-slate-200,
+.theme-light .text-slate-300 {
+  color: #1e293b !important;
+}
+.theme-light .text-slate-400,
+.theme-light .text-slate-500 {
+  color: #64748b !important;
+}
+
+.theme-emerald {
+  background-color: #022c22 !important;
+  color: #ecfdf5 !important;
+}
+.theme-emerald .bg-slate-950 {
+  background-color: #022c22 !important;
+}
+.theme-emerald .bg-slate-900 {
+  background-color: #064e3b !important;
+}
+.theme-emerald .border-slate-800 {
+  border-color: #047857 !important;
+}
+
+.theme-sapphire {
+  background-color: #0b1329 !important;
+  color: #f0f9ff !important;
+}
+.theme-sapphire .bg-slate-950 {
+  background-color: #0b1329 !important;
+}
+.theme-sapphire .bg-slate-900 {
+  background-color: #101f42 !important;
+}
+.theme-sapphire .border-slate-800 {
+  border-color: #1e3a8a !important;
+}
+
+.theme-purple {
+  background-color: #170d2b !important;
+  color: #faf5ff !important;
+}
+.theme-purple .bg-slate-950 {
+  background-color: #170d2b !important;
+}
+.theme-purple .bg-slate-900 {
+  background-color: #271447 !important;
+}
+.theme-purple .border-slate-800 {
+  border-color: #581c87 !important;
+}
+
+.theme-rose {
+  background-color: #240a15 !important;
+  color: #fff1f2 !important;
+}
+.theme-rose .bg-slate-950 {
+  background-color: #240a15 !important;
+}
+.theme-rose .bg-slate-900 {
+  background-color: #3f1025 !important;
+}
+.theme-rose .border-slate-800 {
+  border-color: #9f1239 !important;
+}
+

@@ -1,0 +1,6 @@
+{
+  "name": "شات اليمن المطور",
+  "description": "منصة دردشة عربية متكاملة وسريعة ومتجاوبة للغرف والمحادثات الصوتية والخاصة",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
