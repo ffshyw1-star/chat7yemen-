@@ -14,8 +14,12 @@ export const BottomNav: React.FC = () => {
 
   if (!currentUser) return null;
 
-  // Filter out invisible stealth owner users from counter
-  const visibleOnlineUsers = users.filter(u => !(u.role === 'owner' && u.isStealth));
+  // Filter out invisible stealth owner users and banned users from counter
+  const visibleOnlineUsers = users.filter(u => {
+    if (u.isBanned) return false;
+    if (u.role === 'owner' && u.isStealth) return false;
+    return true;
+  });
 
   return (
     <footer className="bg-black text-white border-t border-slate-800 px-3 py-1.5 select-none z-20 shadow-2xl">

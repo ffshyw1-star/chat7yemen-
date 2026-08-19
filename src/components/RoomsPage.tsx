@@ -1,17 +1,18 @@
 import React, { useState } from 'react';
 import { useChat } from '../context/ChatContext';
 import { UserAvatar } from './UserAvatar';
-import { LogOut, Settings, User as UserIcon, LogIn, Sparkles, Home, Gauge, Globe, Users } from 'lucide-react';
+import { LogOut, Settings, User as UserIcon, LogIn, Sparkles, Home, Gauge, Globe, Users, Shield, Lock } from 'lucide-react';
 import { RoomSettingsModal } from './RoomSettingsModal';
 import { LogoutConfirmModal } from './LogoutConfirmModal';
 import { OwnerDashboardModal } from './OwnerDashboardModal';
+import { RoomPasswordModal } from './RoomPasswordModal';
 
 export const RoomsPage: React.FC = () => {
   const {
     currentUser, rooms, users, switchRoom, logout, setIsLogoutConfirmOpen,
     setSelectedUserForProfile, setIsProfileSettingsOpen,
     isRoomSettingsOpen, setIsRoomSettingsOpen,
-    isOwnerDashboardOpen, setIsOwnerDashboardOpen, themeMode
+    isOwnerDashboardOpen, setIsOwnerDashboardOpen, themeMode, toggleAdminStealth
   } = useChat();
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -107,6 +108,22 @@ export const RoomsPage: React.FC = () => {
                   </button>
                 )}
 
+                {/* Stealth Mode (وضع الاختفاء) - للمالك فقط */}
+                {currentUser.role === 'owner' && (
+                  <button
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      toggleAdminStealth();
+                    }}
+                    className="w-full px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-between gap-3 border-b border-slate-100 cursor-pointer transition-colors"
+                  >
+                    <span className={currentUser.isStealth ? 'text-purple-600 font-black' : ''}>
+                      {currentUser.isStealth ? 'وضع الاختفاء (مفعل 🕵️‍♂️)' : 'تفعيل وضع الاختفاء 👁️'}
+                    </span>
+                    <Shield className={`w-4 h-4 ${currentUser.isStealth ? 'text-purple-600' : 'text-[#00aeeF]'}`} />
+                  </button>
+                )}
+
                 {/* 4. Logout */}
                 <button
                   onClick={() => {
@@ -154,18 +171,30 @@ export const RoomsPage: React.FC = () => {
 
         {/* Room List Loop Cards */}
         {rooms.map((room) => {
-          const onlineInRoom = users.filter(u => u.currentRoomId === room.id && u.onlineStatus !== 'offline').length;
+          const onlineInRoom = users.filter(u => {
+            if (u.isBanned) return false;
+            if (u.role === 'owner' && u.isStealth && currentUser?.role !== 'owner') return false;
+            return u.currentRoomId === room.id && u.onlineStatus !== 'offline';
+          }).length;
           const totalUsersCount = (room.baseUserCount || 0) + onlineInRoom;
+          const isLocked = Boolean(room.password && room.password.trim() !== '');
 
           return (
             <div
               key={room.id}
               onClick={() => switchRoom(room.id)}
-              className="bg-white rounded-xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all p-6 flex flex-col items-center justify-center text-center cursor-pointer active:scale-[0.99] group"
+              className="bg-white rounded-xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all p-6 flex flex-col items-center justify-center text-center cursor-pointer active:scale-[0.99] group relative"
             >
-              {/* Top Center: Circular Globe Icon in Blue Badge */}
-              <div className="w-16 h-16 rounded-full bg-[#1e88e5] text-white flex items-center justify-center shadow-xs mb-3 group-hover:scale-105 transition-transform">
-                <Globe className="w-9 h-9 text-white stroke-[2]" />
+              {/* Top Center: Circular Globe Icon in Blue Badge (or Amber/Red if locked) */}
+              <div className="relative mb-3">
+                <div className={`w-16 h-16 rounded-full ${isLocked ? 'bg-amber-600' : 'bg-[#1e88e5]'} text-white flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform`}>
+                  <Globe className="w-9 h-9 text-white stroke-[2]" />
+                </div>
+                {isLocked && (
+                  <span className="absolute -top-1 -right-1 bg-red-600 text-white rounded-full p-1 border-2 border-white shadow-xs" title="غرفة مقفلة بكلمة مرور">
+                    <Lock className="w-3.5 h-3.5" />
+                  </span>
+                )}
               </div>
 
               {/* Center: Room Name */}
@@ -174,6 +203,12 @@ export const RoomsPage: React.FC = () => {
                 {room.isDefault && (
                   <span className="text-[10px] bg-sky-100 text-[#0284c7] border border-sky-200 px-2 py-0.5 rounded-full font-bold">
                     الرئيسية
+                  </span>
+                )}
+                {isLocked && (
+                  <span className="inline-flex items-center gap-1 bg-red-50 text-red-700 border border-red-200 text-xs font-black px-2 py-0.5 rounded-md">
+                    <Lock className="w-3 h-3 text-red-600" />
+                    <span>مقفلة بكلمة مرور</span>
                   </span>
                 )}
               </h3>
@@ -202,6 +237,7 @@ export const RoomsPage: React.FC = () => {
       {isRoomSettingsOpen && <RoomSettingsModal />}
       {isOwnerDashboardOpen && <OwnerDashboardModal />}
       <LogoutConfirmModal />
+      <RoomPasswordModal />
     </div>
   );
 };

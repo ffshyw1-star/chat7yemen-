@@ -1,15 +1,16 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useChat } from '../context/ChatContext';
 import { Message, User } from '../types';
 import { UserAvatar } from './UserAvatar';
 import { getRankEmoji, getRankEmojiClass, getRankTitle, getYouTubeVideoId } from '../utils/permissions';
-import { Play, Pause, MoreVertical, MoreHorizontal, Flag, Trash2, Volume2, Smile, Youtube, Sparkles, Clock, Zap } from 'lucide-react';
+import { Play, Pause, MoreVertical, MoreHorizontal, Flag, Trash2, Volume2, Smile, Youtube, Sparkles, Clock, Zap, Loader2, ArrowUpCircle, ChevronDown } from 'lucide-react';
 import { ReportMessageModal } from './ReportMessageModal';
 import { NEON_COLORS } from './ProfileEditorModal';
 import { toEnglishDigits } from '../utils/dateUtils';
 
 const EMOJI_STICKER_MAP: Record<string, string> = {};
+const PAGE_SIZE = 10;
 
 // Helper to parse bracketed user names [ Name ] and render them in a colorful badge
 const renderSystemFormattedText = (rawText: string) => {
@@ -32,43 +33,114 @@ const renderSystemFormattedText = (rawText: string) => {
   });
 };
 
-// Helper to parse bracketed rank tags like [ رتبة زائر ], mentions, and greetings
-const renderTextWithHighlightedRanks = (rawText: string) => {
+// Helper to parse bracketed rank tags like [ رتبة زائر ], mentions in cyan pills as in screenshot, and greetings
+const renderTextWithMentionsAndRanks = (
+  rawText: string,
+  users: any[],
+  currentUser: any | null,
+  onUserClick?: (username: string) => void
+) => {
   if (!rawText) return null;
 
-  // Check if text has rank tags
-  if (rawText.includes('[') && rawText.includes(']')) {
-    const parts = rawText.split(/(\[\s*رتبة\s*[^\]]+\s*\])/g);
-    return parts.map((part, idx) => {
-      if (/^\[\s*رتبة\s*[^\]]+\s*\]$/.test(part.trim())) {
-        return (
-          <span
-            key={idx}
-            className="text-red-600 font-black mx-1 px-1.5 py-0.5 rounded-md bg-red-50 border border-red-200 inline-block shadow-2xs"
-          >
-            {part}
-          </span>
-        );
+  // Collect candidate usernames (sorted by length descending so longer names match first)
+  const candidateUsernames: string[] = [];
+  
+  if (currentUser?.username && currentUser.username.trim().length >= 2) {
+    candidateUsernames.push(currentUser.username.trim());
+  }
+
+  if (Array.isArray(users)) {
+    users.forEach(u => {
+      const uName = u?.username?.trim();
+      if (uName && uName.length >= 2 && !candidateUsernames.includes(uName)) {
+        candidateUsernames.push(uName);
       }
-      return part;
     });
   }
 
-  // Highlight blue mentions like "I ibtisām I" at the start
-  if (rawText.startsWith('I ibtisām') || rawText.startsWith('ibtisām')) {
-    const mention = rawText.startsWith('I ibtisām I') ? 'I ibtisām I' : 'I ibtisām';
-    const rest = rawText.replace(mention, '');
-    return (
-      <>
-        <span className="text-[#2563eb] font-black text-sm sm:text-base drop-shadow-[0_0_6px_rgba(37,99,235,0.4)] ml-1">
-          {mention}
-        </span>
-        <span>{rest}</span>
-      </>
-    );
+  // Also extract any @username mentions present in text
+  const atMatches = rawText.match(/@([\w\u0600-\u06FF\s]{2,30})/g);
+  if (atMatches) {
+    atMatches.forEach(m => {
+      const clean = m.substring(1).trim();
+      if (clean && !candidateUsernames.includes(clean)) {
+        candidateUsernames.push(clean);
+      }
+    });
   }
 
-  return rawText;
+  candidateUsernames.sort((a, b) => b.length - a.length);
+
+  const escapeRegExp = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escapedNames = candidateUsernames.map(name => `@?${escapeRegExp(name)}`);
+
+  let patternStr = '(\\[\\s*رتبة\\s*[^\\]]+\\s*\\])';
+  if (escapedNames.length > 0) {
+    patternStr += '|(' + escapedNames.join('|') + ')';
+  }
+
+  const masterRegex = new RegExp(patternStr, 'g');
+  const tokens = rawText.split(masterRegex).filter(t => t !== undefined && t !== '');
+
+  return tokens.map((token, idx) => {
+    const trimmed = token.trim();
+
+    // 1. Rank tags like [ رتبة زائر ]
+    if (/^\[\s*رتبة\s*[^\]]+\s*\]$/.test(trimmed)) {
+      return (
+        <span
+          key={`rank-${idx}`}
+          className="text-red-600 font-black mx-1 px-2 py-0.5 rounded-md bg-red-50 border border-red-200 inline-block shadow-2xs text-xs sm:text-sm"
+        >
+          {token}
+        </span>
+      );
+    }
+
+    // 2. Mentions in Solid Cyan Pill (as requested from the screenshot)
+    const cleanTokenName = token.startsWith('@') ? token.substring(1).trim() : trimmed;
+    const isMatchedMention = candidateUsernames.some(
+      c => c.toLowerCase() === cleanTokenName.toLowerCase()
+    );
+
+    const isCurrentUsersMention = currentUser?.username && (
+      currentUser.username.trim().toLowerCase() === cleanTokenName.toLowerCase() ||
+      token.toLowerCase().includes(currentUser.username.trim().toLowerCase())
+    );
+
+    if (isMatchedMention || isCurrentUsersMention) {
+      return (
+        <span
+          key={`mention-${idx}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onUserClick) {
+              onUserClick(cleanTokenName);
+            }
+          }}
+          className={`inline-block mx-1 my-0.5 px-4 py-1 rounded-full font-black text-sm sm:text-base text-white tracking-wide shadow-sm select-none transition-all duration-200 cursor-pointer text-center ${
+            isCurrentUsersMention
+              ? 'bg-[#00a6d6] hover:bg-[#0095c2] ring-2 ring-sky-300 ring-offset-2 ring-offset-white scale-105 animate-pulse'
+              : 'bg-[#00a6d6] hover:bg-[#0095c2] hover:scale-105 active:scale-95'
+          }`}
+          title={`الملف الشخصي: ${cleanTokenName}`}
+        >
+          {token.startsWith('@') ? `@${cleanTokenName}` : cleanTokenName}
+        </span>
+      );
+    }
+
+    // 3. Salam greeting styling
+    if (token.includes('وعليكم السلام') || token.includes('السلام عليكم')) {
+      return (
+        <span key={`salam-${idx}`} className="text-red-600 font-black text-sm sm:text-base mx-1">
+          {token}
+        </span>
+      );
+    }
+
+    return <span key={`text-${idx}`}>{token}</span>;
+  });
 };
 
 export const ChatMessages: React.FC = () => {
@@ -84,7 +156,115 @@ export const ChatMessages: React.FC = () => {
   const [activeEmojiPickerMsgId, setActiveEmojiPickerMsgId] = useState<string | null>(null);
   const [reportingMsg, setReportingMsg] = useState<Message | null>(null);
 
-  const roomMessages = messages.filter(m => m.roomId === currentRoom.id);
+  const handleMentionClick = (username: string) => {
+    const targetUser = users.find(u => u.username.toLowerCase() === username.toLowerCase());
+    if (targetUser) {
+      setSelectedUserForCard(targetUser);
+    } else {
+      setInputInsertedUsername(username);
+    }
+  };
+
+  // Lazy loading state for older messages
+  const [visibleCount, setVisibleCount] = useState<number>(PAGE_SIZE);
+  const [isLoadingOlder, setIsLoadingOlder] = useState<boolean>(false);
+  const [showScrollBottomBtn, setShowScrollBottomBtn] = useState<boolean>(false);
+
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const prevScrollHeightRef = useRef<number>(0);
+  const prevScrollTopRef = useRef<number>(0);
+  const isInitialMountRef = useRef<boolean>(true);
+
+  const allRoomMessages = messages.filter(m => m.roomId === currentRoom.id);
+  const totalRoomMessagesCount = allRoomMessages.length;
+
+  // Display only the most recent `visibleCount` messages
+  const displayedMessages = allRoomMessages.slice(Math.max(0, totalRoomMessagesCount - visibleCount));
+  const hasMoreOlder = visibleCount < totalRoomMessagesCount;
+  const remainingCount = totalRoomMessagesCount - visibleCount;
+
+  // Reset pagination and scroll to bottom when room changes
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+    setIsLoadingOlder(false);
+    setShowScrollBottomBtn(false);
+
+    const timer = setTimeout(() => {
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+      }
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [currentRoom.id]);
+
+  // Handle incoming new messages: auto-scroll to bottom if user is near bottom
+  const prevMsgLengthRef = useRef<number>(allRoomMessages.length);
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const isNewMessage = allRoomMessages.length > prevMsgLengthRef.current;
+    prevMsgLengthRef.current = allRoomMessages.length;
+
+    if (isNewMessage) {
+      const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      if (distanceFromBottom < 180 || isInitialMountRef.current) {
+        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+        isInitialMountRef.current = false;
+      }
+    }
+  }, [allRoomMessages.length]);
+
+  // Function to load more older messages with scroll position retention
+  const loadMoreOlderMessages = useCallback(() => {
+    if (isLoadingOlder || !hasMoreOlder) return;
+
+    const container = scrollContainerRef.current;
+    if (container) {
+      prevScrollHeightRef.current = container.scrollHeight;
+      prevScrollTopRef.current = container.scrollTop;
+    }
+
+    setIsLoadingOlder(true);
+
+    // Realistic small delay to simulate chunk query and give visual feedback
+    setTimeout(() => {
+      setVisibleCount(prev => Math.min(totalRoomMessagesCount, prev + PAGE_SIZE));
+      setIsLoadingOlder(false);
+
+      // Restore exact scroll offset so content doesn't jump
+      requestAnimationFrame(() => {
+        if (container) {
+          const heightDifference = container.scrollHeight - prevScrollHeightRef.current;
+          container.scrollTop = prevScrollTopRef.current + heightDifference;
+        }
+      });
+    }, 350);
+  }, [isLoadingOlder, hasMoreOlder, totalRoomMessagesCount]);
+
+  // Scroll listener: triggers lazy loading when scrolling up near top
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    const distanceFromTop = target.scrollTop;
+    const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
+
+    // Show floating scroll to bottom button if user scrolled up
+    setShowScrollBottomBtn(distanceFromBottom > 350);
+
+    // Trigger lazy loading when near the top (< 70px)
+    if (distanceFromTop <= 70 && hasMoreOlder && !isLoadingOlder) {
+      loadMoreOlderMessages();
+    }
+  };
+
+  const scrollToBottom = () => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({
+        top: scrollContainerRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
+  };
 
   // Toggle voice playback
   const handleToggleVoice = (msgId: string, mediaUrl?: string) => {
@@ -161,7 +341,11 @@ export const ChatMessages: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-white custom-scrollbar text-slate-800 divide-y divide-slate-100 min-h-[400px]">
+    <div
+      ref={scrollContainerRef}
+      onScroll={handleScroll}
+      className="flex-1 overflow-y-auto bg-white custom-scrollbar text-slate-800 divide-y divide-slate-100 min-h-[400px] relative"
+    >
       {/* Visitor Room Welcome Banner */}
       {currentUser?.role === 'visitor' && (
         <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/20 to-orange-500/10 border-b border-amber-200 p-3 dir-rtl flex flex-col sm:flex-row items-center justify-between gap-2 animate-in fade-in duration-200">
@@ -187,18 +371,73 @@ export const ChatMessages: React.FC = () => {
         </div>
       )}
 
-      {roomMessages.length === 0 ? (
+      {/* Lazy Loading Older Messages Header & Trigger */}
+      {totalRoomMessagesCount > 0 && (
+        <div className="py-2 px-3 bg-slate-50/90 border-b border-slate-100 flex items-center justify-center dir-rtl select-none">
+          {isLoadingOlder ? (
+            <div className="flex items-center gap-2 text-xs font-bold text-sky-700 bg-sky-50 border border-sky-200 px-4 py-1.5 rounded-full shadow-2xs animate-pulse">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-[#00aeeF]" />
+              <span>جارٍ تحميل الرسائل السابقة...</span>
+            </div>
+          ) : hasMoreOlder ? (
+            <button
+              onClick={loadMoreOlderMessages}
+              className="flex items-center gap-2 text-xs font-extrabold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 px-4 py-1.5 rounded-full shadow-xs cursor-pointer transition-all active:scale-95 group"
+              title="اضغط لتحميل الرسائل القديمة أو مرر للأعلى"
+            >
+              <ArrowUpCircle className="w-4 h-4 text-[#00aeeF] group-hover:-translate-y-0.5 transition-transform" />
+              <span>تحميل الرسائل السابقة ({remainingCount} متبقية) ⬆️</span>
+            </button>
+          ) : totalRoomMessagesCount > PAGE_SIZE ? (
+            <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400">
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              <span>وصلت إلى بداية سجل المحادثة</span>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {displayedMessages.length === 0 ? (
         <div className="h-full flex flex-col items-center justify-center text-slate-400 py-16">
           <p className="text-sm font-bold">لا توجد رسائل في {currentRoom.name} بعد.</p>
           <p className="text-xs mt-1">كن أول من يبدأ المحادثة الآن! 💬</p>
         </div>
       ) : (
-        roomMessages.map((msg) => {
+        displayedMessages.map((msg) => {
           if (msg.type === 'system') {
+            const isWelcome = msg.id.includes('welcome') || msg.text.includes('قوانين وتعليمات الغرفة') || msg.senderName.includes('الروبوت');
             const cleanText = msg.text.replace(/\*\*(.*?)\*\*/g, '$1');
+
+            if (isWelcome) {
+              return (
+                <div key={msg.id} className="py-2.5 px-3 flex justify-center bg-gradient-to-b from-sky-50/40 to-white dir-rtl">
+                  <div className="bg-gradient-to-br from-sky-50 via-white to-amber-50/40 border border-sky-200/80 rounded-2xl p-4 max-w-xl w-full shadow-xs space-y-2.5">
+                    <div className="flex items-center justify-between border-b border-sky-100 pb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="w-7 h-7 rounded-xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sm">
+                          🤖
+                        </span>
+                        <div>
+                          <span className="text-xs font-black text-sky-900 block">رسالة الترحيب الآلية والقوانين</span>
+                          <span className="text-[10px] font-bold text-sky-600">شات اليمن المطور • {currentRoom.name} {currentRoom.flag}</span>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-400 font-mono bg-white px-2 py-0.5 rounded-full border border-slate-100">
+                        {msg.timestamp}
+                      </span>
+                    </div>
+
+                    <div className="text-xs sm:text-sm text-slate-800 leading-relaxed whitespace-pre-line space-y-1 font-medium">
+                      {cleanText}
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
             return (
-              <div key={msg.id} className="py-2 px-3 flex justify-center bg-slate-50/50">
-                <div className="bg-sky-100/90 border border-sky-200 text-sky-900 text-xs sm:text-sm px-4 py-2 rounded-2xl max-w-xl text-center shadow-2xs font-medium">
+              <div key={msg.id} className="py-2 px-3 flex justify-center bg-slate-50/50 dir-rtl">
+                <div className="bg-sky-100/90 border border-sky-200 text-sky-900 text-xs sm:text-sm px-4 py-2 rounded-2xl max-w-xl text-center shadow-2xs font-medium whitespace-pre-line leading-relaxed">
                   {cleanText}
                 </div>
               </div>
@@ -377,7 +616,7 @@ export const ChatMessages: React.FC = () => {
                             msg.text.includes('وعليكم السلام') ? 'text-red-600 font-black text-lg' : 'font-medium'
                           }`}
                         >
-                          {renderTextWithHighlightedRanks(msg.text)}
+                          {renderTextWithMentionsAndRanks(msg.text, users, currentUser, handleMentionClick)}
                         </p>
                       )
                     )}
@@ -544,6 +783,23 @@ export const ChatMessages: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* Floating Scroll to Bottom Button */}
+      <AnimatePresence>
+        {showScrollBottomBtn && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.8, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.8, y: 10 }}
+            onClick={scrollToBottom}
+            className="fixed bottom-24 left-6 z-20 bg-slate-900/90 hover:bg-slate-900 text-white px-3.5 py-2 rounded-full shadow-lg border border-slate-700 flex items-center gap-1.5 text-xs font-bold backdrop-blur-xs cursor-pointer active:scale-95 transition-all dir-rtl"
+            title="الانتقال إلى أحدث الرسائل"
+          >
+            <ChevronDown className="w-4 h-4 text-amber-400 animate-bounce" />
+            <span className="text-[11px]">آخر الرسائل</span>
+          </motion.button>
+        )}
+      </AnimatePresence>
 
       {/* Report Message Modal */}
       {reportingMsg && (

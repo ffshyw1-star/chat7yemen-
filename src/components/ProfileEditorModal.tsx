@@ -236,11 +236,17 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
 
               <div className="flex-1 space-y-1">
                 <p className="text-xs font-bold text-slate-200">معاينة الصورة الرمزية الحالية</p>
-                <p className="text-[10px] text-slate-400 leading-relaxed">
-                  انقر على أي صورة من المعرض أدناه لاختيارها فوراً، أو قم برفع صورتك الخاصة.
-                </p>
+                {isVipOrHigher ? (
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                    انقر على أي صورة من المعرض أدناه لاختيارها فوراً، أو قم برفع صورتك الخاصة.
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-amber-300/90 font-bold leading-relaxed">
+                    🔒 الصورة الشخصية ثابتة للأعضاء المسجلين. ستتمكن من تخصيص صورتك عند الترقية إلى رتبة مميز فما فوق.
+                  </p>
+                )}
 
-                {avatar && (
+                {avatar && isVipOrHigher && (
                   <button
                     type="button"
                     onClick={() => setAvatar('')}
@@ -253,110 +259,118 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
               </div>
             </div>
 
-            {/* Avatar Gallery Categories Bar */}
-            <div className="flex items-center gap-1 bg-slate-900 p-1.5 rounded-xl text-xs font-bold overflow-x-auto custom-scrollbar">
-              {[
-                { id: 'men', label: 'رجال 👨🏽' },
-                { id: 'women', label: 'نساء 👩🏽' },
-                { id: 'royal', label: 'فخامة 👑' },
-                { id: 'cute', label: 'أليفة 🐾' },
-              ].map((cat) => (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => setAvatarCategory(cat.id as any)}
-                  className={`px-3 py-1.5 rounded-lg shrink-0 cursor-pointer transition-all ${
-                    avatarCategory === cat.id
-                      ? 'bg-amber-500 text-slate-950 font-black shadow-xs'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  {cat.label}
-                </button>
-              ))}
-            </div>
+            {isVipOrHigher ? (
+              <>
+                {/* Avatar Gallery Categories Bar */}
+                <div className="flex items-center gap-1 bg-slate-900 p-1.5 rounded-xl text-xs font-bold overflow-x-auto custom-scrollbar">
+                  {[
+                    { id: 'men', label: 'رجال 👨🏽' },
+                    { id: 'women', label: 'نساء 👩🏽' },
+                    { id: 'royal', label: 'فخامة 👑' },
+                    { id: 'cute', label: 'أليفة 🐾' },
+                  ].map((cat) => (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => setAvatarCategory(cat.id as any)}
+                      className={`px-3 py-1.5 rounded-lg shrink-0 cursor-pointer transition-all ${
+                        avatarCategory === cat.id
+                          ? 'bg-amber-500 text-slate-950 font-black shadow-xs'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
 
-            {/* Avatars Grid */}
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 max-h-44 overflow-y-auto p-1 custom-scrollbar">
-              {filteredAvatars.map((a) => {
-                const isSelected = avatar === a.url;
-                return (
+                {/* Avatars Grid */}
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 max-h-44 overflow-y-auto p-1 custom-scrollbar">
+                  {filteredAvatars.map((a) => {
+                    const isSelected = avatar === a.url;
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => setAvatar(a.url)}
+                        className={`group relative rounded-2xl overflow-hidden border-2 transition-all cursor-pointer aspect-square bg-slate-900 flex flex-col items-center justify-center ${
+                          isSelected
+                            ? 'border-amber-400 ring-2 ring-amber-500/50 scale-105 shadow-lg'
+                            : 'border-slate-800 hover:border-amber-500/50 hover:scale-100'
+                        }`}
+                        title={a.title}
+                      >
+                        {a.url && a.url.trim() !== '' && (
+                          <img
+                            src={a.url}
+                            alt={a.title}
+                            className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                            referrerPolicy="no-referrer"
+                          />
+                        )}
+                        {isSelected && (
+                          <div className="absolute inset-0 bg-amber-500/30 flex items-center justify-center">
+                            <span className="bg-amber-500 text-slate-950 p-1 rounded-full text-xs font-black shadow-md">
+                              ✓
+                            </span>
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Custom File Upload & URL Input Controls */}
+                <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2 text-xs">
+                  <label className="flex-1 bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-amber-500/50 py-2 px-3 rounded-xl font-bold text-slate-200 flex items-center justify-center gap-1.5 cursor-pointer transition-colors text-[11px]">
+                    <Upload className="w-3.5 h-3.5 text-amber-400" />
+                    <span>رفع صورة من جهازك 📁</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+
                   <button
-                    key={a.id}
                     type="button"
-                    onClick={() => setAvatar(a.url)}
-                    className={`group relative rounded-2xl overflow-hidden border-2 transition-all cursor-pointer aspect-square bg-slate-900 flex flex-col items-center justify-center ${
-                      isSelected
-                        ? 'border-amber-400 ring-2 ring-amber-500/50 scale-105 shadow-lg'
-                        : 'border-slate-800 hover:border-amber-500/50 hover:scale-100'
-                    }`}
-                    title={a.title}
+                    onClick={() => setShowUrlInput(!showUrlInput)}
+                    className="bg-slate-900 hover:bg-slate-800 border border-slate-700 py-2 px-3 rounded-xl font-bold text-slate-300 flex items-center gap-1 cursor-pointer transition-colors text-[11px]"
                   >
-                    {a.url && a.url.trim() !== '' && (
-                      <img
-                        src={a.url}
-                        alt={a.title}
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform"
-                        referrerPolicy="no-referrer"
-                      />
-                    )}
-                    {isSelected && (
-                      <div className="absolute inset-0 bg-amber-500/30 flex items-center justify-center">
-                        <span className="bg-amber-500 text-slate-950 p-1 rounded-full text-xs font-black shadow-md">
-                          ✓
-                        </span>
-                      </div>
-                    )}
+                    <Link className="w-3.5 h-3.5 text-blue-400" />
+                    <span>رابط مباشر</span>
                   </button>
-                );
-              })}
-            </div>
+                </div>
 
-            {/* Custom File Upload & URL Input Controls */}
-            <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2 text-xs">
-              <label className="flex-1 bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-amber-500/50 py-2 px-3 rounded-xl font-bold text-slate-200 flex items-center justify-center gap-1.5 cursor-pointer transition-colors text-[11px]">
-                <Upload className="w-3.5 h-3.5 text-amber-400" />
-                <span>رفع صورة من جهازك 📁</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-              </label>
-
-              <button
-                type="button"
-                onClick={() => setShowUrlInput(!showUrlInput)}
-                className="bg-slate-900 hover:bg-slate-800 border border-slate-700 py-2 px-3 rounded-xl font-bold text-slate-300 flex items-center gap-1 cursor-pointer transition-colors text-[11px]"
-              >
-                <Link className="w-3.5 h-3.5 text-blue-400" />
-                <span>رابط مباشر</span>
-              </button>
-            </div>
-
-            {showUrlInput && (
-              <div className="flex items-center gap-2 animate-in fade-in duration-150 pt-1">
-                <input
-                  type="url"
-                  placeholder="ضع رابط الصورة المباشر هنا (https://...)"
-                  value={customAvatarUrl}
-                  onChange={(e) => setCustomAvatarUrl(e.target.value)}
-                  className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-amber-500"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (customAvatarUrl.trim()) {
-                      setAvatar(customAvatarUrl.trim());
-                      setCustomAvatarUrl('');
-                      setShowUrlInput(false);
-                    }
-                  }}
-                  className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs cursor-pointer"
-                >
-                  تطبيق
-                </button>
+                {showUrlInput && (
+                  <div className="flex items-center gap-2 animate-in fade-in duration-150 pt-1">
+                    <input
+                      type="url"
+                      placeholder="ضع رابط الصورة المباشر هنا (https://...)"
+                      value={customAvatarUrl}
+                      onChange={(e) => setCustomAvatarUrl(e.target.value)}
+                      className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-amber-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (customAvatarUrl.trim()) {
+                          setAvatar(customAvatarUrl.trim());
+                          setCustomAvatarUrl('');
+                          setShowUrlInput(false);
+                        }
+                      }}
+                      className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs cursor-pointer"
+                    >
+                      تطبيق
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 text-center text-xs text-amber-200">
+                ⭐ ميزة تغيير الصورة الشخصية مخصصة للرتب المميزة (مميز، مشرف، إدارة، أدمن، مالك).
               </div>
             )}
           </div>

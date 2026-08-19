@@ -20,6 +20,7 @@ import { RoomSettingsModal } from './RoomSettingsModal';
 import { KickedOverlayModal } from './KickedOverlayModal';
 import { OwnerDashboardModal } from './OwnerDashboardModal';
 import { LogoutConfirmModal } from './LogoutConfirmModal';
+import { RoomPasswordModal } from './RoomPasswordModal';
 
 export const ChatLayout: React.FC = () => {
   const {
@@ -83,6 +84,7 @@ export const ChatLayout: React.FC = () => {
       {isOwnerDashboardOpen && <OwnerDashboardModal />}
       <KickedOverlayModal />
       <LogoutConfirmModal />
+      <RoomPasswordModal />
     </div>
   );
 };

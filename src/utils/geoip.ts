@@ -119,6 +119,23 @@ function getFlagEmoji(countryCode: string): string {
 }
 
 export async function fetchUserGeoIP(): Promise<GeoIPResult> {
+  // First attempt: Server-side real IP lookup from /api/ip/status
+  try {
+    const res = await fetch('/api/ip/status');
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.ip && data.ip !== '127.0.0.1' && data.ip !== 'localhost') {
+        return {
+          country: 'اليمن',
+          countryFlag: '🇾🇪',
+          ip: data.ip,
+        };
+      }
+    }
+  } catch (e) {
+    // Continue to external lookup
+  }
+
   // Primary attempt: ipwhois.app
   try {
     const response = await fetch('https://ipwhois.app/json/', { cache: 'no-cache' });

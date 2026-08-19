@@ -4,7 +4,7 @@ import { UserAvatar } from './UserAvatar';
 import { canPerformModActions, canBeIgnored } from '../utils/permissions';
 import { getUserFlagEmoji } from '../utils/geoip';
 import {
-  User as UserIcon, MessageSquare, Zap, X, VolumeX, Edit3, Check, CheckCircle2, ChevronDown, MicOff
+  User as UserIcon, MessageSquare, Zap, X, VolumeX, Edit3, Check, CheckCircle2, ChevronDown, MicOff, Ban
 } from 'lucide-react';
 
 const DURATION_OPTIONS = [
@@ -23,9 +23,9 @@ export const UserCardModal: React.FC = () => {
   const {
     selectedUserForCard, setSelectedUserForCard,
     setSelectedUserForProfile, setActivePrivateUserId, setIsPrivateChatOpen,
-    setIsProfileSettingsOpen,
+    setIsProfileSettingsOpen, banList, ipModerations,
     currentUser, users, currentRoom, moderatorAction, muteUserInRoom, unmuteUserInRoom,
-    kickUserFromRoom, unkickUserFromRoom, showTopBanner
+    kickUserFromRoom, unkickUserFromRoom, showTopBanner, requestBlockConfirm
   } = useChat();
 
   const [showModCommands, setShowModCommands] = useState(false);
@@ -60,6 +60,16 @@ export const UserCardModal: React.FC = () => {
   const isTargetKicked = Boolean(
     (target.isKicked && (!target.kickUntil || new Date(target.kickUntil).getTime() > Date.now())) ||
     (currentRoom.kickedUsers || []).includes(target.id)
+  );
+
+  // Check if target is currently banned
+  const isTargetBanned = Boolean(
+    target && !isSystemTarget && (
+      target.isBanned ||
+      (banList || []).includes(target.id) ||
+      (target.ip && (banList || []).includes(target.ip)) ||
+      (ipModerations || []).some(rec => rec.type === 'ban' && (rec.targetUserId === target.id || (target.ip && rec.ip === target.ip)))
+    )
   );
 
   const handleOpenProfile = () => {
@@ -105,7 +115,6 @@ export const UserCardModal: React.FC = () => {
   // Execute Unmute (فك الكتم)
   const handleExecuteUnmute = () => {
     unmuteUserInRoom(currentRoom.id, target.id);
-    moderatorAction(target.id, 'unmute', 0, 'فك الكتم');
     setActionSuccessMsg('تم تنفيذ الأمر');
     showTopBanner('تم فك الكتم بنجاح');
     setTimeout(() => {
@@ -117,7 +126,6 @@ export const UserCardModal: React.FC = () => {
   // Direct instant kick from Room (طرد مباشر من الروم بدون كتابة سبب أو وقت)
   const handleDirectRoomKick = () => {
     kickUserFromRoom(currentRoom.id, target.id);
-    moderatorAction(target.id, 'kick', 10, 'طرد من الغرفة');
     setActionSuccessMsg('تم تنفيذ الأمر');
     showTopBanner('تم طرد المستخدم من الغرفة');
     setTimeout(() => {
@@ -129,7 +137,6 @@ export const UserCardModal: React.FC = () => {
   // Execute Unkick (فك الطرد)
   const handleExecuteUnkick = () => {
     unkickUserFromRoom(currentRoom.id, target.id);
-    moderatorAction(target.id, 'unkick', 0, 'فك الطرد');
     setActionSuccessMsg('تم تنفيذ الأمر');
     showTopBanner('تم فك الطرد بنجاح');
     setTimeout(() => {
@@ -198,6 +205,14 @@ export const UserCardModal: React.FC = () => {
                 </div>
               )}
             </div>
+
+            {/* BANNED ALERT BANNER MATCHING SCREENSHOT */}
+            {isTargetBanned && (
+              <div className="bg-[#d32f2f] text-white py-2 px-3 font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm select-none">
+                <span className="w-3.5 h-3.5 rounded-full bg-white text-[#d32f2f] font-black text-[10px] flex items-center justify-center shrink-0">!</span>
+                <span>هذا المستخدم محظور حاليًا</span>
+              </div>
+            )}
 
             {/* BOTTOM ACTION LIST SECTION - WHITE BACKGROUND */}
             <div className="bg-white divide-y divide-slate-100">
@@ -360,6 +375,40 @@ export const UserCardModal: React.FC = () => {
                             </span>
                             <Zap className="w-5 h-5 text-slate-800 fill-slate-800 group-hover:scale-110 transition-transform shrink-0" />
                           </button>
+
+                          {/* Button 3: حظر نهائي من الشات (للمالك والأدمن) */}
+                          {(currentUser?.role === 'owner' || currentUser?.role === 'admin') && target.role !== 'owner' && (
+                            <button
+                              onClick={() => {
+                                const actionType = isTargetBanned ? 'unban' : 'ban';
+                                requestBlockConfirm(target, actionType, () => {
+                                  if (isTargetBanned) {
+                                    moderatorAction(target.id, 'unban', 0, 'فك حظر من الإدارة');
+                                    showTopBanner(`🔓 تم فك حظر العضو (${target.username}) بنجاح`);
+                                  } else {
+                                    moderatorAction(target.id, 'ban', 0, 'حظر دائم من الإدارة');
+                                    showTopBanner(`🚫 تم حظر العضو (${target.username}) نهائياً من الشات`);
+                                  }
+                                  handleClose();
+                                });
+                              }}
+                              className={`w-full border rounded-xl p-3.5 flex items-center justify-between text-right transition-all cursor-pointer group shadow-xs ${
+                                isTargetBanned
+                                  ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-800'
+                                  : 'bg-red-50 hover:bg-red-100 border-red-200 text-red-800'
+                              }`}
+                            >
+                              <div className="flex flex-col">
+                                <span className="font-extrabold text-sm">
+                                  {isTargetBanned ? 'إلغاء وفك الحظر 🔓' : 'حظر نهائي من الشات 🚫'}
+                                </span>
+                                <span className="text-[10px] opacity-75 font-medium">
+                                  {isTargetBanned ? 'السماح للعضو بالدخول مجدداً' : 'منع العضو من الدخول للشات نهائياً'}
+                                </span>
+                              </div>
+                              <Ban className={`w-5 h-5 group-hover:scale-110 transition-transform shrink-0 ${isTargetBanned ? 'text-emerald-600' : 'text-red-600'}`} />
+                            </button>
+                          )}
                         </>
                       ) : (
                         <div className="text-center py-6 text-xs text-slate-500 font-bold leading-relaxed">

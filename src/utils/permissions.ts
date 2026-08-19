@@ -147,6 +147,7 @@ export const canBeIgnored = (targetUser?: User | null): boolean => {
   if (!targetUser) return false;
   if (isSystemUser(targetUser)) return false;
   if (isStaff(targetUser)) return false; // Staff (moderator, management, admin, owner) cannot be ignored
+  if (['owner', 'admin', 'management', 'moderator'].includes(targetUser.role)) return false;
   return true;
 };
 

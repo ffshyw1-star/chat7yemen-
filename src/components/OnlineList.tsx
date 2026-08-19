@@ -12,7 +12,7 @@ export const OnlineList: React.FC = () => {
   const {
     users, currentUser, setIsOnlineListOpen,
     setSelectedUserForCard, setIsFriendRequestsOpen, setIsRoomsListOpen,
-    updateUserProfile
+    updateUserProfile, banList, ipModerations
   } = useChat();
 
   const [activeTab, setActiveTab] = useState<'online' | 'search'>('online');
@@ -35,8 +35,11 @@ export const OnlineList: React.FC = () => {
     return 0;
   };
 
-  // Filter stealth mode owners unless logged in as owner
+  // Filter stealth mode owners unless logged in as owner, and filter out banned users
   const baseUsers = users.filter(u => {
+    if (u.isBanned) return false;
+    if (banList && (banList.includes(u.id) || (u.ip && banList.includes(u.ip)))) return false;
+    if (ipModerations && ipModerations.some(rec => rec.type === 'ban' && (rec.targetUserId === u.id || (u.ip && rec.ip === u.ip)))) return false;
     if (u.role === 'owner' && u.isStealth && currentUser?.role !== 'owner') {
       return false;
     }
@@ -239,6 +242,11 @@ export const OnlineList: React.FC = () => {
                         >
                           {user.username}
                         </span>
+                        {user.role === 'owner' && user.isStealth && (
+                          <span className="text-[10px] bg-purple-100 text-purple-700 border border-purple-300 px-1.5 py-0.2 rounded font-black">
+                            مخفي 🕵️‍♂️
+                          </span>
+                        )}
                       </div>
 
                       <p className="text-[11px] text-slate-500 truncate mt-0.5">

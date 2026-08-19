@@ -22,13 +22,33 @@ import {
 } from '../utils/permissions';
 import { getEnglishCountryName } from '../utils/geoip';
 import {
-  X, Zap, FileText, Heart, MessageSquare, UserPlus, Ban,
+  X, Zap, FileText, Heart, MessageSquare, UserPlus, Ban, Unlock,
   Coins, MapPin, Shield, AlertTriangle, Search, Lock,
   Settings, ShoppingBag, UserX, VolumeX, Edit3, Flag,
   Smartphone, Clock, Sparkles, Check, Globe, Menu,
   Eye, Trash2, CheckCircle, Equal, Camera, ArrowUp, ArrowDown, Paperclip,
+  ArrowLeft, Palette, Paintbrush, CheckCircle2, Star, Save, Key,
   User as UserIcon
 } from 'lucide-react';
+
+const USERNAME_COLOR_PALETTE = [
+  { name: 'ذهبي كلاسيكي', color: '#f59e0b' },
+  { name: 'أصفر فاقع', color: '#eab308' },
+  { name: 'أحمر ناري', color: '#ef4444' },
+  { name: 'وردي أنيق', color: '#ec4899' },
+  { name: 'أزرق ملكي', color: '#3b82f6' },
+  { name: 'أزرق سماوي', color: '#06b6d4' },
+  { name: 'أخضر زمردي', color: '#10b981' },
+  { name: 'أخضر ليموني', color: '#84cc16' },
+  { name: 'بنفسجي فاخر', color: '#8b5cf6' },
+  { name: 'أرجواني غامق', color: '#a855f7' },
+  { name: 'برتقالي متوهج', color: '#f97316' },
+  { name: 'أسود داكن', color: '#1e293b' },
+  { name: 'نيون أزرق', color: '#00f0ff' },
+  { name: 'نيون أخضر', color: '#39ff14' },
+  { name: 'نيون وردي', color: '#ff007f' },
+  { name: 'نيون ذهبي', color: '#ffd700' },
+];
 
 interface ProfileViewProps {
   user?: User | null;
@@ -44,9 +64,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const {
     selectedUserForProfile, setSelectedUserForProfile,
     currentUser, currentRoom, likeUser, sendFriendRequest, toggleIgnore, toggleBlockUser,
+    requestBlockConfirm,
     setActivePrivateUserId, setIsPrivateChatOpen, setIsSideMenuOpen,
     modLogs, users, rooms, setIsProfileSettingsOpen, setIsStoreOpen,
-    setIsRoomSettingsOpen, setIsOwnerDashboardOpen,
+    setIsRoomSettingsOpen, setIsOwnerDashboardOpen, banList, ipModerations,
     moderatorAction, muteUserInRoom, unmuteUserInRoom, kickUserFromRoom, unkickUserFromRoom, showTopBanner,
     updateUserRole, ownerUpdateUser, updateUserProfile, reportUserMessage
   } = useChat();
@@ -95,8 +116,71 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const wallInputRef = useRef<HTMLInputElement>(null);
 
+  // Sub-option active panel in Member Log Modal (خيارات: تغيير رتبة / تغير اسم / تغير لون / تحرير حالة)
+  const [memberLogActiveSubOption, setMemberLogActiveSubOption] = useState<'none' | 'rank' | 'name' | 'color' | 'status'>('none');
+  const [selectedRank, setSelectedRank] = useState<UserRole>('member');
+  const [selectedNameColor, setSelectedNameColor] = useState<string>('#f59e0b');
+
+  // Dedicated Popup Modals Matching Screenshots
+  const [showNameChangeModal, setShowNameChangeModal] = useState(false);
+  const [showRankChangeModal, setShowRankChangeModal] = useState(false);
+  const [showPasswordChangeModal, setShowPasswordChangeModal] = useState(false);
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+
   const initialTarget = user || selectedUserForProfile || currentUser;
   const target = users.find(u => u.id === initialTarget?.id) || initialTarget;
+
+  useEffect(() => {
+    if (target) {
+      setSelectedRank(target.role);
+      setSelectedNameColor(target.usernameColor || '#f59e0b');
+    }
+  }, [target?.id, target?.role, target?.usernameColor]);
+
+  // Helper to get linked / other accounts by IP
+  const getOtherAccountsList = (targetUser: User): string[] => {
+    const list: string[] = [];
+    if (targetUser.otherAccounts) {
+      targetUser.otherAccounts.forEach(a => { if (a && a !== targetUser.username && !list.includes(a)) list.push(a); });
+    }
+    if (targetUser.linkedAccounts) {
+      targetUser.linkedAccounts.forEach(a => { if (a && a !== targetUser.username && !list.includes(a)) list.push(a); });
+    }
+    // Also find all active/registered users with same IP
+    const currentIp = targetUser.ip || '197.234.12.89';
+    if (currentIp) {
+      users.forEach(u => {
+        if ((u.ip === currentIp || (u.id === 'user-1' && currentIp === '197.234.12.89')) && u.username !== targetUser.username && !list.includes(u.username)) {
+          list.push(u.username);
+        }
+      });
+      // Check stored ip map in localStorage
+      try {
+        const rawMap = localStorage.getItem('araby_ip_usernames_map');
+        if (rawMap) {
+          const map = JSON.parse(rawMap);
+          const fromIp = map[currentIp] || [];
+          fromIp.forEach((name: string) => {
+            if (name && name !== targetUser.username && !list.includes(name)) {
+              list.push(name);
+            }
+          });
+        }
+      } catch (e) { console.error(e); }
+    }
+    return list;
+  };
+
+  const getPreviousAccountDisplay = (targetUser: User): string => {
+    if (targetUser.previousAccount) return targetUser.previousAccount;
+    const others = getOtherAccountsList(targetUser);
+    return others.length > 0 ? others[0] : 'لا يوجد';
+  };
+
+  const getOtherAccountsDisplay = (targetUser: User): string => {
+    const others = getOtherAccountsList(targetUser);
+    return others.length > 0 ? others.join('، ') : 'لا يوجد';
+  };
 
   if (!target) return null;
 
@@ -120,6 +204,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const isTargetKicked = Boolean(
     target && !isSystemTarget && (
       (currentRoom?.kickedUsers || []).includes(target.id)
+    )
+  );
+
+  const isTargetBanned = Boolean(
+    target && !isSystemTarget && (
+      target.isBanned ||
+      (banList || []).includes(target.id) ||
+      (target.ip && (banList || []).includes(target.ip)) ||
+      (ipModerations || []).some(rec => rec.type === 'ban' && (rec.targetUserId === target.id || (target.ip && rec.ip === target.ip)))
     )
   );
 
@@ -168,6 +261,23 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }
     setIsEditingName(false);
     showTopBanner(`✨ تم تغيير اسم العضو إلى (${trimmedName}) بنجاح وحفظه في السيرفر`);
+  };
+
+  // Username Color Handler
+  const handleSaveUsernameColor = (color: string) => {
+    if (!currentUser) return;
+    const canChange = checkIsOwner(currentUser) || checkIsManagementOrHigher(currentUser) || currentUser.id === target.id;
+    if (!canChange) {
+      alert('🚫 ليس لديك الصلاحية لتعديل لون اسم هذا العضو!');
+      return;
+    }
+    setSelectedNameColor(color);
+    if (currentUser.id === target.id) {
+      updateUserProfile({ usernameColor: color });
+    } else {
+      ownerUpdateUser(target.id, { usernameColor: color });
+    }
+    showTopBanner(`🎨 تم تغيير وتطبيق لون اسم المستخدم (${target.username}) بنجاح`);
   };
 
   // Photo Upload Handlers with Role Permissions
@@ -231,32 +341,28 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   const handleRemoveAvatar = () => {
     if (!canUserEditTargetPhotos) {
-      alert('🚫 ليس لديك الصلاحية لحذف الصورة الشخصية لهذا العضو بحسب الرتبة!');
+      showTopBanner('🚫 ليس لديك الصلاحية لحذف الصورة الشخصية لهذا العضو بحسب الرتبة!');
       return;
     }
-    if (confirm('هل تريد حذف الصورة الشخصية؟')) {
-      if (currentUser?.id === target.id) {
-        updateUserProfile({ avatar: '' });
-      } else {
-        ownerUpdateUser(target.id, { avatar: '' });
-      }
-      showTopBanner('❌ تم حذف الصورة الشخصية وحفظ التغيير في السيرفر');
+    if (currentUser?.id === target.id) {
+      updateUserProfile({ avatar: '' });
+    } else {
+      ownerUpdateUser(target.id, { avatar: '' });
     }
+    showTopBanner('❌ تم حذف الصورة الشخصية وحفظ التغيير في السيرفر');
   };
 
   const handleRemoveWall = () => {
     if (!canUserEditTargetPhotos) {
-      alert('🚫 ليس لديك الصلاحية لحذف صورة الغلاف لهذا العضو بحسب الرتبة!');
+      showTopBanner('🚫 ليس لديك الصلاحية لحذف صورة الغلاف لهذا العضو بحسب الرتبة!');
       return;
     }
-    if (confirm('هل تريد حذف صورة الحائط (الغلاف)؟')) {
-      if (currentUser?.id === target.id) {
-        updateUserProfile({ wallCover: '' });
-      } else {
-        ownerUpdateUser(target.id, { wallCover: '' });
-      }
-      showTopBanner('❌ تم حذف صورة الحائط وحفظ التغيير في السيرفر');
+    if (currentUser?.id === target.id) {
+      updateUserProfile({ wallCover: '' });
+    } else {
+      ownerUpdateUser(target.id, { wallCover: '' });
     }
+    showTopBanner('❌ تم حذف صورة الحائط وحفظ التغيير في السيرفر');
   };
 
   const handleClose = () => {
@@ -382,8 +488,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const handleExecuteCmdUnmute = () => {
     if (currentRoom) {
       unmuteUserInRoom(currentRoom.id, target.id);
+    } else {
+      moderatorAction(target.id, 'unmute', 0, 'إلغاء الكتم');
     }
-    moderatorAction(target.id, 'unmute', 0, 'إلغاء الكتم');
     setShowCommandOverlay(false);
     showTopBanner(`🔊 تم إلغاء الكتم عن العضو (${target.username})`);
   };
@@ -409,8 +516,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const handleExecuteCmdUnkick = () => {
     if (currentRoom) {
       unkickUserFromRoom(currentRoom.id, target.id);
+    } else {
+      moderatorAction(target.id, 'unkick', 0, 'إلغاء الطرد');
     }
-    moderatorAction(target.id, 'unkick', 0, 'إلغاء الطرد');
     setShowCommandOverlay(false);
     showTopBanner(`🚪 تم إلغاء الطرد عن العضو (${target.username})`);
   };
@@ -449,39 +557,44 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     showTopBanner(`👞 تم الطرد المباشر للعضو (${target.username}) من الغرفة`);
   };
 
-  // Permanent Ban (Owner)
+  // Permanent Ban / Unban (Owner / Admin)
   const handleOwnerBan = () => {
     if (target.role === 'owner') {
-      alert('لا يمكنك حظر المالك الرئيسي!');
+      showTopBanner('🚫 لا يمكنك حظر المالك الرئيسي!');
       return;
     }
     if (target.role === 'admin' && currentUser?.role !== 'owner') {
-      alert('لا يمكنك حظر الأدمن! المالك فقط من يملك الصلاحية.');
+      showTopBanner('🚫 لا يمكنك حظر الأدمن! المالك فقط من يملك الصلاحية.');
       return;
     }
-    if (confirm(`هل أنت متأكد من حظر العضو (${target.username}) نهائياً؟`)) {
-      moderatorAction(target.id, 'ban', 0, 'حظر دائم من المالك');
-      setShowCommandOverlay(false);
-      showTopBanner(`🚫 تم حظر العضو (${target.username}) نهائياً`);
-    }
+    const actionType = isTargetBanned ? 'unban' : 'ban';
+    requestBlockConfirm(target, actionType, () => {
+      if (isTargetBanned) {
+        moderatorAction(target.id, 'unban', 0, 'فك حظر من الإدارة');
+        setShowCommandOverlay(false);
+        showTopBanner(`🔓 تم فك حظر العضو (${target.username}) بنجاح`);
+      } else {
+        moderatorAction(target.id, 'ban', 0, 'حظر دائم من الإدارة');
+        setShowCommandOverlay(false);
+        showTopBanner(`🚫 تم حظر العضو (${target.username}) نهائياً من الشات`);
+      }
+    });
   };
 
   // Delete Account (Owner)
   const handleDeleteAccount = () => {
     if (target.role === 'owner') {
-      alert('لا يمكنك حذف حساب المالك الرئيسي!');
+      showTopBanner('🚫 لا يمكنك حذف حساب المالك الرئيسي!');
       return;
     }
     if (target.role === 'admin' && currentUser?.role !== 'owner') {
-      alert('لا يمكنك حذف حساب الأدمن! المالك فقط من يملك الصلاحية.');
+      showTopBanner('🚫 لا يمكنك حذف حساب الأدمن! المالك فقط من يملك الصلاحية.');
       return;
     }
-    if (confirm(`هل أنت متأكد من حذف حساب العضو (${target.username}) بشكل كامل؟`)) {
-      moderatorAction(target.id, 'delete_account', 0, 'حذف حساب من المالك');
-      setShowCommandOverlay(false);
-      handleClose();
-      showTopBanner(`🗑️ تم حذف حساب العضو (${target.username}) بنجاح`);
-    }
+    moderatorAction(target.id, 'delete_account', 0, 'حذف حساب من المالك');
+    setShowCommandOverlay(false);
+    handleClose();
+    showTopBanner(`🗑️ تم حذف حساب العضو (${target.username}) بنجاح`);
   };
 
   // Photo Edit Handler (🔍)
@@ -585,10 +698,20 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
 
         {/* User Info & Avatar Header (Avatar on right, Details on left) */}
-        <div className="flex items-end justify-between gap-3 mt-3">
+        <div className="flex items-end gap-3 mt-3 dir-rtl">
           
+          {/* Avatar on Right side */}
+          <div className="relative shrink-0">
+            <div className="w-20 h-20 sm:w-24 sm:h-24 bg-[#0a1820] rounded-2xl border-2 border-white shadow-xl flex items-center justify-center relative p-1">
+              <div className="w-full h-full rounded-xl border-2 border-white/90 flex items-center justify-center">
+                <span className="text-white font-black text-4xl sm:text-5xl select-none">!</span>
+              </div>
+              <span className="absolute bottom-1 right-1 w-4 h-4 bg-[#84cc16] border-2 border-[#072a32] rounded-full shadow-xs"></span>
+            </div>
+          </div>
+
           {/* Details on Left side */}
-          <div className="flex flex-col items-start gap-1">
+          <div className="flex flex-col items-start gap-1 flex-1 text-right">
             <div className="flex items-center gap-1.5 text-white font-extrabold text-xs sm:text-sm">
               <span>🤖</span>
               <span>بوت</span>
@@ -608,16 +731,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             >
               <MessageSquare className="w-5 h-5 fill-white text-white" />
             </button>
-          </div>
-
-          {/* Avatar on Right side */}
-          <div className="relative shrink-0">
-            <div className="w-20 h-20 sm:w-24 sm:h-24 bg-[#0a1820] rounded-2xl border-2 border-white shadow-xl flex items-center justify-center relative p-1">
-              <div className="w-full h-full rounded-xl border-2 border-white/90 flex items-center justify-center">
-                <span className="text-white font-black text-4xl sm:text-5xl select-none">!</span>
-              </div>
-              <span className="absolute bottom-1 right-1 w-4 h-4 bg-[#84cc16] border-2 border-[#072a32] rounded-full shadow-xs"></span>
-            </div>
           </div>
 
         </div>
@@ -798,7 +911,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                               alert('عفواً، لا يمكنك تجاهل رتب الإدارة العليا');
                               return;
                             }
-                            toggleIgnore(target.id);
+                            const isIgnored = currentUser?.ignoredUsers?.includes(target.id);
+                            requestBlockConfirm(target, isIgnored ? 'unblock' : 'block', () => {
+                              toggleIgnore(target.id);
+                            });
                           }}
                           className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-100 cursor-pointer"
                         >
@@ -837,35 +953,25 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                           <Flag className="w-4 h-4 text-red-500 shrink-0" />
                         </button>
 
-                        {/* 6. Change Wall Cover (صورة الحائط) if Authorized */}
-                        {canUserEditTargetPhotos && (
+                        {/* 6. Permanent Ban / Unban for Owner & Admin */}
+                        {(isOwner || currentUser?.role === 'admin') && target.role !== 'owner' && (
                           <button
                             onClick={() => {
                               setShowHeaderMenu(false);
-                              triggerWallUpload();
+                              handleOwnerBan();
                             }}
-                            className="w-full px-4 py-3 flex items-center justify-between hover:bg-teal-50 text-teal-700 transition-colors font-extrabold cursor-pointer border-b border-slate-100"
+                            className={`w-full px-4 py-3 flex items-center justify-between transition-colors font-extrabold cursor-pointer border-b border-slate-100 ${
+                              isTargetBanned ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800' : 'hover:bg-red-50 text-red-700'
+                            }`}
                           >
-                            <span className="font-extrabold text-xs">تغيير صورة الحائط 🌄</span>
-                            <Camera className="w-4 h-4 text-teal-600 shrink-0" />
+                            <span className="font-extrabold text-xs">
+                              {isTargetBanned ? 'إلغاء وفك الحظر 🔓' : 'حظر نهائي من الشات 🚫'}
+                            </span>
+                            <Ban className={`w-4 h-4 shrink-0 ${isTargetBanned ? 'text-emerald-600' : 'text-red-500'}`} />
                           </button>
                         )}
 
-                        {/* 7. Change Avatar Photo (الصورة الشخصية) if Authorized */}
-                        {canUserEditTargetPhotos && (
-                          <button
-                            onClick={() => {
-                              setShowHeaderMenu(false);
-                              triggerAvatarUpload();
-                            }}
-                            className="w-full px-4 py-3 flex items-center justify-between hover:bg-amber-50 text-amber-700 transition-colors font-extrabold cursor-pointer border-b border-slate-100"
-                          >
-                            <span className="font-extrabold text-xs">تغيير الصورة الرمزية 📷</span>
-                            <UserIcon className="w-4 h-4 text-amber-600 shrink-0" />
-                          </button>
-                        )}
-
-                        {/* 8. Control Panel / Owner Dashboard (لوحة تحكم) */}
+                        {/* 7. Control Panel / Owner Dashboard (لوحة تحكم) */}
                         <button
                           onClick={() => {
                             setShowHeaderMenu(false);
@@ -923,18 +1029,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             )}
           </div>
 
-          {/* Top Right Controls: Wall Cover Upload Button + Return Arrow ← */}
+          {/* Top Right Controls: Return Arrow ← */}
           <div className="flex items-center gap-1.5 bg-slate-950/80 p-1 rounded-2xl border border-slate-700/60 backdrop-blur-md shadow-lg pointer-events-auto">
-            {canUserEditTargetPhotos && !isSystemTarget && (
-              <button
-                onClick={triggerWallUpload}
-                className="flex items-center gap-1 px-2 py-1 bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 hover:text-teal-100 rounded-xl text-[11px] font-black cursor-pointer transition-all border border-teal-500/40"
-                title="تغيير صورة الحائط (متحركة GIF أو ثابتة) 📷"
-              >
-                <Camera className="w-3.5 h-3.5 text-teal-400" />
-                <span className="hidden sm:inline">صورة الحائط</span>
-              </button>
-            )}
             <button
               onClick={handleClose}
               className="w-7 h-7 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl flex items-center justify-center cursor-pointer transition-all"
@@ -946,9 +1042,33 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
         </div>
 
-        {/* User Name & Avatar overlay inside Header Banner */}
-        <div className="absolute bottom-2.5 left-3 right-3 z-20 flex items-center justify-between gap-2">
+        {/* User Name & Avatar overlay inside Header Banner (Avatar on Right, Name/Rank on Left in RTL) */}
+        <div className="absolute bottom-2.5 left-3 right-3 z-20 flex items-center gap-3 dir-rtl">
           
+          {/* Profile Avatar on Right side in white border box with online dot */}
+          <div className="relative group shrink-0">
+            <div className="p-1 bg-white rounded-2xl shadow-2xl border-2 border-white/90 relative">
+              {isSystemTarget ? (
+                <div className="w-14 h-14 sm:w-16 sm:h-16 bg-slate-900 rounded-xl border border-slate-700 flex items-center justify-center text-white font-black text-3xl select-none">
+                  !
+                </div>
+              ) : (
+                <UserAvatar
+                  avatarUrl={target.avatar}
+                  gender={target.gender}
+                  role={target.role}
+                  username={target.username}
+                  size="lg"
+                  className="rounded-xl overflow-hidden bg-slate-950"
+                />
+              )}
+              {/* Online indicator dot - Hidden when target is stealth owner and viewer is not owner */}
+              {!(target.role === 'owner' && target.isStealth && currentUser?.role !== 'owner') && (
+                <span className={`absolute bottom-1 right-1 w-3.5 h-3.5 ${target.onlineStatus === 'online' ? 'bg-emerald-500' : 'bg-slate-400'} border-2 border-white rounded-full shadow-xs`}></span>
+              )}
+            </div>
+          </div>
+
           {/* User Name, Rank & Status on Left side */}
           <div className="flex-1 text-right min-w-0 pr-1">
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -963,6 +1083,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               ) : (
                 <span className="text-xs text-cyan-300 font-bold flex items-center gap-1">
                   🤖 بوت
+                </span>
+              )}
+              {target.role === 'owner' && target.isStealth && (
+                <span className="text-[11px] text-purple-300 bg-purple-950/90 px-2 py-0.5 rounded-lg border border-purple-500/50 font-bold flex items-center gap-1">
+                  🕵️‍♂️ وضع الاختفاء (مخفي)
                 </span>
               )}
             </div>
@@ -986,39 +1111,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 "{target.statusMessage || target.bio || 'بنت تعز مشيتها ع الارض تهز'}"
               </p>
             )}
-          </div>
-
-          {/* Profile Avatar on Right side in white border box with online dot */}
-          <div className="relative group shrink-0">
-            <div className="p-1 bg-white rounded-2xl shadow-2xl border-2 border-white/90 relative">
-              {isSystemTarget ? (
-                <div className="w-14 h-14 sm:w-16 sm:h-16 bg-slate-900 rounded-xl border border-slate-700 flex items-center justify-center text-white font-black text-3xl select-none">
-                  !
-                </div>
-              ) : (
-                <UserAvatar
-                  avatarUrl={target.avatar}
-                  gender={target.gender}
-                  role={target.role}
-                  username={target.username}
-                  size="lg"
-                  className="rounded-xl overflow-hidden bg-slate-950"
-                />
-              )}
-              <span className="absolute bottom-1 right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full shadow-xs"></span>
-              
-              {/* Camera Trigger Button for Avatar when Authorized */}
-              {canUserEditTargetPhotos && !isSystemTarget && (
-                <button
-                  type="button"
-                  onClick={triggerAvatarUpload}
-                  className="absolute -top-2 -left-2 w-6 h-6 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-full flex items-center justify-center shadow-lg border-2 border-white cursor-pointer transition-all hover:scale-110 z-30"
-                  title="تغيير الصورة الرمزية 📷"
-                >
-                  <Camera className="w-3.5 h-3.5 stroke-[2.5]" />
-                </button>
-              )}
-            </div>
           </div>
 
         </div>
@@ -1072,23 +1164,35 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <button
               onClick={() => {
                 if (target.id === currentUser?.id) {
+                  showTopBanner('لا يمكنك تجاهل نفسك');
                   alert('لا يمكنك تجاهل نفسك');
                   return;
                 }
                 if (!canBeIgnored(target)) {
-                  alert('عفواً، لا يمكنك تجاهل رتب الإدارة العليا');
+                  showTopBanner('🛡️ لا يمكن تجاهل الإدارة العليا');
+                  alert('لا يمكن تجاهل الإدارة العليا 🛡️');
                   return;
                 }
-                toggleIgnore(target.id);
+                const isBlocked = (currentUser?.ignores?.includes(target.id) || currentUser?.blockedUsers?.includes(target.id));
+                requestBlockConfirm(target, isBlocked ? 'unblock' : 'block', () => {
+                  toggleIgnore(target.id);
+                });
               }}
+              title={!canBeIgnored(target) ? 'لا يمكن تجاهل الإدارة العليا' : undefined}
               className={`flex-1 py-2 px-2.5 rounded-2xl text-xs font-black cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-xs border ${
-                currentUser?.ignoredUsers?.includes(target.id)
+                !canBeIgnored(target)
+                  ? 'bg-slate-900/60 text-slate-400 border-slate-700/60 hover:border-slate-600'
+                  : (currentUser?.ignores?.includes(target.id) || currentUser?.blockedUsers?.includes(target.id))
                   ? 'bg-amber-600/30 text-amber-300 border-amber-500/50'
                   : 'bg-red-950/40 hover:bg-red-900/60 text-red-300 border-red-500/40'
               }`}
             >
               <Ban className="w-3.5 h-3.5" />
-              <span>{currentUser?.ignoredUsers?.includes(target.id) ? 'إلغاء التجاهل' : 'تجاهل'}</span>
+              <span>
+                {(currentUser?.ignores?.includes(target.id) || currentUser?.blockedUsers?.includes(target.id))
+                  ? 'إلغاء التجاهل'
+                  : 'تجاهل'}
+              </span>
             </button>
           )}
 
@@ -1110,11 +1214,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       )}
 
-      {/* MUTED ALERT BANNER MATCHING SCREENSHOT */}
-      {isTargetMuted && (
+      {/* MUTED ALERT BANNER MATCHING SCREENSHOT (Only for visitors, members, vip - NOT higher management/admins) */}
+      {isTargetMuted && !isTargetBanned && !['owner', 'admin', 'management', 'moderator'].includes(target.role) && (
         <div className="bg-[#f59e0b] text-white py-2.5 px-5 font-black text-xs sm:text-sm flex items-center justify-end gap-2 shadow-sm shrink-0 select-none">
           <span>تم كتم هذا المستخدم حالياً</span>
           <span className="w-4 h-4 rounded-full bg-white text-[#f59e0b] font-black text-[11px] flex items-center justify-center shrink-0">
+            !
+          </span>
+        </div>
+      )}
+
+      {/* BANNED ALERT BANNER MATCHING SCREENSHOT (Red bar with exclamation mark and text) */}
+      {isTargetBanned && (
+        <div className="bg-[#d32f2f] text-white py-2 px-5 font-bold text-xs sm:text-sm flex items-center justify-end gap-2 shadow-sm shrink-0 select-none">
+          <span>هذا المستخدم محظور حاليًا</span>
+          <span className="w-4 h-4 rounded-full bg-white text-[#d32f2f] font-black text-[11px] flex items-center justify-center shrink-0">
             !
           </span>
         </div>
@@ -1309,13 +1423,25 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           <div className="space-y-3.5 animate-in fade-in duration-150">
             
             {/* 1. Last Seen (آخر تواجد) */}
-            <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
-              <span className="text-slate-700 font-bold text-sm">آخر تواجد</span>
-              <span className="font-semibold text-slate-600 text-sm flex items-center gap-1.5 dir-ltr">
-                <span className={`w-2 h-2 rounded-full shrink-0 ${target.onlineStatus === 'online' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
-                <span>{formatLastSeenDateTime(target.lastSeen)}</span>
-              </span>
-            </div>
+            {!(target.role === 'owner' && target.isStealth && currentUser?.role !== 'owner') ? (
+              <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
+                <span className="text-slate-700 font-bold text-sm">آخر تواجد</span>
+                <span className="font-semibold text-slate-600 text-sm flex items-center gap-1.5 dir-ltr">
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${target.onlineStatus === 'online' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
+                  <span>{formatLastSeenDateTime(target.lastSeen)}</span>
+                  {target.role === 'owner' && target.isStealth && (
+                    <span className="text-[10px] text-purple-600 font-bold dir-rtl mr-1">🕵️‍♂️ (مخفي)</span>
+                  )}
+                </span>
+              </div>
+            ) : (
+              <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
+                <span className="text-slate-700 font-bold text-sm">آخر تواجد</span>
+                <span className="font-bold text-slate-400 text-xs flex items-center gap-1">
+                  <span>مخفي 👁️</span>
+                </span>
+              </div>
+            )}
 
             {/* 2. Language (اللغة) */}
             <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
@@ -1357,7 +1483,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
                   <span className="text-slate-700 font-bold text-sm">الحساب السابق</span>
                   <span className="font-bold text-slate-600 text-sm">
-                    {target.previousAccount || 'لا يوجد'}
+                    {getPreviousAccountDisplay(target)}
                   </span>
                 </div>
               </>
@@ -1368,7 +1494,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
                 <span className="text-slate-700 font-bold text-sm">حساب آخر</span>
                 <span className="font-bold text-slate-600 text-sm">
-                  {target.otherAccounts?.[0] || target.linkedAccounts?.[0] || 'لا يوجد'}
+                  {getOtherAccountsDisplay(target)}
                 </span>
               </div>
             )}
@@ -1569,13 +1695,25 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                         <div className="pt-2 border-t border-slate-100 space-y-2">
                           <button
                             onClick={handleOwnerBan}
-                            className="w-full bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-2xl p-3 flex items-center justify-between text-right transition-all cursor-pointer shadow-xs"
+                            className={`w-full ${
+                              isTargetBanned
+                                ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : 'bg-red-50 hover:bg-red-100 text-red-700 border border-red-200'
+                            } rounded-2xl p-3 flex items-center justify-between text-right transition-all cursor-pointer shadow-xs`}
                           >
                             <div className="flex flex-col text-right">
-                              <span className="font-extrabold text-xs text-red-700">حظر نهائي من الشات 🚫</span>
-                              <span className="text-[10px] text-red-500 font-medium">حظر العضو ومنعه من الدخول بشكل دائم</span>
+                              <span className={`font-extrabold text-xs ${isTargetBanned ? 'text-emerald-800' : 'text-red-700'}`}>
+                                {isTargetBanned ? 'فك حظر العضو 🔓' : 'حظر نهائي من الشات 🚫'}
+                              </span>
+                              <span className={`text-[10px] ${isTargetBanned ? 'text-emerald-600' : 'text-red-500'} font-medium`}>
+                                {isTargetBanned ? 'إلغاء الحظر والسماح للعضو بالدخول والدردشة مجدداً' : 'حظر العضو ومنعه من الدخول بشكل دائم'}
+                              </span>
                             </div>
-                            <Ban className="w-4 h-4 text-red-600 shrink-0" />
+                            {isTargetBanned ? (
+                              <Unlock className="w-4 h-4 text-emerald-600 shrink-0" />
+                            ) : (
+                              <Ban className="w-4 h-4 text-red-600 shrink-0" />
+                            )}
                           </button>
 
                           <button
@@ -1797,7 +1935,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden shadow-2xl text-slate-100 font-sans">
             
-            {/* Modal Header Banner with Cover & Avatar */}
+            {/* Modal Header Banner matching screenshot 1 */}
             <div className="h-36 relative overflow-hidden bg-[#0d343e] shrink-0">
               {target.wallCover && target.wallCover.trim() !== '' ? (
                 <img src={target.wallCover} alt="الغلاف" className="w-full h-full object-cover brightness-85" />
@@ -1807,36 +1945,117 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 </div>
               )}
 
-              {/* Close Button X */}
-              <button
-                onClick={() => setShowMemberLogModal(false)}
-                className="absolute top-3 left-3 z-30 w-7 h-7 bg-slate-950/80 hover:bg-slate-800 text-slate-200 rounded-xl flex items-center justify-center cursor-pointer transition-all border border-slate-700"
-                title="إغلاق السجل ×"
-              >
-                <X className="w-4 h-4 font-black" />
-              </button>
+              {/* Upper Right: Back / Return Arrow (←) */}
+              <div className="absolute top-2.5 right-2.5 z-30">
+                <button
+                  type="button"
+                  onClick={() => setShowMemberLogModal(false)}
+                  className="w-7 h-7 bg-slate-950/70 hover:bg-slate-900 text-white rounded-lg flex items-center justify-center cursor-pointer transition-all border border-white/20 shadow-xs"
+                  title="رجوع ←"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </button>
+              </div>
 
-              {/* User Avatar & Name in Modal Header */}
-              <div className="absolute bottom-2.5 left-3 right-3 z-20 flex items-center justify-between gap-2">
+              {/* Upper Left: Close (✖), Camera (📷), Remove Cover (✖) */}
+              <div className="absolute top-2.5 left-2.5 z-30 flex items-center gap-1.5">
+                {/* Close Button ✖ */}
+                <button
+                  type="button"
+                  onClick={() => setShowMemberLogModal(false)}
+                  className="w-7 h-7 bg-slate-950/70 hover:bg-slate-900 text-white rounded-lg flex items-center justify-center cursor-pointer transition-all border border-white/20 shadow-xs"
+                  title="إغلاق ✖"
+                >
+                  <X className="w-4 h-4 font-black" />
+                </button>
+
+                {/* Change Cover Camera Button 📷 */}
+                <button
+                  type="button"
+                  onClick={triggerWallUpload}
+                  disabled={!canUserEditTargetPhotos}
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all border shadow-xs ${
+                    canUserEditTargetPhotos
+                      ? 'bg-slate-950/70 hover:bg-slate-900 text-amber-400 border-white/20 cursor-pointer'
+                      : 'bg-slate-950/40 text-slate-500 border-transparent cursor-not-allowed'
+                  }`}
+                  title="تغيير صورة الغلاف 📷"
+                >
+                  <Camera className="w-4 h-4" />
+                </button>
+
+                {/* Delete Cover Button ✖ */}
+                <button
+                  type="button"
+                  onClick={handleRemoveWall}
+                  disabled={!canUserEditTargetPhotos || !target.wallCover}
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all border shadow-xs ${
+                    canUserEditTargetPhotos && target.wallCover
+                      ? 'bg-slate-950/70 hover:bg-red-900/80 text-red-400 border-white/20 cursor-pointer'
+                      : 'bg-slate-950/40 text-slate-500 border-transparent cursor-not-allowed'
+                  }`}
+                  title="حذف صورة الغلاف ✖"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* User Avatar & Name in Modal Header (Avatar on the RIGHT, before Rank & Name) */}
+              <div className="absolute bottom-2.5 left-3 right-3 z-20 flex items-center gap-3 dir-rtl text-right">
+                
+                {/* Avatar with Camera & Delete icons on the RIGHT in RTL */}
+                <div className="relative group shrink-0">
+                  <div className="p-1 bg-white rounded-2xl shadow-xl border-2 border-white/90">
+                    <UserAvatar
+                      avatarUrl={target.avatar}
+                      gender={target.gender}
+                      role={target.role}
+                      username={target.username}
+                      size="md"
+                      className="rounded-xl overflow-hidden bg-slate-950"
+                    />
+                  </div>
+                  {/* Photo buttons next to avatar */}
+                  <div className="absolute -top-1.5 -right-1.5 flex items-center gap-1 z-30">
+                    <button
+                      type="button"
+                      onClick={triggerAvatarUpload}
+                      disabled={!canUserEditTargetPhotos}
+                      className="w-6 h-6 bg-slate-950 text-amber-400 hover:bg-slate-800 rounded-full flex items-center justify-center cursor-pointer shadow-md border border-amber-400/50"
+                      title="تغيير الصورة الشخصية 📷"
+                    >
+                      <Camera className="w-3.5 h-3.5" />
+                    </button>
+                    {target.avatar && (
+                      <button
+                        type="button"
+                        onClick={handleRemoveAvatar}
+                        disabled={!canUserEditTargetPhotos}
+                        className="w-6 h-6 bg-slate-950 text-red-400 hover:bg-red-900 rounded-full flex items-center justify-center cursor-pointer shadow-md border border-red-400/50"
+                        title="حذف الصورة الشخصية ✖"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Username, Rank & Status on the left of Avatar */}
                 <div className="flex-1 text-right min-w-0 pr-1">
-                  <h3 className="text-white font-black text-base drop-shadow-md truncate">
-                    {target.username}
+                  <h3
+                    className="font-black text-base drop-shadow-md truncate flex items-center gap-1.5"
+                    style={{ color: target.usernameColor || '#ffffff' }}
+                  >
+                    <span>{target.username}</span>
                   </h3>
-                  <p className="text-slate-200 text-xs drop-shadow-xs truncate">
-                    "{target.statusMessage || target.bio || 'بسم الله الرحمن الرحيم'}"
+                  <p className="text-slate-200 text-xs drop-shadow-xs truncate font-bold flex items-center gap-1">
+                    <span className="text-amber-300 font-extrabold">{getRankTitle(target.role, target.username)}</span>
+                    <span className={getRankEmojiClass(target.role, target.username)}>{getRankEmoji(target.role, target.username)}</span>
+                    <span className="text-slate-300">|</span>
+                    <span>{target.statusMessage || target.bio || 'أهلاً وسهلاً بكم'}</span>
                   </p>
                 </div>
 
-                <div className="p-1 bg-white rounded-2xl shadow-xl border-2 border-white/90 shrink-0">
-                  <UserAvatar
-                    avatarUrl={target.avatar}
-                    gender={target.gender}
-                    role={target.role}
-                    username={target.username}
-                    size="md"
-                    className="rounded-xl overflow-hidden bg-slate-950"
-                  />
-                </div>
               </div>
             </div>
 
@@ -1852,7 +2071,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
                 }`}
               >
-                <Settings className="w-4 h-4" />
                 <span>خيارات</span>
               </button>
 
@@ -1865,7 +2083,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
                 }`}
               >
-                <Clock className="w-4 h-4" />
                 <span>التاريخ</span>
               </button>
 
@@ -1876,293 +2093,257 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               
               {/* TAB 1: خيارات (OPTIONS IN MEMBER RECORD) */}
               {memberLogTab === 'options' && (
-                <div className="space-y-2.5 animate-in fade-in duration-150">
+                <div className="space-y-3 animate-in fade-in duration-150">
                   
-                  {/* Name & Role Selection Box */}
-                  <div className="bg-white border border-slate-200 rounded-2xl p-3.5 shadow-xs flex flex-col gap-3">
-                    
-                    {/* Row 1: Username & Change Rank Selector */}
-                    <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-extrabold text-slate-900 text-sm">{target.username}</span>
-                        <span className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200 font-black flex items-center gap-1">
-                          <span className={getRankEmojiClass(target.role)}>{getRankEmoji(target.role)}</span>
-                          <span>{getRankTitle(target.role)}</span>
+                  {/* The 2x2 Options Grid Matching Screenshot */}
+                  <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+                    <div className="grid grid-cols-2 divide-x divide-x-reverse divide-y divide-slate-100 text-slate-800">
+                      
+                      {/* Row 1, Col 1 (Right): ★ تغيير رتبة */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!isOwner) {
+                            showTopBanner('👑 تغيير الرتب متاح للمالك الرئيسي فقط');
+                            alert('👑 تغيير الرتب متاح للمالك الرئيسي فقط');
+                            return;
+                          }
+                          setShowRankChangeModal(true);
+                        }}
+                        className="p-3.5 flex items-center justify-between transition-all cursor-pointer hover:bg-slate-50"
+                      >
+                        <span className="text-amber-500 text-base font-bold">★</span>
+                        <span className="text-xs font-extrabold">تغيير رتبة</span>
+                      </button>
+
+                      {/* Row 1, Col 2 (Left): 📝 اسم المستخدم */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewNameInput(target.username);
+                          setShowNameChangeModal(true);
+                        }}
+                        className="p-3.5 flex items-center justify-between transition-all cursor-pointer hover:bg-slate-50"
+                      >
+                        <span className="text-sky-600 text-base font-bold">📝</span>
+                        <span className="text-xs font-extrabold">اسم المستخدم</span>
+                      </button>
+
+                      {/* Row 2, Col 1 (Right): 🖌️ تغير لون اسم المستخدم */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedNameColor(target.usernameColor || '#f59e0b');
+                          setMemberLogActiveSubOption(prev => prev === 'color' ? 'none' : 'color');
+                        }}
+                        className={`p-3.5 flex items-center justify-between transition-all cursor-pointer hover:bg-slate-50 ${
+                          memberLogActiveSubOption === 'color' ? 'bg-purple-50 text-purple-950 font-black' : ''
+                        }`}
+                      >
+                        <span className="text-purple-600 text-base font-bold">🖌️</span>
+                        <span className="text-xs font-extrabold">تغير لون اسم المستخدم</span>
+                      </button>
+
+                      {/* Row 2, Col 2 (Left): ✔️ تحرير حالة الحساب */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewStatusInput(target.statusMessage || target.bio || '');
+                          setMemberLogActiveSubOption(prev => prev === 'status' ? 'none' : 'status');
+                        }}
+                        className={`p-3.5 flex items-center justify-between transition-all cursor-pointer hover:bg-slate-50 ${
+                          memberLogActiveSubOption === 'status' ? 'bg-emerald-50 text-emerald-950 font-black' : ''
+                        }`}
+                      >
+                        <span className="text-emerald-600 text-base font-bold">✔️</span>
+                        <span className="text-xs font-extrabold">تحرير حالة الحساب</span>
+                      </button>
+
+                    </div>
+                  </div>
+
+                  {/* Owner Special Action: 🔑 تغيير باسورد العضو (يظهر فقط للمالك) */}
+                  {isOwner && (
+                    <div className="bg-white rounded-2xl border border-amber-200 overflow-hidden shadow-xs">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewPasswordInput(target.password || '');
+                          setShowPasswordChangeModal(true);
+                        }}
+                        className="w-full p-3.5 flex items-center justify-between transition-all cursor-pointer hover:bg-amber-50 text-slate-800"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-amber-500 text-base font-bold">🔑</span>
+                          <span className="text-xs font-extrabold">تغيير باسورد العضو</span>
+                        </div>
+                        <span className="text-[10px] bg-amber-100 text-amber-900 px-2 py-0.5 rounded-md font-bold">
+                          صلاحية المالك فقط 👑
+                        </span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* SUB-OPTION 3: 🖌️ تغير لون اسم المستخدم */}
+                  {memberLogActiveSubOption === 'color' && (
+                    <div className="bg-white border border-purple-200 rounded-2xl p-3.5 shadow-xs space-y-3 animate-in fade-in zoom-in-95 duration-150">
+                      <div className="flex items-center justify-between border-b border-purple-100 pb-2">
+                        <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                          <span className="text-purple-600 text-base">🖌️</span>
+                          <span>تغير لون اسم المستخدم</span>
+                        </span>
+                        <span className="text-[10px] bg-purple-100 text-purple-900 px-2 py-0.5 rounded-lg font-bold">
+                          معاينة فورية
                         </span>
                       </div>
 
-                      {/* Rank Selection Dropdown */}
-                      <div className="flex items-center gap-1">
-                        {isOwner && (target.role !== 'owner' || isMe) ? (
-                          <div className="flex items-center gap-1">
-                            <span className="text-[11px] font-bold text-slate-500">الرتبة:</span>
-                            <select
-                              value={target.role}
-                              onChange={(e) => handleRoleSelectChange(e.target.value as UserRole)}
-                              className="bg-slate-900 text-amber-400 font-black text-xs py-1.5 px-2.5 rounded-xl border border-amber-500/50 shadow-xs cursor-pointer focus:outline-none"
+                      {/* Preview Box */}
+                      <div className="bg-slate-950 p-3 rounded-xl flex items-center justify-center border border-slate-800 shadow-inner">
+                        <span
+                          className="text-base font-black tracking-wide drop-shadow-md"
+                          style={{ color: selectedNameColor }}
+                        >
+                          {target.username}
+                        </span>
+                      </div>
+
+                      {/* Color Palette Grid */}
+                      <div className="space-y-1.5">
+                        <span className="text-[11px] font-bold text-slate-600">اختر لوناً:</span>
+                        <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+                          {USERNAME_COLOR_PALETTE.map((c) => (
+                            <button
+                              key={c.color}
+                              type="button"
+                              onClick={() => setSelectedNameColor(c.color)}
+                              className={`h-8 rounded-xl flex items-center justify-center transition-all cursor-pointer border-2 ${
+                                selectedNameColor.toLowerCase() === c.color.toLowerCase()
+                                  ? 'border-slate-900 scale-110 shadow-md ring-2 ring-purple-400'
+                                  : 'border-transparent hover:scale-105'
+                              }`}
+                              style={{ backgroundColor: c.color }}
+                              title={c.name}
                             >
-                              <option value="visitor">زائر</option>
-                              <option value="member">عضو</option>
-                              <option value="vip">مميز</option>
-                              <option value="moderator">مشرف</option>
-                              <option value="management">⭐ ادارة</option>
-                              <option value="admin">ادمن</option>
-                              <option value="owner">مالك</option>
-                            </select>
-                          </div>
-                        ) : (
-                          <span className="text-xs font-bold text-slate-400 italic bg-slate-100 px-2.5 py-1 rounded-lg">
-                            {target.role === 'owner' ? 'رتبة المالك محمية 👑' : 'تغيير الرتبة (لمالك) 👑'}
-                          </span>
-                        )}
+                              {selectedNameColor.toLowerCase() === c.color.toLowerCase() && (
+                                <Check className="w-4 h-4 text-white drop-shadow-sm stroke-[3]" />
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleSaveUsernameColor(selectedNameColor);
+                            setMemberLogActiveSubOption('none');
+                          }}
+                          className="bg-purple-600 hover:bg-purple-500 text-white font-black text-xs px-4 py-2 rounded-xl transition-all cursor-pointer shadow-xs"
+                        >
+                          حفظ وتطبيق اللون
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setMemberLogActiveSubOption('none')}
+                          className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs px-3 py-2 rounded-xl cursor-pointer"
+                        >
+                          إلغاء
+                        </button>
                       </div>
                     </div>
+                  )}
 
-                    {/* Row 2 (Directly Under Row 1): Change Name Button / Form */}
-                    <div className="flex flex-col gap-2">
-                      {isEditingName ? (
-                        <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
+                  {/* SUB-OPTION 4: ✔️ تحرير حالة الحساب */}
+                  {memberLogActiveSubOption === 'status' && (
+                    <div className="bg-white border border-emerald-200 rounded-2xl p-3.5 shadow-xs space-y-3 animate-in fade-in zoom-in-95 duration-150">
+                      <div className="flex items-center justify-between border-b border-emerald-100 pb-2">
+                        <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                          <span className="text-emerald-600 text-base">✔️</span>
+                          <span>تحرير حالة الحساب والرسالة</span>
+                        </span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-lg font-black ${
+                          isTargetBanned ? 'bg-red-500 text-white' : 'bg-emerald-100 text-emerald-800'
+                        }`}>
+                          {isTargetBanned ? 'محظور 🚫' : 'نشط وفعال ✔️'}
+                        </span>
+                      </div>
+
+                      <div className="space-y-2.5">
+                        <div className="space-y-1">
+                          <span className="text-[11px] font-bold text-slate-600">رسالة الحالة / النبذة:</span>
                           <input
                             type="text"
-                            value={newNameInput}
-                            onChange={(e) => setNewNameInput(e.target.value)}
-                            placeholder="اكتب الاسم الجديد..."
-                            className="flex-1 bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                            value={newStatusInput}
+                            onChange={(e) => setNewStatusInput(e.target.value)}
+                            placeholder="اكتب الحالة (مثال: بسم الله الرحمن الرحيم)..."
+                            className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                           />
+                        </div>
+
+                        {/* Quick Presets */}
+                        <div className="flex flex-wrap gap-1.5">
+                          {['بسم الله الرحمن الرحيم 🕊️', 'متصل الآن ✨', 'في العمل 💼', 'مشغول حالياً ⏳', 'أهلاً بالجميع 🌟'].map((preset) => (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() => setNewStatusInput(preset)}
+                              className="text-[10px] font-bold bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-900 px-2 py-1 rounded-lg border border-slate-200 transition-all cursor-pointer"
+                            >
+                              {preset}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Moderation Ban / Unban Toggle */}
+                        {(isOwner || currentUser?.role === 'admin') && target.role !== 'owner' && (
+                          <div className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                            <div className="text-right">
+                              <span className="text-xs font-bold text-slate-800 block">حالة الحظر من الشات:</span>
+                              <span className="text-[10px] text-slate-500">
+                                {isTargetBanned ? 'الحساب محظور حالياً' : 'الحساب نشط وغير محظور'}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleOwnerBan}
+                              className={`py-1.5 px-3 font-black text-xs rounded-xl flex items-center gap-1 cursor-pointer transition-all ${
+                                isTargetBanned
+                                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                                  : 'bg-red-600 hover:bg-red-500 text-white'
+                              }`}
+                            >
+                              <Ban className="w-3.5 h-3.5" />
+                              <span>{isTargetBanned ? 'فك الحظر 🔓' : 'حظر الحساب 🚫'}</span>
+                            </button>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
                           <button
                             type="button"
-                            onClick={handleSaveNewName}
-                            className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-3.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-xs"
+                            onClick={() => {
+                              if (currentUser?.id === target.id) {
+                                updateUserProfile({ statusMessage: newStatusInput.trim(), bio: newStatusInput.trim() });
+                              } else {
+                                ownerUpdateUser(target.id, { statusMessage: newStatusInput.trim(), bio: newStatusInput.trim() });
+                              }
+                              showTopBanner('✔️ تم حفظ وتحديث حالة الحساب بنجاح');
+                              setMemberLogActiveSubOption('none');
+                            }}
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-4 py-2 rounded-xl transition-all cursor-pointer shadow-xs"
                           >
-                            حفظ
+                            حفظ حالة الحساب
                           </button>
                           <button
                             type="button"
-                            onClick={() => setIsEditingName(false)}
-                            className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs px-2.5 py-1.5 rounded-xl cursor-pointer"
+                            onClick={() => setMemberLogActiveSubOption('none')}
+                            className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs px-3 py-2 rounded-xl cursor-pointer"
                           >
                             إلغاء
                           </button>
                         </div>
-                      ) : (
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-600">تعديل اسم العضو:</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setNewNameInput(target.username);
-                              setIsEditingName(true);
-                            }}
-                            disabled={(!isMe && target.role === 'owner') || (!isMe && target.role === 'admin' && !isOwner) || (!isMe && !isManagementOrHigher)}
-                            className={`py-1.5 px-3 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-xs ${
-                              (!isMe && target.role === 'owner') || (!isMe && target.role === 'admin' && !isOwner)
-                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                                : isMe || isManagementOrHigher
-                                  ? 'bg-[#0c3843] text-white hover:bg-[#134855] cursor-pointer'
-                                  : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                            }`}
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                            <span>تغيير الاسم ✏️</span>
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                  </div>
-
-                  {/* Photo Management Box inside Record Modal (تغيير وحذف صورة الشخصية والحائط) */}
-                  {(isMe || isOwner || (isManagementOrHigher && target.role !== 'owner' && target.role !== 'admin')) && (
-                    <div className="bg-white border border-slate-200 rounded-2xl p-3.5 shadow-xs space-y-2.5">
-                      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                        <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-                          <Camera className="w-4 h-4 text-amber-500" />
-                          <span>إدارة الصور (الشخصية والغلاف) 📷</span>
-                        </span>
-                        <span className="text-[10px] bg-slate-900 text-amber-400 px-2 py-0.5 rounded-lg font-extrabold">
-                          تغيير وحذف
-                        </span>
                       </div>
-
-                      {/* Profile Avatar Controls */}
-                      <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                        <span className="text-xs font-bold text-slate-700">الصورة الشخصية:</span>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={triggerAvatarUpload}
-                            className="py-1.5 px-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl flex items-center gap-1 cursor-pointer transition-all shadow-xs"
-                            title="تغيير الصورة الشخصية 📷"
-                          >
-                            <Camera className="w-3.5 h-3.5" />
-                            <span>تغيير 📷</span>
-                          </button>
-
-                          {target.avatar && (
-                            <button
-                              type="button"
-                              onClick={handleRemoveAvatar}
-                              className="py-1.5 px-2.5 bg-red-600 hover:bg-red-500 text-white font-black text-xs rounded-xl flex items-center gap-1 cursor-pointer transition-all shadow-xs"
-                              title="حذف الصورة الشخصية ❌"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                              <span>حذف ❌</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Wall Cover Controls (Static or Animated GIF) */}
-                      <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                        <div>
-                          <span className="text-xs font-bold text-slate-700 block">صورة الحائط (الغلاف):</span>
-                          <span className="text-[10px] text-slate-400">صورة ثابتة أو متحركة GIF</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={triggerWallUpload}
-                            className="py-1.5 px-3 bg-teal-600 hover:bg-teal-500 text-white font-black text-xs rounded-xl flex items-center gap-1 cursor-pointer transition-all shadow-xs"
-                            title="تغيير صورة الحائط (متحركة GIF أو ثابتة) 📷"
-                          >
-                            <Camera className="w-3.5 h-3.5" />
-                            <span>تغيير 📷</span>
-                          </button>
-
-                          {target.wallCover && (
-                            <button
-                              type="button"
-                              onClick={handleRemoveWall}
-                              className="py-1.5 px-2.5 bg-red-600 hover:bg-red-500 text-white font-black text-xs rounded-xl flex items-center gap-1 cursor-pointer transition-all shadow-xs"
-                              title="حذف صورة الحائط ❌"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                              <span>حذف ❌</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                    </div>
-                  )}
-
-                  {/* Owner Exclusive Controls Box (تعديل حالة المستخدم وتعديل النبذة - للمالك فقط) */}
-                  {isOwner && (
-                    <div className="bg-white border border-amber-200 rounded-2xl p-3.5 shadow-xs space-y-3">
-                      <div className="flex items-center justify-between border-b border-amber-100 pb-2">
-                        <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-                          <Shield className="w-4 h-4 text-amber-600" />
-                          <span>تحكم المالك الرئيسي (الحالة والمعلومات) 👑</span>
-                        </span>
-                        <span className="text-[10px] bg-amber-500 text-slate-950 px-2 py-0.5 rounded-lg font-black">
-                          للمالك فقط
-                        </span>
-                      </div>
-
-                      {/* 1. تعديل حالة المستخدم */}
-                      <div className="flex flex-col gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-700">حالة المستخدم:</span>
-                          {!isEditingStatusMessage && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setNewStatusInput(target.statusMessage || '');
-                                setIsEditingStatusMessage(true);
-                              }}
-                              className="py-1.5 px-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl flex items-center gap-1 cursor-pointer transition-all shadow-xs"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
-                              <span>تعديل حالة المستخدم ✏️</span>
-                            </button>
-                          )}
-                        </div>
-
-                        {isEditingStatusMessage ? (
-                          <div className="flex flex-col gap-2 pt-1">
-                            <input
-                              type="text"
-                              value={newStatusInput}
-                              onChange={(e) => setNewStatusInput(e.target.value)}
-                              placeholder="اكتب حالة المستخدم الجديدة..."
-                              className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                            />
-                            <div className="flex items-center gap-2 justify-end">
-                              <button
-                                type="button"
-                                onClick={handleSaveOwnerStatus}
-                                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-3.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-xs"
-                              >
-                                حفظ الحالة
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setIsEditingStatusMessage(false)}
-                                className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs px-2.5 py-1.5 rounded-xl cursor-pointer"
-                              >
-                                إلغاء
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="text-xs text-slate-600 bg-white p-2 rounded-lg border border-slate-100 italic truncate dir-rtl">
-                            "{target.statusMessage || 'لا توجد حالة محددة'}"
-                          </p>
-                        )}
-                      </div>
-
-                      {/* 2. تعديل معلومات بمعنى النبذة */}
-                      <div className="flex flex-col gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-700">معلومات (النبذة):</span>
-                          {!isEditingBio && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setNewBioInput(target.bio || '');
-                                setIsEditingBio(true);
-                              }}
-                              className="py-1.5 px-3 bg-[#0c3843] hover:bg-[#134855] text-white font-black text-xs rounded-xl flex items-center gap-1 cursor-pointer transition-all shadow-xs"
-                            >
-                              <FileText className="w-3.5 h-3.5 text-teal-300" />
-                              <span>تعديل معلومات ✏️</span>
-                            </button>
-                          )}
-                        </div>
-
-                        {isEditingBio ? (
-                          <div className="flex flex-col gap-2 pt-1">
-                            <textarea
-                              value={newBioInput}
-                              onChange={(e) => setNewBioInput(e.target.value)}
-                              placeholder="اكتب معلومات العضو (النبذة)..."
-                              rows={2}
-                              className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-xs font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
-                            />
-                            <div className="flex items-center gap-2 justify-end">
-                              <button
-                                type="button"
-                                onClick={handleSaveOwnerBio}
-                                className="bg-teal-600 hover:bg-teal-500 text-white font-black text-xs px-3.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-xs"
-                              >
-                                حفظ المعلومات
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setIsEditingBio(false)}
-                                className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs px-2.5 py-1.5 rounded-xl cursor-pointer"
-                              >
-                                إلغاء
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="text-xs text-slate-600 bg-white p-2 rounded-lg border border-slate-100 italic break-words dir-rtl">
-                            "{target.bio || 'لا توجد معلومات (نبذة) مدونة'}"
-                          </p>
-                        )}
-                      </div>
-
                     </div>
                   )}
 
@@ -2227,6 +2408,236 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 1. POPUP MODAL: تعديل اسم المستخدم (MATCHING SCREENSHOT) */}
+      {/* ======================================================== */}
+      {showNameChangeModal && (
+        <div
+          onClick={() => setShowNameChangeModal(false)}
+          className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150 dir-rtl font-sans"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl w-full max-w-sm sm:max-w-md overflow-hidden shadow-2xl border border-slate-200 text-right animate-in zoom-in-95 duration-150"
+          >
+            {/* Dark Teal Header Matching Screenshot */}
+            <div className="bg-[#002f34] text-white px-4 py-3 flex items-center justify-between">
+              <span className="font-black text-sm text-white">اسم المستخدم</span>
+              <button
+                type="button"
+                onClick={() => setShowNameChangeModal(false)}
+                className="text-white/80 hover:text-white transition-colors p-1 cursor-pointer"
+                title="إغلاق"
+              >
+                <X className="w-5 h-5 stroke-[2.5]" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 sm:p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 text-right">
+                  اسم المستخدم
+                </label>
+                <input
+                  type="text"
+                  value={newNameInput}
+                  onChange={(e) => setNewNameInput(e.target.value)}
+                  placeholder="اكتب اسم المستخدم..."
+                  className="w-full bg-[#f1f5f9] border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 text-right"
+                  autoFocus
+                />
+              </div>
+
+              {/* Action Buttons Matching Screenshot */}
+              <div className="flex items-center justify-start gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleSaveNewName();
+                    setShowNameChangeModal(false);
+                  }}
+                  className="bg-[#0284c7] hover:bg-[#0369a1] active:scale-95 text-white font-black text-xs px-5 py-2.5 rounded-xl transition-all cursor-pointer shadow-md flex items-center gap-1.5"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>حفظ</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowNameChangeModal(false)}
+                  className="bg-[#002f34] hover:bg-[#001f24] active:scale-95 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition-all cursor-pointer"
+                >
+                  <span>إلغاء</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 2. POPUP MODAL: تغيير رتبة المستخدم (VERTICAL LIST)     */}
+      {/* ======================================================== */}
+      {showRankChangeModal && (
+        <div
+          onClick={() => setShowRankChangeModal(false)}
+          className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150 dir-rtl font-sans"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl border border-slate-200 text-right animate-in zoom-in-95 duration-150"
+          >
+            {/* Dark Teal Header */}
+            <div className="bg-[#002f34] text-white px-4 py-3 flex items-center justify-between">
+              <span className="font-black text-sm text-white flex items-center gap-1.5">
+                <span className="text-amber-400">★</span>
+                <span>تغيير رتبة المستخدم</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowRankChangeModal(false)}
+                className="text-white/80 hover:text-white transition-colors p-1 cursor-pointer"
+                title="إغلاق"
+              >
+                <X className="w-5 h-5 stroke-[2.5]" />
+              </button>
+            </div>
+
+            {/* Vertical Ranks List from Visitor to Owner */}
+            <div className="p-3 sm:p-4 space-y-1.5 max-h-[70vh] overflow-y-auto">
+              <p className="text-[11px] text-slate-500 font-bold mb-2">
+                اختر رتبة لتطبيقها فوراً على العضو ({target.username}):
+              </p>
+
+              {(['visitor', 'member', 'vip', 'moderator', 'management', 'admin', 'owner'] as UserRole[]).map((r) => {
+                const isCurrent = target.role === r;
+                return (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => {
+                      handleRoleSelectChange(r);
+                      setShowRankChangeModal(false);
+                    }}
+                    className={`w-full p-3 rounded-xl flex items-center justify-between transition-all cursor-pointer border text-right ${
+                      isCurrent
+                        ? 'bg-amber-500 text-slate-950 border-amber-600 font-black shadow-xs'
+                        : 'bg-slate-50 hover:bg-amber-50/60 text-slate-800 border-slate-200 hover:border-amber-300 font-bold'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className={`text-base ${getRankEmojiClass(r, target.username)}`}>
+                        {getRankEmoji(r, target.username)}
+                      </span>
+                      <span className="text-xs font-extrabold">{getRankTitle(r, target.username)}</span>
+                    </div>
+                    {isCurrent ? (
+                      <span className="text-[10px] bg-slate-950 text-amber-400 px-2 py-0.5 rounded-full font-black">
+                        الحالية ✓
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-slate-400 font-medium">
+                        تطبيق فوري ⚡
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowRankChangeModal(false)}
+                  className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 3. POPUP MODAL: تغيير باسورد العضو (OWNER EXCLUSIVE)    */}
+      {/* ======================================================== */}
+      {showPasswordChangeModal && (
+        <div
+          onClick={() => setShowPasswordChangeModal(false)}
+          className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150 dir-rtl font-sans"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl w-full max-w-sm sm:max-w-md overflow-hidden shadow-2xl border border-slate-200 text-right animate-in zoom-in-95 duration-150"
+          >
+            {/* Dark Teal Header */}
+            <div className="bg-[#002f34] text-white px-4 py-3 flex items-center justify-between">
+              <span className="font-black text-sm text-white flex items-center gap-1.5">
+                <Key className="w-4 h-4 text-amber-400" />
+                <span>تغيير باسورد العضو</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowPasswordChangeModal(false)}
+                className="text-white/80 hover:text-white transition-colors p-1 cursor-pointer"
+                title="إغلاق"
+              >
+                <X className="w-5 h-5 stroke-[2.5]" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 sm:p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 text-right">
+                  كلمة المرور الجديدة للعضو ({target.username})
+                </label>
+                <input
+                  type="text"
+                  value={newPasswordInput}
+                  onChange={(e) => setNewPasswordInput(e.target.value)}
+                  placeholder="اكتب كلمة المرور الجديدة..."
+                  className="w-full bg-[#f1f5f9] border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 text-right"
+                  autoFocus
+                />
+                <p className="text-[10px] text-slate-500 mt-1.5 font-medium">
+                  💡 سيتم تعيين هذه الكلمة لحساب العضو فوراً ليتمكن من تسجيل الدخول بها.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-start gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!newPasswordInput.trim()) {
+                      alert('الرجاء كتابة كلمة مرور صالحة');
+                      return;
+                    }
+                    ownerUpdateUser(target.id, { password: newPasswordInput.trim() });
+                    setShowPasswordChangeModal(false);
+                    showTopBanner(`🔑 تم تغيير باسورد العضو (${target.username}) بنجاح`);
+                  }}
+                  className="bg-[#0284c7] hover:bg-[#0369a1] active:scale-95 text-white font-black text-xs px-5 py-2.5 rounded-xl transition-all cursor-pointer shadow-md flex items-center gap-1.5"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>حفظ</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordChangeModal(false)}
+                  className="bg-[#002f34] hover:bg-[#001f24] active:scale-95 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition-all cursor-pointer"
+                >
+                  <span>إلغاء</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

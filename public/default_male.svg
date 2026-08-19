@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+  <rect width="200" height="200" fill="#c4c7c9"/>
+  <!-- Hair Outline -->
+  <path d="M52 98 C48 55 68 28 100 28 C132 28 152 55 148 98 C144 98 142 85 142 70 C142 48 126 42 100 42 C74 42 58 48 58 70 C58 85 56 98 52 98 Z" fill="#ffffff"/>
+  <!-- Head Face -->
+  <ellipse cx="100" cy="85" rx="38" ry="46" fill="#ffffff"/>
+  <!-- Torso & Shoulders -->
+  <path d="M36 200 C36 156 64 140 85 138 L85 125 L115 125 L115 138 C136 140 164 156 164 200 Z" fill="#ffffff"/>
+  <!-- Neck Collar opening & slit line -->
+  <path d="M78 148 C85 166 115 166 122 148 C114 158 86 158 78 148 Z" fill="#c4c7c9"/>
+  <rect x="97.5" y="162" width="5" height="22" rx="2.5" fill="#c4c7c9"/>
+</svg>

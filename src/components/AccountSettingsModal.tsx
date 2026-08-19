@@ -343,7 +343,7 @@ export const AccountSettingsModal: React.FC = () => {
   const {
     currentUser, updateUserProfile, audioSettings, updateAudioSettings,
     setIsProfileSettingsOpen, removeFriend, users, themeMode, setThemeMode,
-    toggleIgnore, toggleBlockUser
+    toggleIgnore, toggleBlockUser, requestBlockConfirm
   } = useChat();
 
   const [activeSubMenu, setActiveSubMenu] = useState<string | null>(null);
@@ -395,6 +395,8 @@ export const AccountSettingsModal: React.FC = () => {
   const ageOptions = Array.from({ length: 84 }, (_, i) => i + 16);
   const filteredAvatars = DEFAULT_AVATARS.filter(a => a.category === avatarCategory);
 
+  const canChangeAvatar = ['vip', 'moderator', 'management', 'admin', 'owner'].includes(currentUser.role);
+
   // File upload handlers
   const handleCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -417,6 +419,10 @@ export const AccountSettingsModal: React.FC = () => {
   };
 
   const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!canChangeAvatar) {
+      alert('🔒 الصورة الشخصية ثابتة للعضو المسجل. ستتمكن من تغيير ورفع صورتك المخصصة عند ترقية حسابك إلى رتبة مميز ⭐ فما فوق.');
+      return;
+    }
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 5 * 1024 * 1024) {
@@ -445,6 +451,8 @@ export const AccountSettingsModal: React.FC = () => {
   const handleRemoveAvatar = () => {
     setAvatar('');
     updateUserProfile({ avatar: '' });
+    setSaveSuccess('تم استرجاع الصورة الرمزية الافتراضية بنجاح 🖼️');
+    setTimeout(() => setSaveSuccess(''), 3000);
   };
 
   const handleSaveData = (e?: React.FormEvent) => {
@@ -653,20 +661,33 @@ export const AccountSettingsModal: React.FC = () => {
 
                   {/* Avatar Action Icons Overlay */}
                   <div className="absolute inset-x-0 bottom-0 bg-slate-950/75 p-1 flex items-center justify-around text-white">
-                    <button
-                      onClick={() => avatarInputRef.current?.click()}
-                      className="hover:text-amber-400 cursor-pointer p-0.5 transition-colors"
-                      title="تغيير الرمزية"
-                    >
-                      <Camera className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={handleRemoveAvatar}
-                      className="hover:text-red-400 cursor-pointer p-0.5 transition-colors"
-                      title="إزالة الرمزية"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+                    {canChangeAvatar ? (
+                      <>
+                        <button
+                          onClick={() => avatarInputRef.current?.click()}
+                          className="hover:text-amber-400 cursor-pointer p-0.5 transition-colors"
+                          title="تغيير الرمزية"
+                        >
+                          <Camera className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={handleRemoveAvatar}
+                          className="hover:text-red-400 cursor-pointer p-0.5 transition-colors"
+                          title="إزالة الرمزية والعودة للافتراضي"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => alert('🔒 الصورة الشخصية ثابتة للعضو المسجل. ستتمكن من تغيير ورفع صورتك المخصصة عند ترقية حسابك إلى رتبة مميز ⭐ فما فوق.')}
+                        className="text-amber-300 hover:text-amber-200 cursor-pointer p-0.5 transition-colors flex items-center justify-center gap-1 w-full"
+                        title="الصورة ثابتة للعضو المسجل (الترقية لرتبة مميز مطلوبة لتغييرها)"
+                      >
+                        <Lock className="w-3 h-3 text-amber-400" />
+                        <span className="text-[9px] font-bold">صورة ثابتة</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1314,8 +1335,12 @@ export const AccountSettingsModal: React.FC = () => {
                         <span className="font-bold text-xs text-slate-900">{u.username}</span>
                       </div>
                       <button
-                        onClick={() => toggleIgnore(u.id)}
-                        className="p-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl cursor-pointer text-xs font-bold"
+                        onClick={() => {
+                          requestBlockConfirm(u, 'unblock', () => {
+                            toggleIgnore(u.id);
+                          });
+                        }}
+                        className="p-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl cursor-pointer text-xs font-bold transition-colors"
                       >
                         🔓 إلغاء التجاهل
                       </button>

@@ -6,7 +6,7 @@ import { toEnglishDigits } from '../utils/dateUtils';
 
 export const NotificationsModal: React.FC = () => {
   const {
-    notifications, setIsNotificationsOpen, markNotificationsAsRead,
+    notifications, setIsNotificationsOpen, markNotificationsAsRead, deleteNotification,
     currentUser, setNotifications, setActivePrivateUserId, setIsPrivateChatOpen
   } = useChat();
   const [selectedNotifId, setSelectedNotifId] = useState<string | null>(null);
@@ -15,11 +15,11 @@ export const NotificationsModal: React.FC = () => {
     markNotificationsAsRead();
   }, []);
 
-  const myNotifications = notifications.filter(n => !n.userId || n.userId === currentUser?.id);
+  const myNotifications = notifications.filter(n => !n.userId || n.userId === currentUser?.id || n.userId === 'all');
 
   const handleDeleteNotif = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setNotifications(prev => prev.filter(n => n.id !== id));
+    deleteNotification(id);
     setSelectedNotifId(null);
   };
 

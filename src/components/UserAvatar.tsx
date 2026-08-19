@@ -1,6 +1,7 @@
 import React from 'react';
 import { UserRole, Gender } from '../types';
 import { User, UserCheck, Shield, Sparkles, Crown, Star } from 'lucide-react';
+import { resolveUserAvatar } from '../utils/avatarUtils';
 
 interface UserAvatarProps {
   avatarUrl?: string;
@@ -70,29 +71,26 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
 
   const isSystem = username === 'System' || username === 'system' || (role as string) === 'system';
 
+  const effectiveAvatar = resolveUserAvatar(avatarUrl, gender);
+
   return (
     <div className={`relative inline-block shrink-0 ${className}`}>
       <div
-        className={`${sizeClasses} rounded-full overflow-hidden flex items-center justify-center bg-slate-800 ${ringClass} transition-transform duration-200`}
+        className={`${sizeClasses} rounded-full overflow-hidden flex items-center justify-center bg-slate-200 ${ringClass} transition-transform duration-200`}
       >
-        {avatarUrl && avatarUrl.trim() !== '' ? (
-          <img
-            src={avatarUrl}
-            alt={username}
-            className="w-full h-full object-cover rounded-full"
-            referrerPolicy="no-referrer"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-slate-800 text-slate-300 font-bold select-none">
-            {gender === 'male' ? (
-              <User className="w-3/5 h-3/5 text-blue-400" />
-            ) : gender === 'female' ? (
-              <User className="w-3/5 h-3/5 text-pink-400" />
-            ) : (
-              <User className="w-3/5 h-3/5 text-slate-300" />
-            )}
-          </div>
-        )}
+        <img
+          src={effectiveAvatar}
+          alt={username}
+          className="w-full h-full object-cover rounded-full"
+          referrerPolicy="no-referrer"
+          onError={(e) => {
+            const target = e.currentTarget;
+            const fallback = gender === 'female' ? '/default_female.svg' : '/default_male.svg';
+            if (target.src !== fallback) {
+              target.src = fallback;
+            }
+          }}
+        />
       </div>
 
       {showRankBadge && !isSystem && badgeInfo && (

@@ -1,16 +1,22 @@
 import React from 'react';
 import { useChat } from '../context/ChatContext';
-import { X, Users, UserPlus, Home, Search, Globe, User } from 'lucide-react';
+import { X, Users, UserPlus, Home, Search, Globe, User, Lock, ShieldCheck } from 'lucide-react';
 
 export const RoomsListPanel: React.FC = () => {
   const {
     rooms, currentRoom, switchRoom,
-    setIsRoomsListOpen, setIsOnlineListOpen, setIsFriendRequestsOpen, users
+    setIsRoomsListOpen, setIsOnlineListOpen, setIsFriendRequestsOpen, users, currentUser
   } = useChat();
+
+  const isMgmt = ['management', 'admin', 'owner'].includes(currentUser?.role || '');
 
   // Calculate user count for each room & sort descending
   const roomsWithCounts = rooms.map(room => {
-    const activeInRoom = users.filter(u => u.currentRoomId === room.id).length;
+    const activeInRoom = users.filter(u => {
+      if (u.isBanned) return false;
+      if (u.role === 'owner' && u.isStealth && currentUser?.role !== 'owner') return false;
+      return u.currentRoomId === room.id;
+    }).length;
     const totalCount = (room.baseUserCount || 0) + activeInRoom;
     return { ...room, totalCount };
   }).sort((a, b) => b.totalCount - a.totalCount);
@@ -79,12 +85,16 @@ export const RoomsListPanel: React.FC = () => {
       <div className="flex-1 overflow-y-auto custom-scrollbar divide-y divide-slate-100 bg-white">
         {roomsWithCounts.map((room) => {
           const isActive = room.id === currentRoom.id;
+          const isLocked = Boolean(room.password && room.password.trim() !== '');
+
           return (
             <div
               key={room.id}
               onClick={() => {
-                switchRoom(room.id);
-                if (window.innerWidth < 640) setIsRoomsListOpen(false);
+                const success = switchRoom(room.id);
+                if (success && window.innerWidth < 640) {
+                  setIsRoomsListOpen(false);
+                }
               }}
               className={`px-4 py-3 flex items-center justify-between transition-colors cursor-pointer ${
                 isActive
@@ -92,14 +102,34 @@ export const RoomsListPanel: React.FC = () => {
                   : 'bg-white hover:bg-slate-50'
               }`}
             >
-              {/* Right Side in RTL: Blue Globe Icon & Room Name */}
+              {/* Right Side in RTL: Blue Globe Icon & Room Name & Lock Badge */}
               <div className="flex items-center gap-3 min-w-0 flex-1">
-                <div className="w-8 h-8 rounded-full bg-[#0284c7] text-white flex items-center justify-center shrink-0 shadow-xs">
-                  <Globe className="w-4.5 h-4.5 stroke-[2.2]" />
+                <div className="relative shrink-0">
+                  <div className={`w-8 h-8 rounded-full ${isLocked ? 'bg-amber-600' : 'bg-[#0284c7]'} text-white flex items-center justify-center shadow-xs`}>
+                    <Globe className="w-4.5 h-4.5 stroke-[2.2]" />
+                  </div>
+                  {isLocked && (
+                    <span className="absolute -top-1 -right-1 bg-red-600 text-white rounded-full p-0.5 border-2 border-white shadow-xs" title="غرفة مقفلة بكلمة مرور">
+                      <Lock className="w-2.5 h-2.5" />
+                    </span>
+                  )}
                 </div>
-                <span className="text-slate-800 font-bold text-sm sm:text-base truncate">
-                  {room.name}
-                </span>
+
+                <div className="flex items-center gap-1.5 min-w-0 truncate">
+                  <span className="text-slate-800 font-bold text-sm sm:text-base truncate">
+                    {room.name}
+                  </span>
+
+                  {isLocked && (
+                    <span className="inline-flex items-center gap-1 bg-red-50 text-red-700 border border-red-200 text-[10px] font-black px-1.5 py-0.5 rounded-md shrink-0">
+                      <Lock className="w-2.5 h-2.5 text-red-600" />
+                      <span>مقفلة</span>
+                      {isMgmt && (
+                        <span className="text-[9px] text-amber-600 font-normal mr-0.5">(تجاوز إداري)</span>
+                      )}
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Left Side in RTL: Sky Blue User Icon & Member Count */}

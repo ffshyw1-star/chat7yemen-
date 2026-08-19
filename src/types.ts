@@ -84,6 +84,14 @@ export interface Message {
   targetUsername?: string;
 }
 
+export interface RoomStaffMember {
+  userId: string;
+  username: string;
+  role: RoomRole;
+  avatar?: string;
+  assignedAt?: string;
+}
+
 export interface Room {
   id: string;
   name: string;
@@ -93,8 +101,11 @@ export interface Room {
   isDefault?: boolean;
   password?: string;
   isLocked?: boolean;
+  welcomeMessage?: string; // Custom automatic welcome greeting for this room
+  autoWelcomeEnabled?: boolean; // Whether auto-welcome bot message is enabled
   mutedUsers?: string[]; // Array of muted user IDs in this room
   kickedUsers?: string[]; // Array of kicked/banned user IDs from this room
+  roomStaff?: RoomStaffMember[]; // Array of honorary room staff (مشرف غرفة / مدير غرفة / مالك غرفة)
 }
 
 export interface PrivateMessage {
@@ -191,7 +202,7 @@ export interface ModLogEntry {
   targetUserId: string;
   targetUsername: string;
   actionBy: string;
-  actionType: 'mute' | 'kick' | 'unmute' | 'unkick' | 'ban' | 'edit_name' | 'delete_account';
+  actionType: 'mute' | 'kick' | 'unmute' | 'unkick' | 'ban' | 'unban' | 'edit_name' | 'delete_account';
   reason: string;
   durationMinutes?: number;
   timestamp: string;
@@ -208,6 +219,7 @@ export type RoomActivityType =
   | 'kick'
   | 'unkick'
   | 'ban'
+  | 'unban'
   | 'role_change'
   | 'room_created'
   | 'delete_account'
@@ -286,6 +298,18 @@ export interface SiteSettings {
   enableCookieBan?: boolean;
 }
 
+export interface IPModerationRecord {
+  id: string;
+  ip: string;
+  type: 'ban' | 'kick' | 'mute';
+  reason: string;
+  targetUserId?: string;
+  targetUsername?: string;
+  actionBy?: string;
+  createdAt: string;
+  expiresAt?: string; // ISO string for temporary kick/mute, or undefined for permanent ban
+}
+
 export interface ToastNotification {
   id: string;
   type: 'private_message' | 'user_join' | 'info' | 'success';
@@ -300,4 +324,19 @@ export interface ToastNotification {
   roomName?: string;
   timestamp: string;
   duration?: number;
+}
+
+export type BlockActionType = 'block' | 'unblock' | 'ban' | 'unban';
+
+export interface BlockConfirmState {
+  isOpen: boolean;
+  targetUser: {
+    id: string;
+    username: string;
+    avatar?: string;
+    role?: UserRole;
+    gender?: Gender;
+  } | null;
+  actionType: BlockActionType;
+  onConfirm?: () => void;
 }

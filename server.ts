@@ -5,8 +5,8 @@ import fs from "fs";
 import initSqlJs, { Database } from "sql.js";
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer as createViteServer } from "vite";
-import { INITIAL_USERS, INITIAL_MESSAGES, INITIAL_ROOMS } from "./src/data/initialData";
-import { Message, PrivateMessage, User, Room } from "./src/types";
+import { INITIAL_USERS, INITIAL_MESSAGES, INITIAL_ROOMS, INITIAL_NOTIFICATIONS } from "./src/data/initialData";
+import { Message, PrivateMessage, User, Room, IPModerationRecord, FriendRequest, Notification } from "./src/types";
 
 const app = express();
 const server = http.createServer(app);
@@ -34,7 +34,136 @@ function saveD1ToDisk() {
 let serverUsers: User[] = [];
 let serverMessages: Message[] = [];
 let serverPrivateMessages: PrivateMessage[] = [];
+let serverFriendRequests: FriendRequest[] = [];
 let serverRooms: Room[] = [];
+let serverIPModerations: IPModerationRecord[] = [];
+let serverNotifications: Notification[] = [];
+
+// Helper to extract client real IP
+function getClientIp(req: express.Request): string {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (typeof forwarded === "string") {
+    const parts = forwarded.split(",");
+    if (parts[0] && parts[0].trim()) {
+      let ip = parts[0].trim();
+      if (ip.startsWith("::ffff:")) ip = ip.substring(7);
+      return ip;
+    }
+  }
+  const remote = req.socket.remoteAddress;
+  if (remote) {
+    if (remote.startsWith("::ffff:")) return remote.substring(7);
+    if (remote === "::1") return "127.0.0.1";
+    return remote;
+  }
+  return "127.0.0.1";
+}
+
+// Function to completely reset database to clean initial state
+function resetD1Database() {
+  if (!db) return;
+  try {
+    db.run(`
+      DROP TABLE IF EXISTS users;
+      DROP TABLE IF EXISTS messages;
+      DROP TABLE IF EXISTS private_messages;
+      DROP TABLE IF EXISTS rooms;
+      DROP TABLE IF EXISTS wall_posts;
+      DROP TABLE IF EXISTS reports;
+      DROP TABLE IF EXISTS friend_requests;
+      DROP TABLE IF EXISTS ip_moderations;
+      DROP TABLE IF EXISTS notifications;
+    `);
+
+    db.run(`
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        username TEXT,
+        role TEXT,
+        data TEXT
+      );
+      CREATE TABLE messages (
+        id TEXT PRIMARY KEY,
+        roomId TEXT,
+        senderId TEXT,
+        timestamp TEXT,
+        data TEXT
+      );
+      CREATE TABLE private_messages (
+        id TEXT PRIMARY KEY,
+        senderId TEXT,
+        receiverId TEXT,
+        timestamp TEXT,
+        data TEXT
+      );
+      CREATE TABLE rooms (
+        id TEXT PRIMARY KEY,
+        data TEXT
+      );
+      CREATE TABLE wall_posts (
+        id TEXT PRIMARY KEY,
+        data TEXT
+      );
+      CREATE TABLE reports (
+        id TEXT PRIMARY KEY,
+        data TEXT
+      );
+      CREATE TABLE friend_requests (
+        id TEXT PRIMARY KEY,
+        data TEXT
+      );
+      CREATE TABLE ip_moderations (
+        id TEXT PRIMARY KEY,
+        ip TEXT,
+        type TEXT,
+        data TEXT
+      );
+      CREATE TABLE notifications (
+        id TEXT PRIMARY KEY,
+        userId TEXT,
+        timestamp TEXT,
+        data TEXT
+      );
+    `);
+
+    serverUsers = [...INITIAL_USERS];
+    serverRooms = [...INITIAL_ROOMS];
+    serverMessages = [...INITIAL_MESSAGES];
+    serverPrivateMessages = [];
+    serverFriendRequests = [];
+    serverIPModerations = [];
+    serverNotifications = [...INITIAL_NOTIFICATIONS];
+
+    const uStmt = db.prepare("INSERT OR REPLACE INTO users (id, username, role, data) VALUES (?, ?, ?, ?)");
+    serverUsers.forEach((u) => {
+      uStmt.run([u.id, u.username, u.role, JSON.stringify(u)]);
+    });
+    uStmt.free();
+
+    const mStmt = db.prepare("INSERT OR REPLACE INTO messages (id, roomId, senderId, timestamp, data) VALUES (?, ?, ?, ?, ?)");
+    serverMessages.forEach((m) => {
+      mStmt.run([m.id, m.roomId, m.senderId, m.timestamp, JSON.stringify(m)]);
+    });
+    mStmt.free();
+
+    const rStmt = db.prepare("INSERT OR REPLACE INTO rooms (id, data) VALUES (?, ?)");
+    serverRooms.forEach((r) => {
+      rStmt.run([r.id, JSON.stringify(r)]);
+    });
+    rStmt.free();
+
+    const nStmt = db.prepare("INSERT OR REPLACE INTO notifications (id, userId, timestamp, data) VALUES (?, ?, ?, ?)");
+    serverNotifications.forEach((n) => {
+      nStmt.run([n.id, n.userId, n.timestamp, JSON.stringify(n)]);
+    });
+    nStmt.free();
+
+    saveD1ToDisk();
+    console.log("🔄 Successfully reset and re-seeded SQLite D1 database with clean Owner account (المالك).");
+  } catch (err) {
+    console.error("Error resetting D1 database:", err);
+  }
+}
 
 // Initialize SQLite D1 Engine & Load Seed / Persistent Data
 async function initD1Database() {
@@ -92,20 +221,39 @@ async function initD1Database() {
       id TEXT PRIMARY KEY,
       data TEXT
     );
+    CREATE TABLE IF NOT EXISTS ip_moderations (
+      id TEXT PRIMARY KEY,
+      ip TEXT,
+      type TEXT,
+      data TEXT
+    );
+    CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY,
+      userId TEXT,
+      timestamp TEXT,
+      data TEXT
+    );
   `);
 
-  // Load existing rows or seed initial data
-  // 1. Users
+  // Check if owner is already present and matches the requested clean state
   const userRows = db.exec("SELECT data FROM users");
+  let shouldReset = false;
   if (userRows.length > 0 && userRows[0].values.length > 0) {
-    serverUsers = userRows[0].values.map((v) => JSON.parse(v[0] as string));
+    const loadedUsers: User[] = userRows[0].values.map((v) => JSON.parse(v[0] as string));
+    const hasCleanOwner = loadedUsers.some(u => u.role === 'owner' && u.username === 'المالك');
+    if (!hasCleanOwner) {
+      console.log("🧹 Detected stale database records. Performing clean reset...");
+      shouldReset = true;
+    } else {
+      serverUsers = loadedUsers;
+    }
   } else {
-    serverUsers = [...INITIAL_USERS];
-    const stmt = db.prepare("INSERT OR REPLACE INTO users (id, username, role, data) VALUES (?, ?, ?, ?)");
-    serverUsers.forEach((u) => {
-      stmt.run([u.id, u.username, u.role, JSON.stringify(u)]);
-    });
-    stmt.free();
+    shouldReset = true;
+  }
+
+  if (shouldReset) {
+    resetD1Database();
+    return;
   }
 
   // 2. Messages
@@ -138,6 +286,35 @@ async function initD1Database() {
     const stmt = db.prepare("INSERT OR REPLACE INTO rooms (id, data) VALUES (?, ?)");
     serverRooms.forEach((r) => {
       stmt.run([r.id, JSON.stringify(r)]);
+    });
+    stmt.free();
+  }
+
+  // 5. Friend Requests
+  const frRows = db.exec("SELECT data FROM friend_requests");
+  if (frRows.length > 0 && frRows[0].values.length > 0) {
+    serverFriendRequests = frRows[0].values.map((v) => JSON.parse(v[0] as string));
+  } else {
+    serverFriendRequests = [];
+  }
+
+  // 6. IP Moderations
+  const ipRows = db.exec("SELECT data FROM ip_moderations");
+  if (ipRows.length > 0 && ipRows[0].values.length > 0) {
+    serverIPModerations = ipRows[0].values.map((v) => JSON.parse(v[0] as string));
+  } else {
+    serverIPModerations = [];
+  }
+
+  // 7. Notifications
+  const notifRows = db.exec("SELECT data FROM notifications");
+  if (notifRows.length > 0 && notifRows[0].values.length > 0) {
+    serverNotifications = notifRows[0].values.map((v) => JSON.parse(v[0] as string));
+  } else {
+    serverNotifications = [...INITIAL_NOTIFICATIONS];
+    const stmt = db.prepare("INSERT OR REPLACE INTO notifications (id, userId, timestamp, data) VALUES (?, ?, ?, ?)");
+    serverNotifications.forEach((n) => {
+      stmt.run([n.id, n.userId, n.timestamp, JSON.stringify(n)]);
     });
     stmt.free();
   }
@@ -209,7 +386,78 @@ function saveRoomsToD1(rooms: Room[]) {
   }
 }
 
+function saveIPModerationToD1(record: IPModerationRecord) {
+  try {
+    const stmt = db.prepare("INSERT OR REPLACE INTO ip_moderations (id, ip, type, data) VALUES (?, ?, ?, ?)");
+    stmt.run([record.id, record.ip, record.type, JSON.stringify(record)]);
+    stmt.free();
+    saveD1ToDisk();
+  } catch (e) {
+    console.error("D1 saveIPModeration error:", e);
+  }
+}
+
+function deleteIPModerationFromD1(idOrIp: string) {
+  try {
+    db.run("DELETE FROM ip_moderations WHERE id = ? OR ip = ?", [idOrIp, idOrIp]);
+    saveD1ToDisk();
+  } catch (e) {
+    console.error("D1 deleteIPModeration error:", e);
+  }
+}
+
+function saveNotificationToD1(notif: Notification) {
+  try {
+    const stmt = db.prepare("INSERT OR REPLACE INTO notifications (id, userId, timestamp, data) VALUES (?, ?, ?, ?)");
+    stmt.run([notif.id, notif.userId, notif.timestamp, JSON.stringify(notif)]);
+    stmt.free();
+    saveD1ToDisk();
+  } catch (e) {
+    console.error("D1 saveNotification error:", e);
+  }
+}
+
+function deleteNotificationFromD1(notifId: string) {
+  try {
+    db.run("DELETE FROM notifications WHERE id = ?", [notifId]);
+    saveD1ToDisk();
+  } catch (e) {
+    console.error("D1 deleteNotification error:", e);
+  }
+}
+
+function markNotificationsReadInD1(userId: string) {
+  try {
+    serverNotifications = serverNotifications.map((n) => (n.userId === userId ? { ...n, isRead: true } : n));
+    db.run("DELETE FROM notifications WHERE userId = ?", [userId]);
+    const stmt = db.prepare("INSERT INTO notifications (id, userId, timestamp, data) VALUES (?, ?, ?, ?)");
+    serverNotifications
+      .filter((n) => n.userId === userId)
+      .forEach((n) => stmt.run([n.id, n.userId, n.timestamp, JSON.stringify(n)]));
+    stmt.free();
+    saveD1ToDisk();
+  } catch (e) {
+    console.error("D1 markNotificationsRead error:", e);
+  }
+}
+
 // REST Endpoints for D1 SQLite DB
+app.post("/api/d1/reset", (req, res) => {
+  resetD1Database();
+  broadcast({ type: "SYNC_USERS", payload: serverUsers });
+  broadcast({ type: "SYNC_ROOMS", payload: serverRooms });
+  broadcast({ type: "SYNC_MESSAGES", payload: serverMessages });
+  broadcast({ type: "SYNC_IP_MODERATIONS", payload: serverIPModerations });
+  res.json({
+    success: true,
+    message: "تم تصفير قاعدة البيانات بنجاح وإنشاء حساب المالك",
+    owner: {
+      username: "المالك",
+      role: "owner"
+    }
+  });
+});
+
 app.get("/api/d1/health", (req, res) => {
   res.json({
     status: "online",
@@ -220,6 +468,8 @@ app.get("/api/d1/health", (req, res) => {
       messages: serverMessages.length,
       privateMessages: serverPrivateMessages.length,
       rooms: serverRooms.length,
+      ipModerations: serverIPModerations.length,
+      notifications: serverNotifications.length,
     },
   });
 });
@@ -234,6 +484,68 @@ app.get("/api/d1/messages", (req, res) => {
 
 app.get("/api/d1/private-messages", (req, res) => {
   res.json({ privateMessages: serverPrivateMessages });
+});
+
+app.get("/api/d1/notifications", (req, res) => {
+  res.json({ notifications: serverNotifications });
+});
+
+app.get("/api/d1/ip-moderations", (req, res) => {
+  res.json({ ipModerations: serverIPModerations });
+});
+
+// Endpoint to check client IP status for ban/kick/mute
+app.get("/api/ip/status", (req, res) => {
+  const ip = getClientIp(req);
+  const now = Date.now();
+
+  // Find active records for this IP
+  const activeRecords = serverIPModerations.filter(rec => {
+    if (rec.ip !== ip && rec.ip !== 'all') return false;
+    if (rec.type === 'ban') return true;
+    if (rec.expiresAt) {
+      return new Date(rec.expiresAt).getTime() > now;
+    }
+    return true;
+  });
+
+  const isBanned = activeRecords.some(r => r.type === 'ban');
+  const isKicked = activeRecords.some(r => r.type === 'kick');
+  const isMuted = activeRecords.some(r => r.type === 'mute');
+
+  res.json({
+    ip,
+    isBanned,
+    isKicked,
+    isMuted,
+    bannedRecord: activeRecords.find(r => r.type === 'ban') || null,
+    kickedRecord: activeRecords.find(r => r.type === 'kick') || null,
+    mutedRecord: activeRecords.find(r => r.type === 'mute') || null,
+    activeRecords,
+    allModerations: serverIPModerations,
+  });
+});
+
+// Endpoint to apply / remove IP moderations directly
+app.post("/api/ip/action", (req, res) => {
+  const { action, record, idOrIp } = req.body || {};
+
+  if (action === "ADD" && record && record.ip) {
+    const existingIdx = serverIPModerations.findIndex(r => r.id === record.id);
+    if (existingIdx !== -1) {
+      serverIPModerations[existingIdx] = record;
+    } else {
+      serverIPModerations.push(record);
+    }
+    saveIPModerationToD1(record);
+    broadcast({ type: "SYNC_IP_MODERATIONS", payload: serverIPModerations });
+  } else if (action === "REMOVE" && idOrIp) {
+    serverIPModerations = serverIPModerations.filter(r => r.id !== idOrIp && r.ip !== idOrIp);
+    deleteIPModerationFromD1(idOrIp);
+    broadcast({ type: "SYNC_IP_MODERATIONS", payload: serverIPModerations });
+  }
+
+  res.json({ success: true, ipModerations: serverIPModerations });
 });
 
 // WebSocket Server on /ws
@@ -259,7 +571,10 @@ wss.on("connection", (ws: WebSocket) => {
         users: serverUsers,
         messages: serverMessages,
         privateMessages: serverPrivateMessages,
+        friendRequests: serverFriendRequests,
         rooms: serverRooms,
+        ipModerations: serverIPModerations,
+        notifications: serverNotifications,
       },
     })
   );
@@ -403,6 +718,65 @@ wss.on("connection", (ws: WebSocket) => {
           break;
         }
 
+        case "MARK_PRIVATE_READ": {
+          const { senderId, receiverId } = payload || {};
+          if (senderId && receiverId) {
+            serverPrivateMessages = serverPrivateMessages.map(pm => {
+              if (pm.senderId === senderId && pm.receiverId === receiverId) {
+                return { ...pm, isRead: true };
+              }
+              return pm;
+            });
+            try {
+              // Update all matching private messages in D1
+              serverPrivateMessages.forEach(pm => {
+                if (pm.senderId === senderId && pm.receiverId === receiverId) {
+                  const stmt = db.prepare("INSERT OR REPLACE INTO private_messages (id, senderId, receiverId, timestamp, data) VALUES (?, ?, ?, ?, ?)");
+                  stmt.run([pm.id, pm.senderId, pm.receiverId, pm.timestamp, JSON.stringify(pm)]);
+                  stmt.free();
+                }
+              });
+              saveD1ToDisk();
+            } catch (e) {
+              console.error("Error marking PMs read in D1:", e);
+            }
+            broadcast({ type: "PRIVATE_MESSAGES_READ", payload: { senderId, receiverId } });
+          }
+          break;
+        }
+
+        case "SEND_FRIEND_REQUEST": {
+          const req: FriendRequest = payload;
+          if (req && !serverFriendRequests.some(r => r.id === req.id)) {
+            serverFriendRequests.push(req);
+            try {
+              const stmt = db.prepare("INSERT OR REPLACE INTO friend_requests (id, data) VALUES (?, ?)");
+              stmt.run([req.id, JSON.stringify(req)]);
+              stmt.free();
+              saveD1ToDisk();
+            } catch (e) {
+              console.error("Error saving friend request to D1:", e);
+            }
+            broadcast({ type: "NEW_FRIEND_REQUEST", payload: req });
+          }
+          break;
+        }
+
+        case "RESPOND_FRIEND_REQUEST": {
+          const { requestId } = payload || {};
+          if (requestId) {
+            serverFriendRequests = serverFriendRequests.filter(r => r.id !== requestId);
+            try {
+              db.run("DELETE FROM friend_requests WHERE id = ?", [requestId]);
+              saveD1ToDisk();
+            } catch (e) {
+              console.error("Error deleting friend request from D1:", e);
+            }
+            broadcast({ type: "FRIEND_REQUEST_RESPONDED", payload: { requestId } });
+          }
+          break;
+        }
+
         case "USER_TYPING": {
           const { userId, username, roomId, isTyping } = payload || {};
           broadcast({ type: "TYPING_STATUS", payload: { userId, username, roomId, isTyping } }, ws);
@@ -420,6 +794,87 @@ wss.on("connection", (ws: WebSocket) => {
               senderName: senderName || "الإدارة"
             }
           });
+          break;
+        }
+
+        case "ADD_IP_MODERATION": {
+          const record: IPModerationRecord = payload;
+          if (record && record.ip) {
+            const existingIdx = serverIPModerations.findIndex(r => r.id === record.id);
+            if (existingIdx !== -1) {
+              serverIPModerations[existingIdx] = record;
+            } else {
+              serverIPModerations.push(record);
+            }
+            saveIPModerationToD1(record);
+            broadcast({ type: "SYNC_IP_MODERATIONS", payload: serverIPModerations });
+
+            if (record.type === "ban" && record.targetUserId) {
+              const userToBan = serverUsers.find(u => u.id === record.targetUserId);
+              if (userToBan) {
+                userToBan.isBanned = true;
+                userToBan.currentRoomId = '';
+                saveUserToD1(userToBan);
+              }
+              serverRooms = serverRooms.map(r => ({
+                ...r,
+                kickedUsers: [...(r.kickedUsers || []).filter(uid => uid !== record.targetUserId), record.targetUserId]
+              }));
+              saveRoomsToD1(serverRooms);
+              broadcast({ type: "USER_BANNED", payload: { userId: record.targetUserId, ip: record.ip, reason: record.reason } });
+              broadcast({ type: "SYNC_USERS", payload: serverUsers });
+              broadcast({ type: "SYNC_ROOMS", payload: serverRooms });
+            }
+          }
+          break;
+        }
+
+        case "BAN_USER": {
+          const { userId, ip, reason } = payload || {};
+          if (userId) {
+            const userToBan = serverUsers.find(u => u.id === userId);
+            if (userToBan) {
+              userToBan.isBanned = true;
+              userToBan.currentRoomId = '';
+              saveUserToD1(userToBan);
+            }
+            serverRooms = serverRooms.map(r => ({
+              ...r,
+              kickedUsers: [...(r.kickedUsers || []).filter(uid => uid !== userId), userId]
+            }));
+            saveRoomsToD1(serverRooms);
+            broadcast({ type: "USER_BANNED", payload: { userId, ip, reason } });
+            broadcast({ type: "SYNC_USERS", payload: serverUsers });
+            broadcast({ type: "SYNC_ROOMS", payload: serverRooms });
+          }
+          break;
+        }
+
+        case "UNBAN_USER": {
+          const { userId, ip } = payload || {};
+          if (userId) {
+            const userToUnban = serverUsers.find(u => u.id === userId);
+            if (userToUnban) {
+              userToUnban.isBanned = false;
+              saveUserToD1(userToUnban);
+            }
+            if (ip) {
+              serverIPModerations = serverIPModerations.filter(r => r.ip !== ip && r.targetUserId !== userId);
+              deleteIPModerationFromD1(ip);
+              broadcast({ type: "SYNC_IP_MODERATIONS", payload: serverIPModerations });
+            }
+            broadcast({ type: "USER_UNBANNED", payload: { userId, ip } });
+          }
+          break;
+        }
+
+        case "REMOVE_IP_MODERATION": {
+          const { idOrIp } = payload || {};
+          if (idOrIp) {
+            serverIPModerations = serverIPModerations.filter(r => r.id !== idOrIp && r.ip !== idOrIp);
+            deleteIPModerationFromD1(idOrIp);
+            broadcast({ type: "SYNC_IP_MODERATIONS", payload: serverIPModerations });
+          }
           break;
         }
 
@@ -441,6 +896,35 @@ wss.on("connection", (ws: WebSocket) => {
 
         case "SYSTEM_CACHE_PURGE": {
           broadcast({ type: "SYSTEM_CACHE_PURGED", payload: { timestamp: Date.now() } });
+          break;
+        }
+
+        case "SEND_NOTIFICATION": {
+          const notif: Notification = payload;
+          if (notif && !serverNotifications.some((n) => n.id === notif.id)) {
+            serverNotifications.unshift(notif);
+            saveNotificationToD1(notif);
+            broadcast({ type: "NEW_NOTIFICATION", payload: notif });
+          }
+          break;
+        }
+
+        case "MARK_NOTIFICATIONS_READ": {
+          const { userId } = payload || {};
+          if (userId) {
+            markNotificationsReadInD1(userId);
+            broadcast({ type: "NOTIFICATIONS_MARKED_READ", payload: { userId } });
+          }
+          break;
+        }
+
+        case "DELETE_NOTIFICATION": {
+          const { notifId } = payload || {};
+          if (notifId) {
+            serverNotifications = serverNotifications.filter((n) => n.id !== notifId);
+            deleteNotificationFromD1(notifId);
+            broadcast({ type: "NOTIFICATION_DELETED", payload: { notifId } });
+          }
           break;
         }
 

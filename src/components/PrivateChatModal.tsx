@@ -17,6 +17,7 @@ export const PrivateChatModal: React.FC = () => {
     setIsPrivateChatOpen, activePrivateUserId, setActivePrivateUserId,
     currentUser, users, privateMessages, sendPrivateMessage, deletePrivateMessages,
     isUserBlocked, setSelectedUserForProfile, toggleIgnore, updateUserProfile,
+    requestBlockConfirm,
     hiddenPrivateUserIds, hidePrivateConversation, clearAllPrivateConversations,
     audioSettings, updateAudioSettings
   } = useChat();
@@ -178,8 +179,13 @@ export const PrivateChatModal: React.FC = () => {
                       setIsGearMenuOpen(false);
                       if (targetUser) {
                         if (canBeIgnored(targetUser)) {
-                          toggleIgnore(targetUser.id);
-                          deletePrivateMessages(targetUser.id);
+                          const isIgnored = currentUser?.ignoredUsers?.includes(targetUser.id);
+                          requestBlockConfirm(targetUser, isIgnored ? 'unblock' : 'block', () => {
+                            toggleIgnore(targetUser.id);
+                            if (!isIgnored) {
+                              deletePrivateMessages(targetUser.id);
+                            }
+                          });
                         } else {
                           alert('عفواً، لا يمكنك تجاهل رتب الإدارة العليا 🛡️');
                         }
@@ -187,7 +193,7 @@ export const PrivateChatModal: React.FC = () => {
                     }}
                     className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-slate-50 text-slate-800 cursor-pointer transition-colors"
                   >
-                    <span>تجاهل</span>
+                    <span>{currentUser?.ignoredUsers?.includes(targetUser?.id || '') ? 'إلغاء التجاهل' : 'تجاهل'}</span>
                     <Ban className="w-4 h-4 text-sky-500" />
                   </button>
 

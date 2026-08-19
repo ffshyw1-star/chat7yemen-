@@ -90,8 +90,8 @@ export const ChatHeader: React.FC = () => {
                   </button>
                 )}
 
-                {/* Room Settings for Management/Admin (Non-owner staff) */}
-                {isManagementOrHigher && currentUser.role !== 'owner' && (
+                {/* Room Settings for Management, Admin & Owner */}
+                {isManagementOrHigher && (
                   <button
                     onClick={() => {
                       setIsProfileMenuOpen(false);
@@ -104,8 +104,8 @@ export const ChatHeader: React.FC = () => {
                   </button>
                 )}
 
-                {/* Stealth Mode for Staff */}
-                {isModOrHigher && (
+                {/* Stealth Mode (وضع الاختفاء) - للمالك فقط */}
+                {currentUser.role === 'owner' && (
                   <button
                     onClick={() => {
                       setIsProfileMenuOpen(false);

@@ -39,7 +39,8 @@ export const OwnerDashboardModal: React.FC = () => {
     purgeSystemCache,
     toggleAdminStealth,
     deleteUserAccount,
-    logout
+    logout,
+    requestBlockConfirm
   } = useChat();
 
   const [activeWindow, setActiveWindow] = useState<
@@ -1231,15 +1232,23 @@ export const OwnerDashboardModal: React.FC = () => {
 
                           {usr.isBanned ? (
                             <button
-                              onClick={() => unbanUser(usr.id)}
-                              className="px-2.5 py-1 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700 text-emerald-300 rounded-lg text-[10px] font-bold cursor-pointer"
+                              onClick={() => {
+                                requestBlockConfirm(usr, 'unban', () => {
+                                  unbanUser(usr.id);
+                                });
+                              }}
+                              className="px-2.5 py-1 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700 text-emerald-300 rounded-lg text-[10px] font-bold cursor-pointer transition-colors"
                             >
                               إلغاء الحظر
                             </button>
                           ) : (
                             <button
-                              onClick={() => banUser(usr.id, 'حظر إداري من لوحة المالك')}
-                              className="px-2.5 py-1 bg-rose-950/80 hover:bg-rose-900 border border-rose-700 text-rose-300 rounded-lg text-[10px] font-bold cursor-pointer"
+                              onClick={() => {
+                                requestBlockConfirm(usr, 'ban', () => {
+                                  banUser(usr.id, 'حظر إداري من لوحة المالك');
+                                });
+                              }}
+                              className="px-2.5 py-1 bg-rose-950/80 hover:bg-rose-900 border border-rose-700 text-rose-300 rounded-lg text-[10px] font-bold cursor-pointer transition-colors"
                             >
                               حظر
                             </button>
@@ -1387,8 +1396,12 @@ export const OwnerDashboardModal: React.FC = () => {
                         <div key={b.id} className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl flex items-center justify-between">
                           <span className="text-xs font-bold text-white">{b.username}</span>
                           <button
-                            onClick={() => unbanUser(b.id)}
-                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg cursor-pointer"
+                            onClick={() => {
+                              requestBlockConfirm(b, 'unban', () => {
+                                unbanUser(b.id);
+                              });
+                            }}
+                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg cursor-pointer transition-colors"
                           >
                             فك الحظر
                           </button>
