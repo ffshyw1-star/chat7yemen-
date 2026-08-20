@@ -174,9 +174,9 @@ export const RoomsPage: React.FC = () => {
           const onlineInRoom = users.filter(u => {
             if (u.isBanned) return false;
             if (u.role === 'owner' && u.isStealth && currentUser?.role !== 'owner') return false;
-            return u.currentRoomId === room.id && u.onlineStatus !== 'offline';
+            return (u.currentRoomId || 'room-general') === room.id && u.onlineStatus !== 'offline';
           }).length;
-          const totalUsersCount = (room.baseUserCount || 0) + onlineInRoom;
+          const totalUsersCount = onlineInRoom;
           const isLocked = Boolean(room.password && room.password.trim() !== '');
 
           return (

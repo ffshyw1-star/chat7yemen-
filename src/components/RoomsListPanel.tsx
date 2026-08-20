@@ -15,10 +15,9 @@ export const RoomsListPanel: React.FC = () => {
     const activeInRoom = users.filter(u => {
       if (u.isBanned) return false;
       if (u.role === 'owner' && u.isStealth && currentUser?.role !== 'owner') return false;
-      return u.currentRoomId === room.id;
+      return (u.currentRoomId || 'room-general') === room.id && u.onlineStatus !== 'offline';
     }).length;
-    const totalCount = (room.baseUserCount || 0) + activeInRoom;
-    return { ...room, totalCount };
+    return { ...room, totalCount: activeInRoom };
   }).sort((a, b) => b.totalCount - a.totalCount);
 
   return (

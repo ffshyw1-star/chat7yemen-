@@ -71,7 +71,7 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
 
   const isSystem = username === 'System' || username === 'system' || (role as string) === 'system';
 
-  const effectiveAvatar = resolveUserAvatar(avatarUrl, gender);
+  const effectiveAvatar = resolveUserAvatar(avatarUrl, gender, role);
 
   return (
     <div className={`relative inline-block shrink-0 ${className}`}>
@@ -85,7 +85,7 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
           referrerPolicy="no-referrer"
           onError={(e) => {
             const target = e.currentTarget;
-            const fallback = gender === 'female' ? '/default_female.svg' : '/default_male.svg';
+            const fallback = role === 'visitor' ? '/default_guest.svg' : (gender === 'female' ? '/default_female.svg' : '/default_male.svg');
             if (target.src !== fallback) {
               target.src = fallback;
             }

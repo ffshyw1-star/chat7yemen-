@@ -1,4 +1,4 @@
-import { Room, User, Message, PrivateMessage, Report, NewsPost, WallPost, Notification, StoreItem, ModLogEntry, RoomActivityLog } from '../types';
+import { Room, User, Message, PrivateMessage, Report, NewsPost, WallPost, Notification, StoreItem, ModLogEntry, RoomActivityLog, SiteSettings } from '../types';
 
 export const INITIAL_ROOMS: Room[] = [
   {
@@ -6,36 +6,31 @@ export const INITIAL_ROOMS: Room[] = [
     name: 'غرفة العام',
     flag: '🌎',
     description: 'الملتقى الرئيسي لجميع الزوار والأعضاء للتواصل والدردشة العامة',
-    isDefault: true,
-    baseUserCount: 15
+    isDefault: true
   },
   {
     id: 'room-yemen',
     name: 'غرفة اليمن',
     flag: '🇾🇪',
-    description: 'غرفة أصل وفخامة السعيدة، تجمع الأحبة من صنعاء وعدن وتعز وكافة المحافظات',
-    baseUserCount: 8
+    description: 'غرفة أصل وفخامة السعيدة، تجمع الأحبة من صنعاء وعدن وتعز وكافة المحافظات'
   },
   {
     id: 'room-algeria',
     name: 'غرفة الجزائر',
     flag: '🇩🇿',
-    description: 'غرفة مليون ونصف مليون شهيد، ترحيب خاص بإخواننا في الجزائر',
-    baseUserCount: 5
+    description: 'غرفة مليون ونصف مليون شهيد، ترحيب خاص بإخواننا في الجزائر'
   },
   {
     id: 'room-egypt',
     name: 'غرفة مصر',
     flag: '🇪🇬',
-    description: 'أم الدنيا وغرفة المحبة والابتسامة وخفة الدم المصرية',
-    baseUserCount: 4
+    description: 'أم الدنيا وغرفة المحبة والابتسامة وخفة الدم المصرية'
   },
   {
     id: 'room-saudi',
     name: 'غرفة السعودية',
     flag: '🇸🇦',
-    description: 'غرفة أهل الكرم والجود في المملكة العربية السعودية',
-    baseUserCount: 3
+    description: 'غرفة أهل الكرم والجود في المملكة العربية السعودية'
   }
 ];
 
@@ -59,7 +54,9 @@ export const INITIAL_USERS: User[] = [
     countryFlag: '⚙️',
     currentRoomId: 'room-general',
     joinedDate: '01/01/2026',
+    joinedTimestamp: 1767225600000,
     lastSeen: 'الآن',
+    lastSeenTimestamp: 1767225600000,
     usernameColor: '#00a2e8',
     fontColor: '#00a2e8',
     fontSize: 16,
@@ -89,7 +86,9 @@ export const INITIAL_USERS: User[] = [
     countryFlag: '🇾🇪',
     currentRoomId: 'room-general',
     joinedDate: '01/01/2026',
+    joinedTimestamp: 1767225600000,
     lastSeen: 'الآن',
+    lastSeenTimestamp: 1767225600000,
     usernameColor: '#f59e0b',
     fontColor: '#fbbf24',
     fontSize: 16,
@@ -166,4 +165,44 @@ export const INITIAL_STORE_ITEMS: StoreItem[] = [
 export const PROFANITY_WORDS = ['سب1', 'سب2', 'احتيال', 'شتيمة', 'كلمة_مسيئة'];
 
 export const INITIAL_ROOM_ACTIVITY_LOGS: RoomActivityLog[] = [];
+
+export const INITIAL_SITE_SETTINGS: SiteSettings = {
+  siteName: 'دردشة عربي المطورة',
+  siteLogoEmoji: '💬',
+  timeZone: 'Asia/Riyadh',
+  defaultLanguage: 'ar',
+  defaultTheme: 'light',
+  primaryColor: '#0284c7',
+  welcomePanoramaUrl: '',
+  panoramaCarouselEnabled: false,
+  allowGuestChat: true,
+  allowGuestVoice: true,
+  maxMessagesPerMinute: 30,
+  maxMessageLength: 500,
+  autoBotAntiSpam: true,
+  paymentKuraimi: true,
+  paymentUsdt: true,
+  paymentPayeer: true,
+  paymentMoneygram: true,
+  supportEmail: 'support@chat.ye',
+  facebookUrl: '',
+  telegramUrl: '',
+  whatsappNumber: '',
+  showOnlineCount: true,
+  showThirdPartyAds: false,
+  sendEmailNotifications: false,
+  onlinePresenceTimeoutHours: 0, // 0 = instant, 6, 12, 24, 48, -1 = forever
+  hideRoomSwitchNotifications: false, // Owner toggle for hiding room movement
+  antiFloodEnabled: true,
+  floodMaxMessages: 6,
+  floodWindowSeconds: 4,
+  floodMaxRepeated: 3,
+  floodAction: 'warn',
+  floodMuteDurationMinutes: 5,
+  antiSpamLinks: true,
+  antiSpamCaps: false,
+  guestChatMode: 'allowed',
+  requireEmailVerification: false,
+  enableCookieBan: true
+};
 

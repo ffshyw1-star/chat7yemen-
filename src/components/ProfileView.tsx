@@ -300,6 +300,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (isSystemTarget) {
+      if (!isOwner) {
+        alert('🚫 المالك فقط من يملك الصلاحية لتعديل صورة حساب النظام (System)!');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        ownerUpdateUser(target.id || 'user-system', { avatar: result });
+        showTopBanner('📸 تم تحديث صورة System بنجاح وحفظها في السيرفر');
+      };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+      return;
+    }
     if (!canUserEditTargetPhotos) {
       alert('🚫 ليس لديك الصلاحية لتعديل الصورة الشخصية لهذا العضو بحسب الرتبة!');
       return;
@@ -382,9 +397,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   // Current room info for target user
   const targetRoom = rooms.find(r => r.id === target.currentRoomId) || rooms[0];
 
-  // Target user's friends list
-  const friendUsers = users.filter(u => target.friends?.includes(u.id));
-  const displayFriends = friendUsers.length > 0 ? friendUsers : users.filter(u => u.id !== target.id);
+  // Target user's friends list (Strictly excluding System and Visitors)
+  const friendUsers = users.filter(u =>
+    target.friends?.includes(u.id) &&
+    u.id !== 'user-system' &&
+    u.id !== 'system' &&
+    u.username !== 'System' &&
+    u.role !== 'visitor'
+  );
+  const displayFriends = friendUsers;
 
   // Moderation logs for target user
   const targetModLogs = modLogs.filter(m => m.targetUserId === target.id || m.targetUsername === target.username);
@@ -648,6 +669,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   const content = isSystemTarget ? (
     <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-lg max-h-[92vh] flex flex-col overflow-hidden shadow-2xl relative select-none text-slate-800 font-sans">
+      {/* Hidden File Input for System Avatar Upload (Owner Only) */}
+      <input
+        type="file"
+        ref={avatarInputRef}
+        onChange={handleAvatarFileChange}
+        accept="image/*"
+        className="hidden"
+      />
+
       {/* 1. System Header (Dark Teal #072a32) */}
       <div className="bg-[#072a32] p-4 sm:p-5 relative flex flex-col justify-between shrink-0 min-h-[160px] sm:min-h-[180px]">
         {/* Top Control Bar on Left: X (Close) & ≡ (Menu) */}
@@ -703,10 +733,29 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           {/* Avatar on Right side */}
           <div className="relative shrink-0">
             <div className="w-20 h-20 sm:w-24 sm:h-24 bg-[#0a1820] rounded-2xl border-2 border-white shadow-xl flex items-center justify-center relative p-1">
-              <div className="w-full h-full rounded-xl border-2 border-white/90 flex items-center justify-center">
-                <span className="text-white font-black text-4xl sm:text-5xl select-none">!</span>
+              <div className="w-full h-full rounded-xl border-2 border-white/90 flex items-center justify-center overflow-hidden bg-slate-900">
+                {target.avatar && target.avatar !== '/default_male.svg' && target.avatar.trim() !== '' ? (
+                  <img src={target.avatar} alt="System Avatar" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                ) : (
+                  <span className="text-white font-black text-4xl sm:text-5xl select-none">!</span>
+                )}
               </div>
               <span className="absolute bottom-1 right-1 w-4 h-4 bg-[#84cc16] border-2 border-[#072a32] rounded-full shadow-xs"></span>
+
+              {/* Small Camera Icon visible ONLY to the Owner to change System avatar */}
+              {isOwner && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    avatarInputRef.current?.click();
+                  }}
+                  className="absolute -top-2 -left-2 w-7 h-7 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 rounded-full border-2 border-white shadow-lg flex items-center justify-center cursor-pointer transition-transform hover:scale-110 z-30"
+                  title="تغيير صورة System (خاص بالمالك)"
+                >
+                  <Camera className="w-3.5 h-3.5 stroke-[2.5]" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -1428,7 +1477,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 <span className="text-slate-700 font-bold text-sm">آخر تواجد</span>
                 <span className="font-semibold text-slate-600 text-sm flex items-center gap-1.5 dir-ltr">
                   <span className={`w-2 h-2 rounded-full shrink-0 ${target.onlineStatus === 'online' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
-                  <span>{formatLastSeenDateTime(target.lastSeen)}</span>
+                  <span>{formatLastSeenDateTime(target.lastSeen, target.lastSeenTimestamp, target.onlineStatus === 'online')}</span>
                   {target.role === 'owner' && target.isStealth && (
                     <span className="text-[10px] text-purple-600 font-bold dir-rtl mr-1">🕵️‍♂️ (مخفي)</span>
                   )}

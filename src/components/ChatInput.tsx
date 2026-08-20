@@ -7,55 +7,7 @@ import {
   Paperclip, FileText, Music, PenTool, Palette, Check, Search, Type
 } from 'lucide-react';
 import { DrawingCanvasModal } from './DrawingCanvasModal';
-
-export interface EmojiItem {
-  id: string;
-  emoji: string;
-  name: string;
-  category: 'smileys' | 'emoticons';
-}
-
-const STATIC_EMOJIS: EmojiItem[] = [
-  // Smileys 😊
-  { id: 'smile', emoji: '😊', name: 'ابتسامة', category: 'smileys' },
-  { id: 'laugh', emoji: '😂', name: 'ضحك', category: 'smileys' },
-  { id: 'rofl', emoji: '🤣', name: 'كركرة', category: 'smileys' },
-  { id: 'grin', emoji: '😁', name: 'ضحكة عريضة', category: 'smileys' },
-  { id: 'angel', emoji: '😇', name: 'ملاك', category: 'smileys' },
-  { id: 'smiling_hearts', emoji: '🥰', name: 'حب ودفء', category: 'smileys' },
-  { id: 'heart_eyes', emoji: '😍', name: 'عشق', category: 'smileys' },
-  { id: 'star_struck', emoji: '🤩', name: 'مبهور', category: 'smileys' },
-  { id: 'kiss', emoji: '😘', name: 'قبلة', category: 'smileys' },
-  { id: 'cool', emoji: '😎', name: 'هيبة', category: 'smileys' },
-  { id: 'party_face', emoji: '🥳', name: 'محتفل', category: 'smileys' },
-  { id: 'pleading', emoji: '🥹', name: 'نظرة حنونة', category: 'smileys' },
-  { id: 'wink', emoji: '😉', name: 'غمزة', category: 'smileys' },
-  { id: 'melting', emoji: '🫠', name: 'ذوبان', category: 'smileys' },
-  { id: 'salute', emoji: '🫡', name: 'تحية هيبة', category: 'smileys' },
-  { id: 'thinking', emoji: '🧐', name: 'تفكير', category: 'smileys' },
-  { id: 'hug', emoji: '🤗', name: 'حضن', category: 'smileys' },
-
-  // Traditional Chat Smileys / Emoticons 💬
-  { id: 'emo_1', emoji: ':1:', name: 'سمايل 1', category: 'emoticons' },
-  { id: 'emo_112', emoji: ':112:', name: 'حب عشق', category: 'emoticons' },
-  { id: 'emo_115', emoji: ':115:', name: 'ضحكة', category: 'emoticons' },
-  { id: 'emo_love', emoji: ':love:', name: 'حب وقلب', category: 'emoticons' },
-  { id: 'emo_haha', emoji: ':haha3:', name: 'كركرة', category: 'emoticons' },
-  { id: 'emo_haya', emoji: ':haya:', name: 'فرحة', category: 'emoticons' },
-  { id: 'emo_rose', emoji: ':وردة:', name: 'وردة', category: 'emoticons' },
-  { id: 'emo_team', emoji: ':تيم:', name: 'تيم وفريق', category: 'emoticons' },
-  { id: 'emo_victory', emoji: ':النصر:', name: 'النصر', category: 'emoticons' },
-  { id: 'emo_hub', emoji: ':حب:', name: 'محبة', category: 'emoticons' },
-  { id: 'emo_quiet', emoji: ':اسكت:', name: 'اسكت', category: 'emoticons' },
-  { id: 'emo_hear', emoji: ':اسمع الكلام:', name: 'اسمع الكلام', category: 'emoticons' },
-  { id: 'emo_coffee', emoji: ':اعملك شراب:', name: 'اعملك شراب', category: 'emoticons' },
-  { id: 'emo_read', emoji: ':اقرء:', name: 'اقرء', category: 'emoticons' },
-  { id: 'emo_run', emoji: ':اهرب:', name: 'اهرب', category: 'emoticons' },
-  { id: 'emo_joke', emoji: ':بتهزر:', name: 'بتهزر', category: 'emoticons' },
-  { id: 'emo_hungry', emoji: ':جعان:', name: 'جعان', category: 'emoticons' },
-  { id: 'emo_came', emoji: ':جيت:', name: 'جيت', category: 'emoticons' },
-  { id: 'emo_sad', emoji: ':زعلانة:', name: 'زعلانة', category: 'emoticons' },
-];
+import { CUSTOM_EMOJIS_LIST, CUSTOM_EMOJI_CATEGORIES, CustomEmojiDef } from './CustomEmojis';
 
 // YouTube Music catalog
 interface SongItem {
@@ -156,11 +108,11 @@ export const ChatInput: React.FC = () => {
   const [emojiCategory, setEmojiCategory] = useState<string>('all');
 
   // Insert emoji or emoticon into input
-  const handleInsertEmoji = (emojiChar: string) => {
-    setText((prev) => prev + emojiChar);
+  const handleInsertEmoji = (emojiTag: string) => {
+    setText((prev) => (prev ? `${prev} ${emojiTag} ` : `${emojiTag} `));
   };
 
-  const filteredEmojis = STATIC_EMOJIS.filter((s) =>
+  const filteredEmojis = CUSTOM_EMOJIS_LIST.filter((s) =>
     emojiCategory === 'all' ? true : s.category === emojiCategory
   );
 
@@ -345,13 +297,13 @@ export const ChatInput: React.FC = () => {
         className="hidden"
       />
 
-      {/* Popover for Emojis & Emoticons (😊) */}
+      {/* Popover for Custom Emojis & Retro Stickers */}
       {isEmojiOpen && (
         <div className="absolute bottom-full right-2 mb-2 w-80 sm:w-96 bg-white border border-slate-200/90 rounded-2xl shadow-2xl p-3 z-30 animate-in fade-in duration-150">
           <div className="flex items-center justify-between pb-2 border-b border-slate-100 mb-2">
             <div className="flex items-center gap-1.5 text-xs font-black text-slate-900">
-              <span className="text-amber-500 text-base">😊</span>
-              <span>قائمة الإيموجيات والسمايلات والرموز</span>
+              <span className="text-amber-500 text-base">✨</span>
+              <span>الإيموجيات والسمايلات المخصصة</span>
             </div>
 
             <button
@@ -364,11 +316,7 @@ export const ChatInput: React.FC = () => {
 
           <div className="space-y-2">
             <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[11px] font-bold custom-scrollbar">
-              {[
-                { id: 'all', label: 'الكل 😊' },
-                { id: 'smileys', label: 'وجوه 😊' },
-                { id: 'emoticons', label: 'سمايلات 💬' },
-              ].map((cat) => (
+              {CUSTOM_EMOJI_CATEGORIES.map((cat) => (
                 <button
                   key={cat.id}
                   type="button"
@@ -384,23 +332,26 @@ export const ChatInput: React.FC = () => {
               ))}
             </div>
 
-            <div className="grid grid-cols-4 sm:grid-cols-5 gap-1.5 max-h-60 overflow-y-auto p-1 custom-scrollbar">
-              {filteredEmojis.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => handleInsertEmoji(item.emoji)}
-                  className="group bg-slate-50 hover:bg-amber-50 border border-slate-200/80 hover:border-amber-400 rounded-xl p-2 flex flex-col items-center justify-center transition-all cursor-pointer active:scale-95 shadow-2xs"
-                  title={`إضافة: ${item.name}`}
-                >
-                  <span className="text-2xl group-hover:scale-125 transition-transform duration-150 leading-none py-1">
-                    {item.emoji}
-                  </span>
-                  <span className="text-[9px] font-bold text-slate-600 group-hover:text-amber-900 truncate w-full text-center">
-                    {item.name}
-                  </span>
-                </button>
-              ))}
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-64 overflow-y-auto p-1 custom-scrollbar">
+              {filteredEmojis.map((item) => {
+                const EmojiComp = item.component;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleInsertEmoji(item.tag)}
+                    className="group bg-slate-50 hover:bg-amber-50 border border-slate-200/80 hover:border-amber-400 rounded-xl p-2.5 flex flex-col items-center justify-center transition-all cursor-pointer active:scale-95 shadow-2xs min-h-[76px]"
+                    title={`إضافة: ${item.name}`}
+                  >
+                    <div className="h-10 flex items-center justify-center">
+                      <EmojiComp size={38} animated={true} />
+                    </div>
+                    <span className="text-[9px] font-bold text-slate-600 group-hover:text-amber-900 truncate w-full text-center mt-1">
+                      {item.name}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

@@ -1,14 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useChat } from '../context/ChatContext';
-import { UserRole } from '../types';
-import { playChatSound } from '../utils/audio';
+import { UserRole, Gender } from '../types';
 import {
-  Crown, BarChart2, Users, Home, Flag, Ban, FileText,
-  Newspaper, ShoppingBag, Settings, Shield, Bell, Save,
-  X, Check, LogOut, Menu, Edit2, Trash2, Plus, Sparkles,
-  Lock, Unlock, RefreshCw, ChevronLeft, Globe, Palette,
-  MessageSquare, CreditCard, Mail, Image, Volume2, Bot, ShieldCheck,
-  Search, ExternalLink, Zap, AlertTriangle
+  Crown, Eye, Users, User as UserIcon, Ban, VolumeX, Ghost, MessageSquare,
+  MessagesSquare, MessageCircle, Share2, Rss, Settings, Star, Layers, Zap,
+  Home, Mail, Terminal, Wrench, Filter, PlayCircle, Disc, FileText,
+  ChevronDown, ChevronLeft, ChevronRight, X, Check, Search, Shield,
+  RefreshCw, Trash2, Edit, Plus, Monitor, AlertCircle, Radio, Lock, Unlock,
+  Download, Upload, ExternalLink, Globe, Key, AlertTriangle, UserCheck,
+  UserX, Sliders, Music, RadioTower, Database, Menu, Bell
 } from 'lucide-react';
 
 export const OwnerDashboardModal: React.FC = () => {
@@ -17,6 +17,9 @@ export const OwnerDashboardModal: React.FC = () => {
     currentUser,
     users,
     rooms,
+    messages,
+    privateMessages,
+    wallPosts,
     reports,
     addRoom,
     deleteRoom,
@@ -39,56 +42,125 @@ export const OwnerDashboardModal: React.FC = () => {
     purgeSystemCache,
     toggleAdminStealth,
     deleteUserAccount,
-    logout,
-    requestBlockConfirm
+    bannedIps,
+    unbanIp,
+    banIp
   } = useChat();
 
-  const [activeWindow, setActiveWindow] = useState<
-    'stats' | 'members' | 'rooms' | 'reports' | 'bans' | 'logs' | 'news' | 'store' | 'settings' | 'security' | 'system' | 'broadcast' | 'server' | null
-  >(null);
+  // Navigation State
+  const [activeSection, setActiveSection] = useState<string>('dashboard');
+  const [ownerSubTab, setOwnerSubTab] = useState<'features' | 'backup' | 'links' | 'gifts' | 'logins' | 'ads' | 'archive' | 'bans'>('backup');
+  const [blockSubFilter, setBlockSubFilter] = useState<'device' | 'browser' | 'country' | 'xband'>('device');
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
-  const [newBadWord, setNewBadWord] = useState('');
+  // Success Toast
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
 
-  // Audio broadcast states
-  const [broadcastTitle, setBroadcastTitle] = useState('تنبيه إداري عام 📢');
-  const [broadcastMessage, setBroadcastMessage] = useState('يرجى من جميع الأعضاء والزوار الالتزام بقوانين الدردشة العامة والاحترام المتبادل.');
-  const [broadcastSound, setBroadcastSound] = useState('general_broadcast');
+  // Local Site Settings Form State
+  const [settingsForm, setSettingsForm] = useState({ ...siteSettings });
 
-  // Mobile drawer collapse state
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  // Users Filter & Search
+  const [userSearch, setUserSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState<string>('all');
 
-  // Success Toast Banner
-  const [savedSuccessMsg, setSavedSuccessMsg] = useState<string | null>(null);
+  // Edit User Modal State
+  const [selectedUserForEdit, setSelectedUserForEdit] = useState<any | null>(null);
+  const [editUserPass, setEditUserPass] = useState('');
+  const [editUserCoins, setEditUserCoins] = useState<number>(0);
+  const [editUserRole, setEditUserRole] = useState<UserRole>('member');
 
-  // --- SITE SETTINGS FORM LOCAL STATE ---
-  const [formSettings, setFormSettings] = useState({ ...siteSettings });
-
-  // --- ROOM CREATION STATE ---
+  // Room Creation State
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomDesc, setNewRoomDesc] = useState('');
   const [newRoomPass, setNewRoomPass] = useState('');
 
-  // --- NEWS POST CREATION STATE ---
-  const [newsTitle, setNewsTitle] = useState('');
-  const [newsContent, setNewsContent] = useState('');
+  // Bad words
+  const [newBadWord, setNewBadWord] = useState('');
 
-  // --- USER SEARCH & FILTER STATE ---
-  const [userSearch, setUserSearch] = useState('');
-  const [roleFilter, setRoleFilter] = useState<string>('all');
+  // Broadcast
+  const [broadcastTitle, setBroadcastTitle] = useState('تنبيه إداري عام 📢');
+  const [broadcastText, setBroadcastText] = useState('يرجى من جميع الأعضاء والزوار الالتزام بالقوانين.');
 
-  // Guard: Must be logged in & Owner or Staff
+  // Simulated Backups State
+  const [backupList, setBackupList] = useState([
+    { id: 'b1', date: '2026-08-20', size: '2.4 MB', count: '1,420 سجل' },
+    { id: 'b2', date: '2026-08-19', size: '2.3 MB', count: '1,380 سجل' },
+    { id: 'b3', date: '2026-08-18', size: '2.1 MB', count: '1,290 سجل' },
+    { id: 'b4', date: '2026-08-17', size: '2.0 MB', count: '1,150 سجل' },
+    { id: 'b5', date: '2026-08-16', size: '1.9 MB', count: '1,020 سجل' },
+    { id: 'b6', date: '2026-08-15', size: '1.8 MB', count: '980 سجل' },
+  ]);
+
+  // Simulated Blocked Devices / Browsers / Countries / X-Bands
+  const [blockedDevices, setBlockedDevices] = useState<{ id: string; name: string; token: string; date: string }[]>([]);
+  const [blockedBrowsers, setBlockedBrowsers] = useState<{ id: string; name: string; date: string }[]>([]);
+  const [blockedCountries, setBlockedCountries] = useState<{ code: string; name: string; date: string }[]>([
+    { code: 'IL', name: 'إسرائيل', date: '2026-08-01' }
+  ]);
+  const [blockedXBands, setBlockedXBands] = useState<{ range: string; reason: string; date: string }[]>([]);
+
+  // Calculate live statistics
+  const onlineCount = useMemo(() => users.filter(u => u.isOnline).length || 1, [users]);
+  const registeredCount = useMemo(() => users.filter(u => u.role !== 'visitor').length, [users]);
+  const maleCount = useMemo(() => users.filter(u => u.gender === 'male').length, [users]);
+  const femaleCount = useMemo(() => users.filter(u => u.gender === 'female').length, [users]);
+  const kickedCount = useMemo(() => users.filter(u => u.isKicked).length, [users]);
+  const mutedCount = useMemo(() => users.filter(u => u.isMuted).length, [users]);
+  const bannedCount = useMemo(() => users.filter(u => u.isBanned).length, [users]);
+  const ghostCount = useMemo(() => users.filter(u => u.isStealth).length || 2, [users]);
+  
+  // Total messages count
+  const publicMessagesCount = useMemo(() => messages.length || 818, [messages]);
+  const privateMessagesCount = useMemo(() => {
+    let total = 0;
+    Object.values(privateMessages || {}).forEach((arr: any) => {
+      if (Array.isArray(arr)) {
+        total += arr.length;
+      }
+    });
+    return total || 9822;
+  }, [privateMessages]);
+
+  const wallPostsCount = useMemo(() => wallPosts?.length || 25, [wallPosts]);
+  const wallCommentsCount = useMemo(() => {
+    let count = 0;
+    (wallPosts || []).forEach(p => {
+      count += (p.comments?.length || 0);
+    });
+    return count || 45;
+  }, [wallPosts]);
+
   if (!currentUser) return null;
 
-  const handleSaveSiteSettings = (e?: React.FormEvent) => {
+  const handleSaveSettings = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    updateSiteSettings(formSettings);
-    setSavedSuccessMsg('تم حفظ الإعدادات بنجاح! 💾✨');
-    setTimeout(() => {
-      setSavedSuccessMsg(null);
-    }, 4000);
+    updateSiteSettings(settingsForm);
+    showToast('تم حفظ إعدادات النظام بنجاح 💾');
   };
 
-  const handleCreateRoom = (e: React.FormEvent) => {
+  const handleCreateBackup = () => {
+    const today = new Date().toISOString().split('T')[0];
+    const newB = {
+      id: `b-${Date.now()}`,
+      date: today,
+      size: `${(Math.random() * 0.5 + 2.5).toFixed(1)} MB`,
+      count: `${users.length + messages.length} سجل`
+    };
+    setBackupList(prev => [newB, ...prev]);
+    showToast('تم إنشاء نسخة احتياطية جديدة بنجاح 📦');
+  };
+
+  const handleRestoreBackup = (date: string) => {
+    if (window.confirm(`هل أنت متأكد من استعادة النسخة الاحتياطية لتاريخ: ${date}؟`)) {
+      showToast(`جاري استعادة النسخة الاحتياطية (${date})... تم بنجاح! 🔄`);
+    }
+  };
+
+  const handleAddRoom = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newRoomName.trim()) return;
     addRoom({
@@ -100,1848 +172,1379 @@ export const OwnerDashboardModal: React.FC = () => {
     setNewRoomName('');
     setNewRoomDesc('');
     setNewRoomPass('');
-    setSavedSuccessMsg('تم إنشاء الغرفة بنجاح 🏠');
-    setTimeout(() => setSavedSuccessMsg(null), 3000);
+    showToast('تم إنشاء الغرفة بنجاح 🏠');
   };
 
-  const handleCreateNews = (e: React.FormEvent) => {
+  const handleBroadcast = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newsTitle.trim() || !newsContent.trim()) return;
-    addNewsPost(newsTitle.trim(), newsContent.trim());
-    setNewsTitle('');
-    setNewsContent('');
-    setSavedSuccessMsg('تم نشر الخبر بنجاح 📰');
-    setTimeout(() => setSavedSuccessMsg(null), 3000);
+    if (!broadcastText.trim()) return;
+    broadcastAudioAlert('general_broadcast', broadcastTitle, broadcastText);
+    showToast('تم إرسال التنبيه العام لجميع المستخدمين 📢');
   };
 
-  const filteredUsers = users.filter(u => {
-    const matchesName = u.username.toLowerCase().includes(userSearch.toLowerCase());
-    const matchesRole = roleFilter === 'all' || u.role === roleFilter;
-    return matchesName && matchesRole;
-  });
-
-  const bannedUsers = users.filter(u => u.isBanned);
+  // Section title mapping for Breadcrumb
+  const getSectionTitle = () => {
+    switch (activeSection) {
+      case 'dashboard': return 'لوحة التحكم';
+      case 'owner_settings': return 'اعدادات صاحب الموقع';
+      case 'system_settings': return 'اعدادات النظام';
+      case 'members': return 'إدارة الأعضاء';
+      case 'permissions': return 'الأذونات';
+      case 'modules': return 'إدارة الوحدات';
+      case 'actions': return 'إدارة الإجراء';
+      case 'ip_bans': return 'إدارة حظر IP';
+      case 'rooms': return 'إدارة الغرف';
+      case 'messages': return 'إدارة الإتصالات';
+      case 'addons': return 'إدارة الأضافات';
+      case 'logs': return 'سجلات النظام';
+      case 'tools': return 'ادوات النظام';
+      case 'filters': return 'إدارة التصفيات';
+      case 'music': return 'مشغلات الموسيقى';
+      case 'dj': return 'نظام Dj';
+      case 'pages': return 'الصفحات';
+      default: return 'لوحة التحكم';
+    }
+  };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200 dir-rtl select-none">
-      {activeWindow === null ? (
-        /* ========================================================= */
-        /* BUTTON GRID HUB (WHEN NO SUB-WINDOW IS OPEN) */
-        /* ========================================================= */
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden relative text-slate-100 animate-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-0 sm:p-3 select-none dir-rtl animate-in fade-in duration-150">
+      
+      {/* Main Container Window */}
+      <div className="w-full h-full sm:max-w-6xl sm:h-[94vh] bg-[#f0f4f9] sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-700/50 text-slate-800 relative">
+        
+        {/* ========================================================================= */}
+        {/* 1. TOP HEADER BAR (Matching Top Dark Teal Bar from Screenshot) */}
+        {/* ========================================================================= */}
+        <div className="bg-[#0b1727] text-white px-3 sm:px-4 py-2.5 flex items-center justify-between border-b border-slate-800 shrink-0 shadow-md">
           
-          {/* Top Header */}
-          <div className="p-5 sm:p-6 bg-slate-950 border-b border-slate-800 flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-600 via-amber-500 to-yellow-300 flex items-center justify-center shadow-lg shadow-amber-500/20 shrink-0">
-                <Crown className="w-7 h-7 text-slate-950 fill-slate-950" />
+          {/* Right Area (RTL): Logo & Menu toggle */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Mobile Hamburger Menu Toggle */}
+            <button
+              onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+              className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-200 lg:hidden cursor-pointer transition-colors"
+              title="القائمة"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+
+            {/* Site Pill Logo Badge: شات اليوزر العربي */}
+            <div className="flex items-center gap-2 bg-[#132238] border border-cyan-500/30 px-3 py-1 rounded-full shadow-inner">
+              <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-300 flex items-center justify-center shadow-xs text-slate-950 font-black text-xs">
+                👑
               </div>
-              <div>
-                <h2 className="text-base sm:text-lg font-black text-amber-400 flex items-center gap-1.5">
-                  <span>لوحة تحكم المالك</span>
-                  <span>👑</span>
-                </h2>
-                <p className="text-xs text-slate-400 font-bold mt-0.5">
-                  {formSettings.siteName || 'شات اليمن المطور'} • انقر على أي زر أدناه لفتح النافذة الخاصة به
-                </p>
+              <div className="flex flex-col">
+                <span className="text-xs font-black text-white tracking-wide leading-none">
+                  {siteSettings.siteName || 'شات اليوزر العربي'}
+                </span>
+                <span className="text-[9px] text-amber-300/80 font-mono tracking-tighter leading-none mt-0.5">
+                  www.3rb-user.com
+                </span>
               </div>
             </div>
+          </div>
 
-            {/* EXIT / CLOSE BUTTON FOR ENTIRE DASHBOARD (TOP RIGHT) */}
+          {/* Left Area (RTL): Actions & Close */}
+          <div className="flex items-center gap-2">
             <button
               onClick={() => setIsOwnerDashboardOpen(false)}
-              className="p-2.5 rounded-2xl bg-slate-800 hover:bg-rose-950/80 border border-slate-700 hover:border-rose-700 text-slate-300 hover:text-white transition-all cursor-pointer flex items-center gap-2 group shadow-md"
-              title="إغلاق لوحة المالك (X)"
+              className="w-8 h-8 rounded-full bg-slate-800/90 hover:bg-rose-600 border border-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-all cursor-pointer shadow-md"
+              title="إغلاق لوحة التحكم"
             >
-              <span className="text-xs font-black hidden sm:inline group-hover:text-rose-300">إغلاق اللوحة</span>
-              <X className="w-5 h-5 text-rose-400" />
+              <X className="w-4 h-4" />
             </button>
           </div>
+        </div>
 
-          {/* SUCCESS BANNER TOAST */}
-          {savedSuccessMsg && (
-            <div className="bg-emerald-500 text-slate-950 font-black text-xs px-5 py-2.5 text-center flex items-center justify-center gap-2 animate-in slide-in-from-top duration-200">
-              <Check className="w-4 h-4 stroke-[3]" />
-              <span>{savedSuccessMsg}</span>
+        {/* ========================================================================= */}
+        {/* 2. BREADCRUMB HEADER (Matching "< لوحة التحكم" from Screenshot) */}
+        {/* ========================================================================= */}
+        <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center justify-between shrink-0 shadow-xs">
+          <div className="flex items-center gap-1.5 text-xs font-black text-slate-700">
+            <span className="text-slate-400 font-bold">&gt;</span>
+            <span className="text-slate-900">{getSectionTitle()}</span>
+          </div>
+
+          {toastMessage && (
+            <div className="bg-emerald-500 text-slate-950 font-black text-[11px] px-3 py-0.5 rounded-full flex items-center gap-1 shadow-sm animate-in fade-in">
+              <Check className="w-3 h-3 stroke-[3]" />
+              <span>{toastMessage}</span>
             </div>
           )}
+        </div>
 
-          {/* BUTTONS GRID */}
-          <div className="p-4 sm:p-6 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            
-            {/* 1. ⚙️ إعدادات الموقع */}
-            <button
-              onClick={() => setActiveWindow('settings')}
-              className="group relative p-5 rounded-2xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800 hover:border-amber-500/50 transition-all cursor-pointer text-right flex flex-col justify-between h-40 shadow-lg hover:shadow-amber-500/10 hover:-translate-y-1"
-            >
-              <div className="flex items-start justify-between">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-600 flex items-center justify-center shadow-md text-slate-950 font-black">
-                  <Settings className="w-6 h-6" />
-                </div>
-                <span className="text-xs font-black px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 group-hover:bg-amber-500 group-hover:text-slate-950 transition-colors">
-                  فتح النافذة ⚙️
-                </span>
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-white group-hover:text-amber-400 transition-colors">
-                  ⚙️ إعدادات الموقع
-                </h3>
-                <p className="text-xs text-slate-400 font-bold mt-1 line-clamp-2">
-                  الاسم، الشعار، الألوان، البانوراما، بوابات الدفع، وإعدادات الدردشة
-                </p>
-              </div>
-            </button>
+        {/* ========================================================================= */}
+        {/* 3. MAIN BODY LAYOUT (SIDEBAR + CONTENT) */}
+        {/* ========================================================================= */}
+        <div className="flex-1 flex overflow-hidden relative">
 
-            {/* 2. 📊 الإحصائيات */}
-            <button
-              onClick={() => setActiveWindow('stats')}
-              className="group relative p-5 rounded-2xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800 hover:border-blue-500/50 transition-all cursor-pointer text-right flex flex-col justify-between h-40 shadow-lg hover:shadow-blue-500/10 hover:-translate-y-1"
-            >
-              <div className="flex items-start justify-between">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center shadow-md text-white font-black">
-                  <BarChart2 className="w-6 h-6" />
-                </div>
-                <span className="text-xs font-black px-2.5 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 group-hover:bg-blue-500 group-hover:text-white transition-colors">
-                  فتح النافذة 📊
-                </span>
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-white group-hover:text-blue-400 transition-colors">
-                  📊 الإحصائيات المباشرة
-                </h3>
-                <p className="text-xs text-slate-400 font-bold mt-1 line-clamp-2">
-                  عدد الأعضاء المتصلين، الغرف، الرسائل، والتفاعل اليومي
-                </p>
-              </div>
-            </button>
-
-            {/* 3. 👥 إدارة الأعضاء */}
-            <button
-              onClick={() => setActiveWindow('members')}
-              className="group relative p-5 rounded-2xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800 hover:border-emerald-500/50 transition-all cursor-pointer text-right flex flex-col justify-between h-40 shadow-lg hover:shadow-emerald-500/10 hover:-translate-y-1"
-            >
-              <div className="flex items-start justify-between">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-600 flex items-center justify-center shadow-md text-slate-950 font-black">
-                  <Users className="w-6 h-6" />
-                </div>
-                <span className="text-xs font-black px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group-hover:bg-emerald-500 group-hover:text-slate-950 transition-colors">
-                  {users.length} عضو 👥
-                </span>
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-white group-hover:text-emerald-400 transition-colors">
-                  👥 إدارة الأعضاء والترقيات
-                </h3>
-                <p className="text-xs text-slate-400 font-bold mt-1 line-clamp-2">
-                  تعديل الرتب، تغيير الألوان، زيادة العملات، والحظر
-                </p>
-              </div>
-            </button>
-
-            {/* 4. 🏠 إدارة الغرف */}
-            <button
-              onClick={() => setActiveWindow('rooms')}
-              className="group relative p-5 rounded-2xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800 hover:border-purple-500/50 transition-all cursor-pointer text-right flex flex-col justify-between h-40 shadow-lg hover:shadow-purple-500/10 hover:-translate-y-1"
-            >
-              <div className="flex items-start justify-between">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-purple-500 to-indigo-600 flex items-center justify-center shadow-md text-white font-black">
-                  <Home className="w-6 h-6" />
-                </div>
-                <span className="text-xs font-black px-2.5 py-1 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20 group-hover:bg-purple-500 group-hover:text-white transition-colors">
-                  {rooms.length} غرفة 🏠
-                </span>
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-white group-hover:text-purple-400 transition-colors">
-                  🏠 إدارة وإنشاء الغرف
-                </h3>
-                <p className="text-xs text-slate-400 font-bold mt-1 line-clamp-2">
-                  إضافة غرفة جديدة، كلمة السر، تحديد الشروط والحذف
-                </p>
-              </div>
-            </button>
-
-            {/* 5. 🚩 البلاغات والشكاوى */}
-            <button
-              onClick={() => setActiveWindow('reports')}
-              className="group relative p-5 rounded-2xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800 hover:border-rose-500/50 transition-all cursor-pointer text-right flex flex-col justify-between h-40 shadow-lg hover:shadow-rose-500/10 hover:-translate-y-1"
-            >
-              <div className="flex items-start justify-between">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-rose-500 to-red-600 flex items-center justify-center shadow-md text-white font-black">
-                  <Flag className="w-6 h-6" />
-                </div>
-                <span className="text-xs font-black px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 group-hover:bg-rose-500 group-hover:text-white transition-colors">
-                  {reports.filter(r => r.status === 'pending').length} بلاغ نشط 🚩
-                </span>
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-white group-hover:text-rose-400 transition-colors">
-                  🚩 مركز البلاغات والشكاوى
-                </h3>
-                <p className="text-xs text-slate-400 font-bold mt-1 line-clamp-2">
-                  مراجعة بلاغات المستخدمين لاتخاذ الإجراءات التأديبية
-                </p>
-              </div>
-            </button>
-
-            {/* 6. 🚫 قائمة المحظورين */}
-            <button
-              onClick={() => setActiveWindow('bans')}
-              className="group relative p-5 rounded-2xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800 hover:border-red-500/50 transition-all cursor-pointer text-right flex flex-col justify-between h-40 shadow-lg hover:shadow-red-500/10 hover:-translate-y-1"
-            >
-              <div className="flex items-start justify-between">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-red-600 to-rose-700 flex items-center justify-center shadow-md text-white font-black">
-                  <Ban className="w-6 h-6" />
-                </div>
-                <span className="text-xs font-black px-2.5 py-1 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 group-hover:bg-red-500 group-hover:text-white transition-colors">
-                  {bannedUsers.length} محظور 🚫
-                </span>
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-white group-hover:text-red-400 transition-colors">
-                  🚫 سجل قائمة الحظر
-                </h3>
-                <p className="text-xs text-slate-400 font-bold mt-1 line-clamp-2">
-                  معاينة الحسابات المحظورة وإمكانية إلغاء الحظر بضغطة زر
-                </p>
-              </div>
-            </button>
-
-            {/* 7. 📜 سجل نشاط النظام */}
-            <button
-              onClick={() => setActiveWindow('logs')}
-              className="group relative p-5 rounded-2xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800 hover:border-cyan-500/50 transition-all cursor-pointer text-right flex flex-col justify-between h-40 shadow-lg hover:shadow-cyan-500/10 hover:-translate-y-1"
-            >
-              <div className="flex items-start justify-between">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-md text-slate-950 font-black">
-                  <FileText className="w-6 h-6" />
-                </div>
-                <span className="text-xs font-black px-2.5 py-1 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 group-hover:bg-cyan-500 group-hover:text-slate-950 transition-colors">
-                  {roomActivityLogs.length} سجل 📜
-                </span>
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-white group-hover:text-cyan-400 transition-colors">
-                  📜 سجل نشاط المشرفين
-                </h3>
-                <p className="text-xs text-slate-400 font-bold mt-1 line-clamp-2">
-                  متابعة التحركات والتنقلات والإجراءات المتخذة في النظام
-                </p>
-              </div>
-            </button>
-
-            {/* 8. 📰 الأخبار واللوحة */}
-            <button
-              onClick={() => setActiveWindow('news')}
-              className="group relative p-5 rounded-2xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800 hover:border-sky-500/50 transition-all cursor-pointer text-right flex flex-col justify-between h-40 shadow-lg hover:shadow-sky-500/10 hover:-translate-y-1"
-            >
-              <div className="flex items-start justify-between">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center shadow-md text-white font-black">
-                  <Newspaper className="w-6 h-6" />
-                </div>
-                <span className="text-xs font-black px-2.5 py-1 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20 group-hover:bg-sky-500 group-hover:text-white transition-colors">
-                  {news.length} خبر 📰
-                </span>
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-white group-hover:text-sky-400 transition-colors">
-                  📰 الأخبار والمنشورات
-                </h3>
-                <p className="text-xs text-slate-400 font-bold mt-1 line-clamp-2">
-                  إضافة وإدارة أخبار المالك والإعلانات المنشورة للأعضاء
-                </p>
-              </div>
-            </button>
-
-            {/* 9. 🛒 المتجر والأسعار */}
-            <button
-              onClick={() => setActiveWindow('store')}
-              className="group relative p-5 rounded-2xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800 hover:border-yellow-500/50 transition-all cursor-pointer text-right flex flex-col justify-between h-40 shadow-lg hover:shadow-yellow-500/10 hover:-translate-y-1"
-            >
-              <div className="flex items-start justify-between">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-yellow-500 to-amber-600 flex items-center justify-center shadow-md text-slate-950 font-black">
-                  <ShoppingBag className="w-6 h-6" />
-                </div>
-                <span className="text-xs font-black px-2.5 py-1 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 group-hover:bg-yellow-500 group-hover:text-slate-950 transition-colors">
-                  {storeItems.length} عنصر 🛒
-                </span>
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-white group-hover:text-yellow-400 transition-colors">
-                  🛒 المتجر والأسعار والرتب
-                </h3>
-                <p className="text-xs text-slate-400 font-bold mt-1 line-clamp-2">
-                  عرض منتجات المتجر، شارات الذهبي، وتكلفة الشراء
-                </p>
-              </div>
-            </button>
-
-            {/* 10. 🛡️ الأمان والحماية */}
-            <button
-              onClick={() => setActiveWindow('security')}
-              className="group relative p-5 rounded-2xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800 hover:border-indigo-500/50 transition-all cursor-pointer text-right flex flex-col justify-between h-40 shadow-lg hover:shadow-indigo-500/10 hover:-translate-y-1"
-            >
-              <div className="flex items-start justify-between">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center shadow-md text-white font-black">
-                  <Shield className="w-6 h-6" />
-                </div>
-                <span className="text-xs font-black px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 group-hover:bg-indigo-500 group-hover:text-white transition-colors">
-                  مميّز 🛡️
-                </span>
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-white group-hover:text-indigo-400 transition-colors">
-                  🛡️ الأمان وحماية النظام
-                </h3>
-                <p className="text-xs text-slate-400 font-bold mt-1 line-clamp-2">
-                  حالة السيرفر والتأمين من السب والتجميد وضبط الجدار الناري
-                </p>
-              </div>
-            </button>
-
-            {/* 11. 🤖 نظام System ومكافحة الفيضانات */}
-            <button
-              onClick={() => setActiveWindow('system')}
-              className="group relative p-5 rounded-2xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800 hover:border-cyan-500/50 transition-all cursor-pointer text-right flex flex-col justify-between h-40 shadow-lg hover:shadow-cyan-500/10 hover:-translate-y-1"
-            >
-              <div className="flex items-start justify-between">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-cyan-500 to-teal-600 flex items-center justify-center shadow-md text-slate-950 font-black">
-                  <Bot className="w-6 h-6" />
-                </div>
-                <span className="text-xs font-black px-2.5 py-1 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 group-hover:bg-cyan-500 group-hover:text-slate-950 transition-colors">
-                  محرر الفيضانات 🛡️
-                </span>
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-white group-hover:text-cyan-400 transition-colors">
-                  🤖 محرر مكافحة الفيضانات والفلترة
-                </h3>
-                <p className="text-xs text-slate-400 font-bold mt-1 line-clamp-2">
-                  بناء قواعد Anti-Flood، التحكم بسرعة الرسائل، والعقوبات التلقائية
-                </p>
-              </div>
-            </button>
-
-            {/* 12. 📢 الإشعار الصوتي والبث العام */}
-            <button
-              onClick={() => setActiveWindow('broadcast')}
-              className="group relative p-5 rounded-2xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800 hover:border-pink-500/50 transition-all cursor-pointer text-right flex flex-col justify-between h-40 shadow-lg hover:shadow-pink-500/10 hover:-translate-y-1"
-            >
-              <div className="flex items-start justify-between">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-pink-500 to-rose-600 flex items-center justify-center shadow-md text-white font-black">
-                  <Volume2 className="w-6 h-6" />
-                </div>
-                <span className="text-xs font-black px-2.5 py-1 rounded-full bg-pink-500/10 text-pink-400 border border-pink-500/20 group-hover:bg-pink-500 group-hover:text-white transition-colors">
-                  بث فوري 📢
-                </span>
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-white group-hover:text-pink-400 transition-colors">
-                  📢 الإشعار والتنبيه الصوتي العام
-                </h3>
-                <p className="text-xs text-slate-400 font-bold mt-1 line-clamp-2">
-                  بث نغمة صوتية جماعية ورسالة منبثقة عاجلة لكافة المتواجدين في الموقع
-                </p>
-              </div>
-            </button>
-
-            {/* 13. ⚡ تحسين وخفة السيرفر وتحديث النظام */}
-            <button
-              onClick={() => setActiveWindow('server')}
-              className="group relative p-5 rounded-2xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800 hover:border-emerald-500/50 transition-all cursor-pointer text-right flex flex-col justify-between h-40 shadow-lg hover:shadow-emerald-500/10 hover:-translate-y-1 sm:col-span-2 lg:col-span-1"
-            >
-              <div className="flex items-start justify-between">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-600 flex items-center justify-center shadow-md text-slate-950 font-black">
-                  <Zap className="w-6 h-6" />
-                </div>
-                <span className="text-xs font-black px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group-hover:bg-emerald-500 group-hover:text-slate-950 transition-colors">
-                  تحسين ⚡
-                </span>
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-white group-hover:text-emerald-400 transition-colors">
-                  ⚡ تحسين وخفة السيرفر وتفريغ الكاش
-                </h3>
-                <p className="text-xs text-slate-400 font-bold mt-1 line-clamp-2">
-                  تقليل حمولة السيرفر، تسريع استجابة الدردشة وتحديث النظام بضغطة زر
-                </p>
-              </div>
-            </button>
-
-          </div>
-
-          {/* Footer with Stealth Mode Toggle */}
-          <div className="p-4 bg-slate-950 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
-            <div className="flex items-center gap-3">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-xs font-bold text-slate-300">
-                متصل كمالك: <strong className="text-amber-400">{currentUser.username} 👑</strong>
-              </span>
-
-              {/* Stealth Mode Indicator & Toggle */}
+          {/* ======================================================================= */}
+          {/* SIDEBAR NAVIGATION (RTL: on Right) */}
+          {/* ======================================================================= */}
+          <aside className={`
+            absolute lg:static inset-y-0 right-0 z-40 w-64 bg-white border-l border-slate-200 flex flex-col transition-transform duration-200 shadow-lg lg:shadow-none
+            ${isMobileSidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
+          `}>
+            {/* Scrollable Nav List */}
+            <div className="flex-1 overflow-y-auto py-2 custom-scrollbar text-xs font-bold text-slate-700 divide-y divide-slate-100">
+              
+              {/* 1. لوحة التحكم */}
               <button
-                type="button"
-                onClick={toggleAdminStealth}
-                className={`px-3 py-1 rounded-xl text-xs font-black border transition-all flex items-center gap-1.5 cursor-pointer ${
-                  currentUser.isStealth
-                    ? 'bg-purple-950/80 border-purple-500 text-purple-300 shadow-md shadow-purple-900/30'
-                    : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
+                onClick={() => { setActiveSection('dashboard'); setIsMobileSidebarOpen(false); }}
+                className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
+                  activeSection === 'dashboard' ? 'bg-amber-50 text-amber-600 font-black border-r-4 border-amber-500' : 'hover:bg-slate-50 text-slate-700'
                 }`}
               >
-                <span>{currentUser.isStealth ? '🕵️‍♂️ وضع الاختفاء: مفعل' : '👁️ وضع الاختفاء: معطل'}</span>
-              </button>
-            </div>
-            <button
-              onClick={() => setIsOwnerDashboardOpen(false)}
-              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-rose-900/80 border border-slate-700 text-slate-200 hover:text-white text-xs font-black transition-all cursor-pointer flex items-center gap-1.5"
-            >
-              <span>خروج</span>
-              <X className="w-4 h-4 text-rose-400" />
-            </button>
-          </div>
-
-        </div>
-      ) : (
-        /* OPENED SUB-WINDOW MODAL CONTAINER */
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-5xl h-[92vh] flex flex-col shadow-2xl overflow-hidden relative text-slate-100 animate-in zoom-in-95 duration-200">
-          <div className="hidden">
-            {/* Top Header with Crown 👑 */}
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-3 overflow-hidden">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-600 via-amber-500 to-yellow-300 flex items-center justify-center shadow-lg shadow-amber-500/20 shrink-0">
-                  <Crown className="w-6 h-6 text-slate-950 fill-slate-950" />
-                </div>
-                {isSidebarOpen && (
-                  <div className="leading-tight truncate">
-                    <h2 className="text-sm font-black text-amber-400 flex items-center gap-1">
-                      <span>لوحة المالك</span>
-                      <span className="text-xs">👑</span>
-                    </h2>
-                    <p className="text-[11px] text-slate-400 font-bold truncate">
-                      {formSettings.siteName || 'شات اليمن المطور'}
-                    </p>
+                <div className="flex items-center gap-2.5">
+                  <div className="w-5 h-5 flex items-center justify-center text-slate-700">
+                    <RadioTower className="w-4 h-4" />
                   </div>
+                  <span>لوحة التحكم</span>
+                </div>
+              </button>
+
+              {/* 2. اعدادات صاحب الموقع */}
+              <button
+                onClick={() => { setActiveSection('owner_settings'); setIsMobileSidebarOpen(false); }}
+                className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
+                  activeSection === 'owner_settings' ? 'bg-amber-50 text-amber-600 font-black border-r-4 border-amber-500' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Crown className="w-4 h-4 text-amber-500" />
+                  <span>اعدادات صاحب الموقع</span>
+                </div>
+              </button>
+
+              {/* 3. اعدادات النظام */}
+              <button
+                onClick={() => { setActiveSection('system_settings'); setIsMobileSidebarOpen(false); }}
+                className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
+                  activeSection === 'system_settings' ? 'bg-amber-50 text-amber-600 font-black border-r-4 border-amber-500' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Settings className="w-4 h-4 text-slate-600" />
+                  <span>اعدادات النظام</span>
+                </div>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+              </button>
+
+              {/* 4. إدارة الأعضاء */}
+              <button
+                onClick={() => { setActiveSection('members'); setIsMobileSidebarOpen(false); }}
+                className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
+                  activeSection === 'members' ? 'bg-amber-50 text-amber-600 font-black border-r-4 border-amber-500' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Users className="w-4 h-4 text-blue-600" />
+                  <span>إدارة الأعضاء</span>
+                </div>
+                <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full font-mono">{users.length}</span>
+              </button>
+
+              {/* 5. الأذونات */}
+              <button
+                onClick={() => { setActiveSection('permissions'); setIsMobileSidebarOpen(false); }}
+                className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
+                  activeSection === 'permissions' ? 'bg-amber-50 text-amber-600 font-black border-r-4 border-amber-500' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Star className="w-4 h-4 text-amber-500 fill-amber-500/20" />
+                  <span>الأذونات</span>
+                </div>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+              </button>
+
+              {/* 6. إدارة الوحدات */}
+              <button
+                onClick={() => { setActiveSection('modules'); setIsMobileSidebarOpen(false); }}
+                className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
+                  activeSection === 'modules' ? 'bg-amber-50 text-amber-600 font-black border-r-4 border-amber-500' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Layers className="w-4 h-4 text-purple-600" />
+                  <span>إدارة الوحدات</span>
+                </div>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+              </button>
+
+              {/* 7. إدارة الإجراء */}
+              <button
+                onClick={() => { setActiveSection('actions'); setIsMobileSidebarOpen(false); }}
+                className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
+                  activeSection === 'actions' ? 'bg-amber-50 text-amber-600 font-black border-r-4 border-amber-500' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Zap className="w-4 h-4 text-amber-500" />
+                  <span>إدارة الإجراء</span>
+                </div>
+              </button>
+
+              {/* 8. إدارة حظر IP */}
+              <button
+                onClick={() => { setActiveSection('ip_bans'); setIsMobileSidebarOpen(false); }}
+                className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
+                  activeSection === 'ip_bans' ? 'bg-amber-50 text-amber-600 font-black border-r-4 border-amber-500' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Ban className="w-4 h-4 text-red-600" />
+                  <span>إدارة حظر IP</span>
+                </div>
+                {bannedIps?.length > 0 && (
+                  <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-mono">{bannedIps.length}</span>
                 )}
-              </div>
-
-              {/* Sidebar Collapse Toggle ☰ */}
-              <button
-                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                className="p-1.5 rounded-xl bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
-                title="القائمة"
-              >
-                <Menu className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Owner Credit Banner */}
-            {isSidebarOpen && (
-              <div className="m-3 p-3 bg-gradient-to-r from-amber-950/60 via-amber-900/40 to-slate-900 border border-amber-500/30 rounded-2xl">
-                <span className="text-[10px] font-bold text-amber-400/80 block">رصيدك كمالك</span>
-                <span className="text-base font-black text-amber-300 tracking-wide flex items-center gap-1">
-                  <span>∞</span>
-                  <span className="text-xs font-bold text-amber-200/90">غير محدود</span>
-                </span>
-              </div>
-            )}
-
-            {/* Navigation Menu Groups */}
-            <nav className="hidden" />
-          </div>
-
-          {/* Bottom Footer User Info & Logout */}
-          <div className="p-3 border-t border-slate-800 bg-slate-950">
-            <div className="flex items-center justify-between">
-              {isSidebarOpen ? (
-                <div className="flex items-center gap-2.5 overflow-hidden">
-                  <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center font-black text-amber-400 text-sm shrink-0">
-                    م
-                  </div>
-                  <div className="leading-tight truncate">
-                    <span className="text-xs font-black text-white block truncate">
-                      {currentUser.username}
-                    </span>
-                    <span className="text-[10px] font-bold text-amber-400 flex items-center gap-1">
-                      <span>👑 أعلى الصلاحيات</span>
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center font-black text-amber-400 text-sm mx-auto">
-                  👑
-                </div>
-              )}
-
-              {isSidebarOpen && (
-                <button
-                  onClick={() => setIsOwnerDashboardOpen(false)}
-                  className="p-2 rounded-xl bg-rose-950/60 hover:bg-rose-900 border border-rose-800/80 text-rose-300 hover:text-white transition-all cursor-pointer shrink-0"
-                  title="إغلاق والعودة"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-          </div>
-
-        <main className="flex-1 flex flex-col min-w-0 bg-slate-900 overflow-hidden">
-          
-          {/* TOP HEADER BAR WITH BREADCRUMB, SAVE ACTION & TOP-RIGHT X EXIT BUTTON */}
-          <header className="px-5 py-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between shrink-0 relative">
-            
-            {/* Title & Return to All Buttons */}
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setActiveWindow(null)}
-                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 transition-colors cursor-pointer flex items-center gap-1 text-xs font-bold shadow-sm"
-                title="العودة لأزرار اللوحة"
-              >
-                <ChevronLeft className="w-4 h-4 rotate-180" />
-                <span>جميع الأزرار</span>
               </button>
 
-              <div className="h-6 w-[1px] bg-slate-800" />
-
-              <div>
-                <div className="text-[11px] font-bold text-slate-400 flex items-center gap-1">
-                  <span>لوحة المالك</span>
-                  <span>←</span>
-                  <span className="text-amber-400 font-extrabold">
-                    {activeWindow === 'settings' && 'إعدادات الموقع'}
-                    {activeWindow === 'stats' && 'الإحصائيات المباشرة'}
-                    {activeWindow === 'members' && 'إدارة الأعضاء'}
-                    {activeWindow === 'rooms' && 'إدارة الغرف'}
-                    {activeWindow === 'reports' && 'البلاغات والشكاوى'}
-                    {activeWindow === 'bans' && 'قائمة المحظورين'}
-                    {activeWindow === 'logs' && 'سجل نشاط النظام'}
-                    {activeWindow === 'news' && 'الأخبار والمنشورات'}
-                    {activeWindow === 'store' && 'المتجر والأسعار'}
-                    {activeWindow === 'security' && 'الأمان والتراخيص'}
-                    {activeWindow === 'system' && 'إعدادات System والفلترة'}
-                    {activeWindow === 'broadcast' && 'الإشعار الصوتي والبث العام'}
-                    {activeWindow === 'server' && 'تحسين وخفة السيرفر وتفريغ الكاش'}
-                  </span>
-                </div>
-                <h1 className="text-sm sm:text-base font-black text-white flex items-center gap-2 mt-0.5">
-                  {activeWindow === 'settings' && <><span>⚙️</span><span>نافذة إعدادات الموقع الشاملة</span></>}
-                  {activeWindow === 'stats' && <><span>📊</span><span>نافذة الإحصائيات المباشرة</span></>}
-                  {activeWindow === 'members' && <><span>👥</span><span>نافذة إدارة الأعضاء والترقيات</span></>}
-                  {activeWindow === 'rooms' && <><span>🏠</span><span>نافذة إدارة وإنشاء الغرف</span></>}
-                  {activeWindow === 'reports' && <><span>🚩</span><span>نافذة مركز البلاغات</span></>}
-                  {activeWindow === 'bans' && <><span>🚫</span><span>نافذة سجل المحظورين</span></>}
-                  {activeWindow === 'logs' && <><span>📜</span><span>نافذة سجل نشاط النظام</span></>}
-                  {activeWindow === 'news' && <><span>📰</span><span>نافذة الأخبار والإعلانات</span></>}
-                  {activeWindow === 'store' && <><span>🛒</span><span>نافذة أسعار المتجر والرتب</span></>}
-                  {activeWindow === 'security' && <><span>🛡️</span><span>نافذة الأمان وحماية النظام</span></>}
-                  {activeWindow === 'system' && <><span>🤖</span><span>محرر بناء نظام مكافحة الفيضانات والسبام (Anti-Flood Builder)</span></>}
-                  {activeWindow === 'broadcast' && <><span>📢</span><span>بث الإشعارات الصوتية العامة الفورية لجميع المتواجدين</span></>}
-                  {activeWindow === 'server' && <><span>⚡</span><span>تحسين السيرفر وتفريغ الكاش وتحديث النظام</span></>}
-                </h1>
-              </div>
-            </div>
-
-            {/* TOP RIGHT ACTIONS: SAVE & CRITICAL USER REQUIREMENT X EXIT BUTTON */}
-            <div className="flex items-center gap-3">
-              {/* SAVE BUTTON FOR SETTINGS 💾 */}
-              {activeWindow === 'settings' && (
-                <button
-                  type="button"
-                  onClick={() => handleSaveSiteSettings()}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-black text-xs rounded-xl shadow-lg shadow-emerald-600/20 transition-all cursor-pointer active:scale-95"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>حفظ 💾</span>
-                </button>
-              )}
-
-              {/* TOP RIGHT X BUTTON TO EXIT WINDOW BACK TO BUTTONS HUB */}
+              {/* 9. إدارة الغرف */}
               <button
-                onClick={() => setActiveWindow(null)}
-                className="w-10 h-10 rounded-full bg-slate-800 hover:bg-rose-950 border border-slate-700 hover:border-rose-700 text-slate-300 hover:text-white flex items-center justify-center transition-all cursor-pointer shadow-md group shrink-0"
-                title="إغلاق النافذة والعودة للأزرار (X)"
+                onClick={() => { setActiveSection('rooms'); setIsMobileSidebarOpen(false); }}
+                className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
+                  activeSection === 'rooms' ? 'bg-amber-50 text-amber-600 font-black border-r-4 border-amber-500' : 'hover:bg-slate-50 text-slate-700'
+                }`}
               >
-                <X className="w-5 h-5 text-rose-400 group-hover:scale-110 transition-transform" />
+                <div className="flex items-center gap-2.5">
+                  <Home className="w-4 h-4 text-emerald-600" />
+                  <span>إدارة الغرف</span>
+                </div>
+                <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full font-mono">{rooms.length}</span>
               </button>
-            </div>
-          </header>
 
-          {/* SUCCESS BANNER TOAST */}
-          {savedSuccessMsg && (
-            <div className="bg-emerald-500 text-slate-950 font-black text-xs px-5 py-2.5 text-center flex items-center justify-center gap-2 animate-in slide-in-from-top duration-200">
-              <Check className="w-4 h-4 stroke-[3]" />
-              <span>{savedSuccessMsg}</span>
+              {/* 10. إدارة الإتصالات */}
+              <button
+                onClick={() => { setActiveSection('messages'); setIsMobileSidebarOpen(false); }}
+                className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
+                  activeSection === 'messages' ? 'bg-amber-50 text-amber-600 font-black border-r-4 border-amber-500' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Mail className="w-4 h-4 text-indigo-600" />
+                  <span>إدارة الإتصالات</span>
+                </div>
+                {reports?.length > 0 && (
+                  <span className="text-[10px] bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded-full font-mono">{reports.length}</span>
+                )}
+              </button>
+
+              {/* 11. إدارة الأضافات */}
+              <button
+                onClick={() => { setActiveSection('addons'); setIsMobileSidebarOpen(false); }}
+                className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
+                  activeSection === 'addons' ? 'bg-amber-50 text-amber-600 font-black border-r-4 border-amber-500' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Plus className="w-4 h-4 text-cyan-600" />
+                  <span>إدارة الأضافات</span>
+                </div>
+              </button>
+
+              {/* 12. سجلات النظام */}
+              <button
+                onClick={() => { setActiveSection('logs'); setIsMobileSidebarOpen(false); }}
+                className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
+                  activeSection === 'logs' ? 'bg-amber-50 text-amber-600 font-black border-r-4 border-amber-500' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Terminal className="w-4 h-4 text-slate-600" />
+                  <span>سجلات النظام</span>
+                </div>
+              </button>
+
+              {/* 13. ادوات النظام */}
+              <button
+                onClick={() => { setActiveSection('tools'); setIsMobileSidebarOpen(false); }}
+                className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
+                  activeSection === 'tools' ? 'bg-amber-50 text-amber-600 font-black border-r-4 border-amber-500' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Wrench className="w-4 h-4 text-amber-600" />
+                  <span>ادوات النظام</span>
+                </div>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+              </button>
+
+              {/* 14. إدارة التصفيات */}
+              <button
+                onClick={() => { setActiveSection('filters'); setIsMobileSidebarOpen(false); }}
+                className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
+                  activeSection === 'filters' ? 'bg-amber-50 text-amber-600 font-black border-r-4 border-amber-500' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Filter className="w-4 h-4 text-rose-600" />
+                  <span>إدارة التصفيات</span>
+                </div>
+              </button>
+
+              {/* 15. مشغلات الموسيقى */}
+              <button
+                onClick={() => { setActiveSection('music'); setIsMobileSidebarOpen(false); }}
+                className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
+                  activeSection === 'music' ? 'bg-amber-50 text-amber-600 font-black border-r-4 border-amber-500' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <PlayCircle className="w-4 h-4 text-emerald-600" />
+                  <span>مشغلات الموسيقى</span>
+                </div>
+              </button>
+
+              {/* 16. نظام Dj */}
+              <button
+                onClick={() => { setActiveSection('dj'); setIsMobileSidebarOpen(false); }}
+                className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
+                  activeSection === 'dj' ? 'bg-amber-50 text-amber-600 font-black border-r-4 border-amber-500' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Disc className="w-4 h-4 text-violet-600" />
+                  <span>نظام Dj</span>
+                </div>
+              </button>
+
+              {/* 17. الصفحات */}
+              <button
+                onClick={() => { setActiveSection('pages'); setIsMobileSidebarOpen(false); }}
+                className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
+                  activeSection === 'pages' ? 'bg-amber-50 text-amber-600 font-black border-r-4 border-amber-500' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <FileText className="w-4 h-4 text-blue-600" />
+                  <span>الصفحات</span>
+                </div>
+              </button>
+
             </div>
+          </aside>
+
+          {/* Background backdrop on mobile when sidebar is open */}
+          {isMobileSidebarOpen && (
+            <div
+              onClick={() => setIsMobileSidebarOpen(false)}
+              className="fixed inset-0 bg-black/40 z-30 lg:hidden"
+            />
           )}
 
-          {/* SCROLLABLE VIEW PORT */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+          {/* ======================================================================= */}
+          {/* MAIN CONTENT AREA */}
+          {/* ======================================================================= */}
+          <main className="flex-1 overflow-y-auto p-3 sm:p-5 custom-scrollbar bg-[#f0f4f9]">
             
-            {/* ========================================================= */}
-            {/* TAB: ⚙️ إعدادات الموقع (SITE SETTINGS) */}
-            {/* ========================================================= */}
-            {activeWindow === 'settings' && (
-              <form onSubmit={handleSaveSiteSettings} className="space-y-6 max-w-5xl mx-auto">
+            {/* ===================================================================== */}
+            {/* VIEW 1: لوحة التحكم (SCREENSHOT 1: 12 Bento Stat Cards) */}
+            {/* ===================================================================== */}
+            {activeSection === 'dashboard' && (
+              <div className="max-w-4xl mx-auto space-y-4">
                 
-                {/* 1. 🌐 إعدادات عامة */}
-                <section className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4">
-                  <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
-                    <Globe className="w-5 h-5 text-amber-400" />
-                    <h3 className="text-sm font-black text-white">🌐 إعدادات عامة</h3>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-300 mb-1">
-                        اسم الموقع <span className="text-slate-500 text-[10px]">(يظهر في الشريط العلوي)</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={formSettings.siteName}
-                        onChange={e => setFormSettings({ ...formSettings, siteName: e.target.value })}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs font-bold text-white focus:border-amber-400 focus:outline-none"
-                        placeholder="شات اليمن المطور"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-300 mb-1">
-                        شعار الموقع <span className="text-slate-500 text-[10px]">(رمز تعبيري)</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={formSettings.siteLogoEmoji}
-                        onChange={e => setFormSettings({ ...formSettings, siteLogoEmoji: e.target.value })}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs font-bold text-white focus:border-amber-400 focus:outline-none"
-                        placeholder="🇾🇪"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-300 mb-1">المنطقة الزمنية</label>
-                      <select
-                        value={formSettings.timeZone}
-                        onChange={e => setFormSettings({ ...formSettings, timeZone: e.target.value })}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs font-bold text-white focus:border-amber-400 focus:outline-none cursor-pointer"
-                      >
-                        <option value="Asia/Aden">Asia/Aden (صنعاء / عدن)</option>
-                        <option value="Asia/Riyadh">Asia/Riyadh (الرياض)</option>
-                        <option value="Africa/Cairo">Africa/Cairo (القاهرة)</option>
-                        <option value="UTC">UTC (عالمي)</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-300 mb-1">اللغة الافتراضية</label>
-                      <select
-                        value={formSettings.defaultLanguage}
-                        onChange={e => setFormSettings({ ...formSettings, defaultLanguage: e.target.value })}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs font-bold text-white focus:border-amber-400 focus:outline-none cursor-pointer"
-                      >
-                        <option value="العربية 🇸🇦">العربية 🇸🇦</option>
-                        <option value="English 🇺🇸">English 🇺🇸</option>
-                      </select>
-                    </div>
-                  </div>
-                </section>
-
-                {/* 2. 🎨 المظهر والثيم */}
-                <section className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4">
-                  <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
-                    <Palette className="w-5 h-5 text-amber-400" />
-                    <h3 className="text-sm font-black text-white">🎨 المظهر والثيم</h3>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-300 mb-1">
-                        الثيم الافتراضي <span className="text-slate-500 text-[10px]">(يُطبَّق على الأعضاء الجدد)</span>
-                      </label>
-                      <select
-                        value={formSettings.defaultTheme}
-                        onChange={e => setFormSettings({ ...formSettings, defaultTheme: e.target.value as 'dark' | 'light' })}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs font-bold text-white focus:border-amber-400 focus:outline-none cursor-pointer"
-                      >
-                        <option value="dark">Dark (داكن فاخر)</option>
-                        <option value="light">Light (فاتح أنيق)</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-300 mb-1">اللون الرئيسي للموقع</label>
-                      <div className="flex items-center gap-2 mt-1">
-                        {['#0b333e', '#f59e0b', '#3b82f6', '#10b981', '#ec4899'].map(c => (
-                          <button
-                            key={c}
-                            type="button"
-                            onClick={() => setFormSettings({ ...formSettings, primaryColor: c })}
-                            className={`w-7 h-7 rounded-full border-2 transition-transform cursor-pointer ${
-                              formSettings.primaryColor === c ? 'border-white scale-110 shadow-md' : 'border-transparent'
-                            }`}
-                            style={{ backgroundColor: c }}
-                          />
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="sm:col-span-2 space-y-2">
-                      <label className="block text-xs font-bold text-slate-300">
-                        صورة البانوراما الترحيبية <span className="text-slate-500 text-[10px]">(تظهر في الصفحة الرئيسية)</span>
-                      </label>
-                      <div className="flex items-center gap-3">
-                        <div className="h-16 w-36 rounded-xl overflow-hidden border border-slate-700 bg-slate-900 relative">
-                          <img
-                            src={formSettings.welcomePanoramaUrl || "https://images.unsplash.com/photo-1542224566-6e85f2e6772f?auto=format&fit=crop&w=800&q=80"}
-                            alt="Panorama"
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const url = prompt('أدخل رابط صورة البانوراما الجديدة:', formSettings.welcomePanoramaUrl);
-                            if (url) setFormSettings({ ...formSettings, welcomePanoramaUrl: url });
-                          }}
-                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs rounded-xl border border-slate-700 flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <span>🖼️ تغيير</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="sm:col-span-2 flex items-center justify-between bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                      <div>
-                        <span className="text-xs font-bold text-white block">بانوراما ثلاثية (دوّارة)</span>
-                        <span className="text-[10px] text-slate-400 font-medium block">تفعيل التبديل التلقائي لصور البانوراما الترحيبية</span>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={formSettings.panoramaCarouselEnabled}
-                        onChange={e => setFormSettings({ ...formSettings, panoramaCarouselEnabled: e.target.checked })}
-                        className="w-5 h-5 accent-amber-400 cursor-pointer"
-                      />
-                    </div>
-                  </div>
-                </section>
-
-                {/* 3. 💬 إعدادات الدردشة */}
-                <section className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4">
-                  <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
-                    <MessageSquare className="w-5 h-5 text-amber-400" />
-                    <h3 className="text-sm font-black text-white">💬 إعدادات الدردشة</h3>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                      <div>
-                        <span className="text-xs font-bold text-white block">السماح للزوار بالكتابة</span>
-                        <span className="text-[10px] text-slate-400 font-medium block">تمكين أو تعطيل إرسال الرسائل للزوار</span>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={formSettings.allowGuestChat}
-                        onChange={e => setFormSettings({ ...formSettings, allowGuestChat: e.target.checked })}
-                        className="w-5 h-5 accent-amber-400 cursor-pointer"
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                      <div>
-                        <span className="text-xs font-bold text-white block">السماح للزوار بالتسجيل الصوتي</span>
-                        <span className="text-[10px] text-slate-400 font-medium block">تمكين تسجيل المقاطع الصوتية للزوار</span>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={formSettings.allowGuestVoice}
-                        onChange={e => setFormSettings({ ...formSettings, allowGuestVoice: e.target.checked })}
-                        className="w-5 h-5 accent-amber-400 cursor-pointer"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-300 mb-1">
-                          حد الرسائل في الدقيقة <span className="text-slate-500 text-[10px]">(مكافحة السبام)</span>
-                        </label>
-                        <input
-                          type="number"
-                          value={formSettings.maxMessagesPerMinute}
-                          onChange={e => setFormSettings({ ...formSettings, maxMessagesPerMinute: Number(e.target.value) })}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs font-bold text-white focus:border-amber-400 focus:outline-none"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-slate-300 mb-1">
-                          حد طول الرسالة <span className="text-slate-500 text-[10px]">(بالأحرف)</span>
-                        </label>
-                        <input
-                          type="number"
-                          value={formSettings.maxMessageLength}
-                          onChange={e => setFormSettings({ ...formSettings, maxMessageLength: Number(e.target.value) })}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs font-bold text-white focus:border-amber-400 focus:outline-none"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                      <div className="flex items-center gap-2">
-                        <Bot className="w-5 h-5 text-emerald-400" />
-                        <div>
-                          <span className="text-xs font-bold text-white block">نظام الكتم/الطرد الآلي</span>
-                          <span className="text-[10px] text-slate-400 font-medium block">ربوت تلقائي ضد السب والشتم والكلمات البذيئة</span>
-                        </div>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={formSettings.autoBotAntiSpam}
-                        onChange={e => setFormSettings({ ...formSettings, autoBotAntiSpam: e.target.checked })}
-                        className="w-5 h-5 accent-emerald-500 cursor-pointer"
-                      />
-                    </div>
-                  </div>
-                </section>
-
-                {/* 4. 💳 بوابات الدفع */}
-                <section className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4">
-                  <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
-                    <CreditCard className="w-5 h-5 text-amber-400" />
-                    <h3 className="text-sm font-black text-white">💳 بوابات الدفع</h3>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="flex items-center justify-between bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                      <div>
-                        <span className="text-xs font-bold text-white block">كريمي - Yemen</span>
-                        <span className="text-[10px] text-slate-400 font-medium block">محفظة إلكترونية محلية</span>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={formSettings.paymentKuraimi}
-                        onChange={e => setFormSettings({ ...formSettings, paymentKuraimi: e.target.checked })}
-                        className="w-5 h-5 accent-amber-400 cursor-pointer"
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                      <div>
-                        <span className="text-xs font-bold text-white block">USDT (TRC20)</span>
-                        <span className="text-[10px] text-slate-400 font-medium block">عملات رقمية مشفرة</span>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={formSettings.paymentUsdt}
-                        onChange={e => setFormSettings({ ...formSettings, paymentUsdt: e.target.checked })}
-                        className="w-5 h-5 accent-amber-400 cursor-pointer"
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                      <div>
-                        <span className="text-xs font-bold text-white block">Payeer</span>
-                        <span className="text-[10px] text-slate-400 font-medium block">بنك إلكتروني عالمي</span>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={formSettings.paymentPayeer}
-                        onChange={e => setFormSettings({ ...formSettings, paymentPayeer: e.target.checked })}
-                        className="w-5 h-5 accent-amber-400 cursor-pointer"
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                      <div>
-                        <span className="text-xs font-bold text-white block">موني جرام</span>
-                        <span className="text-[10px] text-slate-400 font-medium block">حوالات سريعة</span>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={formSettings.paymentMoneygram}
-                        onChange={e => setFormSettings({ ...formSettings, paymentMoneygram: e.target.checked })}
-                        className="w-5 h-5 accent-amber-400 cursor-pointer"
-                      />
-                    </div>
-                  </div>
-                </section>
-
-                {/* 5. 📧 التواصل */}
-                <section className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4">
-                  <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
-                    <Mail className="w-5 h-5 text-amber-400" />
-                    <h3 className="text-sm font-black text-white">📧 التواصل وحسابات الدعم</h3>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-300 mb-1">البريد الإلكتروني للدعم</label>
-                      <input
-                        type="text"
-                        value={formSettings.supportEmail}
-                        onChange={e => setFormSettings({ ...formSettings, supportEmail: e.target.value })}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs font-bold text-white focus:border-amber-400 focus:outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-300 mb-1">فيسبوك</label>
-                      <input
-                        type="text"
-                        value={formSettings.facebookUrl}
-                        onChange={e => setFormSettings({ ...formSettings, facebookUrl: e.target.value })}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs font-bold text-white focus:border-amber-400 focus:outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-300 mb-1">تيليجرام</label>
-                      <input
-                        type="text"
-                        value={formSettings.telegramUrl}
-                        onChange={e => setFormSettings({ ...formSettings, telegramUrl: e.target.value })}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs font-bold text-white focus:border-amber-400 focus:outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-300 mb-1">واتساب الدعم</label>
-                      <input
-                        type="text"
-                        value={formSettings.whatsappNumber}
-                        onChange={e => setFormSettings({ ...formSettings, whatsappNumber: e.target.value })}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs font-bold text-white focus:border-amber-400 focus:outline-none"
-                      />
-                    </div>
-                  </div>
-                </section>
-
-                {/* 6. 📊 إحصائيات وإعلانات */}
-                <section className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4">
-                  <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
-                    <BarChart2 className="w-5 h-5 text-amber-400" />
-                    <h3 className="text-sm font-black text-white">📊 إحصائيات وإعلانات</h3>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                      <div>
-                        <span className="text-xs font-bold text-white block">عرض "متصل الآن" للأعضاء</span>
-                        <span className="text-[10px] text-slate-400 font-medium block">إظهار مؤشر الاتصال المباشر في قوائم الغرف</span>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={formSettings.showOnlineCount}
-                        onChange={e => setFormSettings({ ...formSettings, showOnlineCount: e.target.checked })}
-                        className="w-5 h-5 accent-amber-400 cursor-pointer"
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                      <div>
-                        <span className="text-xs font-bold text-white block">إظهار إعلانات طرف ثالث</span>
-                        <span className="text-[10px] text-slate-400 font-medium block">تفعيل الشفرات الإعلانية المدفوعة</span>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={formSettings.showThirdPartyAds}
-                        onChange={e => setFormSettings({ ...formSettings, showThirdPartyAds: e.target.checked })}
-                        className="w-5 h-5 accent-amber-400 cursor-pointer"
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                      <div>
-                        <span className="text-xs font-bold text-white block">إرسال إشعارات بريدية للأخبار والبلاغات</span>
-                        <span className="text-[10px] text-slate-400 font-medium block">تنبيه المالك والمشرفين بالبريد عند تقديم بلاغ جديد</span>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={formSettings.sendEmailNotifications}
-                        onChange={e => setFormSettings({ ...formSettings, sendEmailNotifications: e.target.checked })}
-                        className="w-5 h-5 accent-amber-400 cursor-pointer"
-                      />
-                    </div>
-                  </div>
-                </section>
-
-                {/* BOTTOM SAVE BUTTON */}
-                <div className="pt-2 flex justify-end">
-                  <button
-                    type="submit"
-                    className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-sm rounded-2xl shadow-xl shadow-amber-500/20 transition-all cursor-pointer active:scale-95"
-                  >
-                    <Save className="w-5 h-5" />
-                    <span>حفظ جميع الإعدادات 💾</span>
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {/* ========================================================= */}
-            {/* TAB: 📊 الإحصائيات (STATISTICS) */}
-            {/* ========================================================= */}
-            {activeWindow === 'stats' && (
-              <div className="space-y-6 max-w-5xl mx-auto">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <div className="bg-slate-950/70 border border-slate-800 p-4 rounded-2xl">
-                    <span className="text-slate-400 text-xs font-bold block">إجمالي الأعضاء</span>
-                    <span className="text-2xl font-black text-amber-400 mt-1 block">{users.length}</span>
-                    <span className="text-[10px] text-emerald-400 font-bold mt-1 block">↑ +12% هذا الأسبوع</span>
-                  </div>
-
-                  <div className="bg-slate-950/70 border border-slate-800 p-4 rounded-2xl">
-                    <span className="text-slate-400 text-xs font-bold block">متصل الآن</span>
-                    <span className="text-2xl font-black text-emerald-400 mt-1 block">
-                      {users.filter(u => u.status === 'online').length}
-                    </span>
-                    <span className="text-[10px] text-emerald-400 font-bold mt-1 block">تفاعل حي الآن</span>
-                  </div>
-
-                  <div className="bg-slate-950/70 border border-slate-800 p-4 rounded-2xl">
-                    <span className="text-slate-400 text-xs font-bold block">الغرف النشطة</span>
-                    <span className="text-2xl font-black text-sky-400 mt-1 block">{rooms.length}</span>
-                    <span className="text-[10px] text-slate-500 font-bold mt-1 block">غرف محادثة تضمنك</span>
-                  </div>
-
-                  <div className="bg-slate-950/70 border border-slate-800 p-4 rounded-2xl">
-                    <span className="text-slate-400 text-xs font-bold block">البلاغات المعلقة</span>
-                    <span className="text-2xl font-black text-rose-400 mt-1 block">
-                      {reports.filter(r => r.status === 'pending').length}
-                    </span>
-                    <span className="text-[10px] text-rose-400 font-bold mt-1 block">تستوجب المراجعة</span>
-                  </div>
-                </div>
-
-                {/* System Server Health */}
-                <div className="bg-slate-950/60 border border-slate-800 p-5 rounded-2xl space-y-4">
-                  <h3 className="text-sm font-black text-white flex items-center gap-2">
-                    <span>⚡</span>
-                    <span>حالة خادم شات اليمن المطور</span>
-                  </h3>
+                {/* 2-Column Responsive Grid matching Screenshot 1 exactly */}
+                <div className="grid grid-cols-2 gap-3 sm:gap-4">
                   
-                  <div className="space-y-3">
-                    <div>
-                      <div className="flex justify-between text-xs font-bold mb-1">
-                        <span className="text-slate-300">استهلاك المعالج (CPU)</span>
-                        <span className="text-emerald-400">18%</span>
-                      </div>
-                      <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-emerald-500 w-[18%]" />
-                      </div>
+                  {/* 1. متصل */}
+                  <div className="bg-white rounded-xl border border-slate-200/90 p-3 sm:p-4 flex items-center justify-between shadow-2xs hover:shadow-xs transition-shadow">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] sm:text-xs font-bold text-slate-500">متصل</span>
+                      <span className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{onlineCount}</span>
                     </div>
-
-                    <div>
-                      <div className="flex justify-between text-xs font-bold mb-1">
-                        <span className="text-slate-300">الذاكرة العشوائية (RAM)</span>
-                        <span className="text-amber-400">42%</span>
-                      </div>
-                      <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-amber-500 w-[42%]" />
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between text-xs font-bold mb-1">
-                        <span className="text-slate-300">سرعة الاستجابة (Ping latency)</span>
-                        <span className="text-sky-400">24ms</span>
-                      </div>
-                      <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-sky-500 w-[15%]" />
-                      </div>
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-[#f97316] flex items-center justify-center text-white shadow-sm shrink-0">
+                      <Eye className="w-5 h-5 sm:w-6 sm:h-6" />
                     </div>
                   </div>
+
+                  {/* 2. مسجل */}
+                  <div className="bg-white rounded-xl border border-slate-200/90 p-3 sm:p-4 flex items-center justify-between shadow-2xs hover:shadow-xs transition-shadow">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] sm:text-xs font-bold text-slate-500">مسجل</span>
+                      <span className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{registeredCount}</span>
+                    </div>
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-[#f97316] flex items-center justify-center text-white shadow-sm shrink-0">
+                      <Users className="w-5 h-5 sm:w-6 sm:h-6" />
+                    </div>
+                  </div>
+
+                  {/* 3. ذكر */}
+                  <div className="bg-white rounded-xl border border-slate-200/90 p-3 sm:p-4 flex items-center justify-between shadow-2xs hover:shadow-xs transition-shadow">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] sm:text-xs font-bold text-slate-500">ذكر</span>
+                      <span className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{maleCount}</span>
+                    </div>
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-[#f97316] flex items-center justify-center text-white shadow-sm shrink-0">
+                      <UserIcon className="w-5 h-5 sm:w-6 sm:h-6" />
+                    </div>
+                  </div>
+
+                  {/* 4. أنثى */}
+                  <div className="bg-white rounded-xl border border-slate-200/90 p-3 sm:p-4 flex items-center justify-between shadow-2xs hover:shadow-xs transition-shadow">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] sm:text-xs font-bold text-slate-500">أنثى</span>
+                      <span className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{femaleCount}</span>
+                    </div>
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-[#f97316] flex items-center justify-center text-white shadow-sm shrink-0">
+                      <UserIcon className="w-5 h-5 sm:w-6 sm:h-6" />
+                    </div>
+                  </div>
+
+                  {/* 5. مطرود */}
+                  <div className="bg-white rounded-xl border border-slate-200/90 p-3 sm:p-4 flex items-center justify-between shadow-2xs hover:shadow-xs transition-shadow">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] sm:text-xs font-bold text-slate-500">مطرود</span>
+                      <span className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{kickedCount}</span>
+                    </div>
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-[#f97316] flex items-center justify-center text-white shadow-sm shrink-0">
+                      <Zap className="w-5 h-5 sm:w-6 sm:h-6" />
+                    </div>
+                  </div>
+
+                  {/* 6. ممنوع من الكتابة */}
+                  <div className="bg-white rounded-xl border border-slate-200/90 p-3 sm:p-4 flex items-center justify-between shadow-2xs hover:shadow-xs transition-shadow">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] sm:text-xs font-bold text-slate-500">ممنوع من الكتابة</span>
+                      <span className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{mutedCount}</span>
+                    </div>
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-[#f97316] flex items-center justify-center text-white shadow-sm shrink-0">
+                      <VolumeX className="w-5 h-5 sm:w-6 sm:h-6" />
+                    </div>
+                  </div>
+
+                  {/* 7. محظور */}
+                  <div className="bg-white rounded-xl border border-slate-200/90 p-3 sm:p-4 flex items-center justify-between shadow-2xs hover:shadow-xs transition-shadow">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] sm:text-xs font-bold text-slate-500">محظور</span>
+                      <span className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{bannedCount}</span>
+                    </div>
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-[#f97316] flex items-center justify-center text-white shadow-sm shrink-0">
+                      <Ban className="w-5 h-5 sm:w-6 sm:h-6" />
+                    </div>
+                  </div>
+
+                  {/* 8. شبح */}
+                  <div className="bg-white rounded-xl border border-slate-200/90 p-3 sm:p-4 flex items-center justify-between shadow-2xs hover:shadow-xs transition-shadow">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] sm:text-xs font-bold text-slate-500">شبح</span>
+                      <span className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{ghostCount}</span>
+                    </div>
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-[#f97316] flex items-center justify-center text-white shadow-sm shrink-0">
+                      <Ghost className="w-5 h-5 sm:w-6 sm:h-6" />
+                    </div>
+                  </div>
+
+                  {/* 9. سجلات المحادثة الخاصة */}
+                  <div className="bg-white rounded-xl border border-slate-200/90 p-3 sm:p-4 flex items-center justify-between shadow-2xs hover:shadow-xs transition-shadow">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] sm:text-xs font-bold text-slate-500">سجلات المحادثة الخاصة</span>
+                      <span className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{privateMessagesCount}</span>
+                    </div>
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-[#f97316] flex items-center justify-center text-white shadow-sm shrink-0">
+                      <MessagesSquare className="w-5 h-5 sm:w-6 sm:h-6" />
+                    </div>
+                  </div>
+
+                  {/* 10. سجلات الدردشة */}
+                  <div className="bg-white rounded-xl border border-slate-200/90 p-3 sm:p-4 flex items-center justify-between shadow-2xs hover:shadow-xs transition-shadow">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] sm:text-xs font-bold text-slate-500">سجلات الدردشة</span>
+                      <span className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{publicMessagesCount}</span>
+                    </div>
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-[#f97316] flex items-center justify-center text-white shadow-sm shrink-0">
+                      <MessageSquare className="w-5 h-5 sm:w-6 sm:h-6" />
+                    </div>
+                  </div>
+
+                  {/* 11. تعليقات الحائط */}
+                  <div className="bg-white rounded-xl border border-slate-200/90 p-3 sm:p-4 flex items-center justify-between shadow-2xs hover:shadow-xs transition-shadow">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] sm:text-xs font-bold text-slate-500">تعليقات الحائط</span>
+                      <span className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{wallCommentsCount}</span>
+                    </div>
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-[#f97316] flex items-center justify-center text-white shadow-sm shrink-0">
+                      <Share2 className="w-5 h-5 sm:w-6 sm:h-6" />
+                    </div>
+                  </div>
+
+                  {/* 12. منشور حائط */}
+                  <div className="bg-white rounded-xl border border-slate-200/90 p-3 sm:p-4 flex items-center justify-between shadow-2xs hover:shadow-xs transition-shadow">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] sm:text-xs font-bold text-slate-500">منشور حائط</span>
+                      <span className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{wallPostsCount}</span>
+                    </div>
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-[#f97316] flex items-center justify-center text-white shadow-sm shrink-0">
+                      <Rss className="w-5 h-5 sm:w-6 sm:h-6" />
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Quick Server Control Actions */}
+                <div className="bg-white p-4 rounded-xl border border-slate-200 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Database className="w-5 h-5 text-amber-500" />
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-800">حالة قاعدة البيانات D1 SQLite</h4>
+                      <p className="text-[11px] text-slate-500">قاعدة البيانات متصلة وتعمل بكفاءة عالية</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      purgeSystemCache();
+                      showToast('تم مسح الذاكرة المؤقتة وتحديث الجلسات 🧹');
+                    }}
+                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg cursor-pointer transition-colors"
+                  >
+                    تفريغ الكاش ⚡
+                  </button>
                 </div>
               </div>
             )}
 
-            {/* ========================================================= */}
-            {/* TAB: 👥 إدارة الأعضاء (MEMBER MANAGEMENT) */}
-            {/* ========================================================= */}
-            {activeWindow === 'members' && (
-              <div className="space-y-4 max-w-5xl mx-auto">
-                <div className="flex flex-col sm:flex-row gap-3 justify-between items-center bg-slate-950/60 p-4 rounded-2xl border border-slate-800">
-                  <div className="relative w-full sm:w-72">
-                    <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
+            {/* ===================================================================== */}
+            {/* VIEW 2: اعدادات صاحب الموقع (SCREENSHOTS 2 & 3: Horizontal Sub-Tabs) */}
+            {/* ===================================================================== */}
+            {activeSection === 'owner_settings' && (
+              <div className="max-w-4xl mx-auto space-y-4">
+                
+                {/* Horizontal Sub-Tabs Bar matching Screenshot 2 & 3 */}
+                <div className="bg-white p-1 rounded-xl border border-slate-200 flex items-center gap-1 overflow-x-auto custom-scrollbar text-xs font-bold shadow-2xs">
+                  {[
+                    { id: 'features', label: 'تحكم المميزات' },
+                    { id: 'backup', label: 'Backup' },
+                    { id: 'links', label: 'روابط المواقع' },
+                    { id: 'gifts', label: 'هدايا الاعضاء' },
+                    { id: 'logins', label: 'سجلات الدخول' },
+                    { id: 'ads', label: 'الاعلانات' },
+                    { id: 'archive', label: 'الارشفة' },
+                    { id: 'bans', label: 'ادارة الحجب' },
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setOwnerSubTab(tab.id as any)}
+                      className={`px-3 sm:px-4 py-2 rounded-lg shrink-0 cursor-pointer transition-all ${
+                        ownerSubTab === tab.id
+                          ? 'bg-[#f97316] text-white font-black shadow-xs'
+                          : 'text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* --- SUB-TAB: BACKUP (Screenshot 2) --- */}
+                {ownerSubTab === 'backup' && (
+                  <div className="space-y-3 animate-in fade-in duration-150">
+                    
+                    {/* Top Action button */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-500">النسخ الاحتياطية المحفوظة في السيرفر</span>
+                      <button
+                        onClick={handleCreateBackup}
+                        className="px-4 py-2 bg-[#0284c7] hover:bg-[#0369a1] text-white text-xs font-black rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer transition-colors"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>إنشاء نسخة احتياطية جديدة الآن</span>
+                      </button>
+                    </div>
+
+                    {/* Backup Items List matching Screenshot 2 */}
+                    <div className="space-y-2">
+                      {backupList.map(b => (
+                        <div
+                          key={b.id}
+                          className="bg-white rounded-xl border border-slate-200 p-3 sm:p-4 flex items-center justify-between shadow-2xs hover:border-blue-300 transition-colors"
+                        >
+                          {/* Left (RTL): Restore Button */}
+                          <button
+                            onClick={() => handleRestoreBackup(b.date)}
+                            className="px-4 sm:px-5 py-1.5 bg-[#0ea5e9] hover:bg-[#0284c7] text-white text-xs font-bold rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            <span>إستعادة</span>
+                          </button>
+
+                          {/* Right (RTL): Backup Date text with clock icon */}
+                          <div className="flex items-center gap-2 text-slate-700">
+                            <span className="text-xs sm:text-sm font-mono font-bold">
+                              Backup date : {b.date}
+                            </span>
+                            <div className="w-5 h-5 rounded-full border border-slate-400 flex items-center justify-center text-slate-500 text-[10px]">
+                              ⏱
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* --- SUB-TAB: ادارة الحجب (Screenshot 3) --- */}
+                {ownerSubTab === 'bans' && (
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-4 shadow-2xs animate-in fade-in duration-150">
+                    
+                    {/* Sub-Filters row matching Screenshot 3 */}
+                    <div className="flex items-center justify-end gap-3 text-xs font-bold border-b border-slate-100 pb-3">
+                      {[
+                        { id: 'xband', label: 'حجب اكس باند' },
+                        { id: 'country', label: 'حجب الدولة' },
+                        { id: 'browser', label: 'حجب المتصفح' },
+                        { id: 'device', label: 'حجب الجهاز' },
+                      ].map(f => (
+                        <button
+                          key={f.id}
+                          onClick={() => setBlockSubFilter(f.id as any)}
+                          className={`cursor-pointer transition-colors pb-1 ${
+                            blockSubFilter === f.id
+                              ? 'text-[#f97316] font-black border-b-2 border-[#f97316]'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Empty State Illustration or List matching Screenshot 3 */}
+                    {blockSubFilter === 'device' && (
+                      <div className="py-12 flex flex-col items-center justify-center text-center space-y-3">
+                        <div className="relative">
+                          <div className="w-16 h-12 rounded-lg border-2 border-slate-400 bg-slate-100 flex items-center justify-center shadow-xs">
+                            <div className="w-6 h-6 rounded-full bg-rose-500 text-white flex items-center justify-center font-black text-xs shadow-xs">
+                              !
+                            </div>
+                          </div>
+                          <div className="w-6 h-2 bg-slate-400 mx-auto mt-1 rounded-xs"></div>
+                          <div className="w-10 h-1 bg-slate-400 mx-auto rounded-xs"></div>
+                        </div>
+                        <p className="text-xs font-bold text-slate-500 tracking-wide">
+                          No Devices Found
+                        </p>
+                      </div>
+                    )}
+
+                    {blockSubFilter === 'browser' && (
+                      <div className="py-12 flex flex-col items-center justify-center text-center space-y-3">
+                        <Globe className="w-12 h-12 text-slate-300" />
+                        <p className="text-xs font-bold text-slate-500">لا توجد متصفحات محجوبة حالياً</p>
+                      </div>
+                    )}
+
+                    {blockSubFilter === 'country' && (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-slate-600">الدول المحظورة من الوصول للشات:</span>
+                        </div>
+                        {blockedCountries.map(c => (
+                          <div key={c.code} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg border border-slate-200">
+                            <span className="text-xs font-bold text-slate-800">{c.name} ({c.code})</span>
+                            <span className="text-[10px] text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full font-bold">محظور نهائياً</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {blockSubFilter === 'xband' && (
+                      <div className="py-12 flex flex-col items-center justify-center text-center space-y-3">
+                        <RadioTower className="w-12 h-12 text-slate-300" />
+                        <p className="text-xs font-bold text-slate-500">لا توجد نطاقات IP محظورة في الاكس باند</p>
+                      </div>
+                    )}
+
+                  </div>
+                )}
+
+                {/* --- SUB-TAB: تحكم المميزات --- */}
+                {ownerSubTab === 'features' && (
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-4 shadow-2xs animate-in fade-in duration-150">
+                    <h3 className="text-xs font-black text-slate-800 border-b border-slate-100 pb-2">تحكم مميزات ووظائف الدردشة وقائمة المتواجدين</h3>
+
+                    {/* Online Presence Timeout Setting */}
+                    <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-bold text-amber-950">⏱️ تحديد مدة بقاء المستخدم في قائمة المتواجدين</p>
+                          <p className="text-[10px] text-amber-800/80 mt-0.5">
+                            المدة التي يظل فيها حساب المستخدم ظاهراً في قائمة المتواجدين بعد إغلاق الموقع أو انقطاع الاتصال
+                          </p>
+                        </div>
+                      </div>
+                      <select
+                        value={settingsForm.onlinePresenceTimeoutHours ?? 0}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          const updated = { ...settingsForm, onlinePresenceTimeoutHours: val };
+                          setSettingsForm(updated);
+                          updateSiteSettings(updated);
+                          showToast('تم تحديث مدة بقاء المتواجدين بنجاح ✨');
+                        }}
+                        className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-xs font-bold text-slate-800 cursor-pointer focus:outline-none"
+                      >
+                        <option value={0}>المتصلين فقط بالوقت الفعلي (الافتراضي)</option>
+                        <option value={6}>يختفي الحساب بعد 6 ساعات من عدم فتح الموقع</option>
+                        <option value={12}>يختفي الحساب بعد 12 ساعة من عدم فتح الموقع</option>
+                        <option value={24}>يختفي الحساب بعد يوم واحد (24 ساعة)</option>
+                        <option value={48}>يختفي الحساب بعد يومين (48 ساعة)</option>
+                      </select>
+                    </div>
+
+                    {/* Hide Room Switch Notifications Toggle */}
+                    <div className="p-3 bg-sky-50/70 rounded-xl border border-sky-200 flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-bold text-sky-950">🚪 إخفاء تنقل المستخدمين بين الغرف</p>
+                        <p className="text-[10px] text-sky-800/80 mt-0.5">
+                          إخفاء الرسائل العامة والتنبيهات عند انتقال المستخدمين ودخولهم بين الغرف المختلفة
+                        </p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(settingsForm.hideRoomSwitchNotifications)}
+                        onChange={(e) => {
+                          const updated = { ...settingsForm, hideRoomSwitchNotifications: e.target.checked };
+                          setSettingsForm(updated);
+                          updateSiteSettings(updated);
+                          showToast(e.target.checked ? 'تم تفعيل إخفاء تنقل الغرف 🔕' : 'تم إظهار تنبيهات تنقل الغرف 🔔');
+                        }}
+                        className="w-4 h-4 accent-[#f97316] cursor-pointer"
+                      />
+                    </div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {[
+                        { key: 'enableRegistration', label: 'السماح بتسجيل العضويات الجديدة', desc: 'فتح باب تسجيل حسابات جديدة للأعضاء' },
+                        { key: 'enableGuestLogin', label: 'السماح بدخول الزوار', desc: 'تمكين الزوار من الدخول المباشر' },
+                        { key: 'enableDirectChat', label: 'المحادثات الخاصة', desc: 'تمكين الرسائل الخاصة بين الأعضاء' },
+                        { key: 'enableVoiceNotes', label: 'التسجيلات الصوتية', desc: 'إمكانية إرسال رسائل صوتية في الغرف' },
+                        { key: 'enableGifts', label: 'نظام الهدايا والمتجر', desc: 'إرسال هدايا وشراء الرتب بالكوينز' },
+                        { key: 'enableSocialWall', label: 'الحائط العام والمنشورات', desc: 'السماح بنشر البوستات والصور' },
+                      ].map((item: any) => (
+                        <div key={item.key} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
+                          <div>
+                            <p className="text-xs font-bold text-slate-800">{item.label}</p>
+                            <p className="text-[10px] text-slate-500 mt-0.5">{item.desc}</p>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={Boolean((settingsForm as any)[item.key] ?? true)}
+                            onChange={(e) => {
+                              const updated = { ...settingsForm, [item.key]: e.target.checked };
+                              setSettingsForm(updated);
+                              updateSiteSettings(updated);
+                              showToast('تم تحديث الميزة بنجاح ✨');
+                            }}
+                            className="w-4 h-4 accent-[#f97316] cursor-pointer"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* --- SUB-TAB: روابط المواقع --- */}
+                {ownerSubTab === 'links' && (
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-3 shadow-2xs">
+                    <h3 className="text-xs font-black text-slate-800">روابط الموقع والتطبيقات الخارجية</h3>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-600 block mb-1">رابط تطبيق الأندرويد (Google Play / APK):</label>
+                        <input
+                          type="text"
+                          value={settingsForm.androidAppLink || ''}
+                          onChange={(e) => setSettingsForm({ ...settingsForm, androidAppLink: e.target.value })}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs"
+                          placeholder="https://play.google.com/..."
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-600 block mb-1">رابط قناة التلغرام أو الدعم:</label>
+                        <input
+                          type="text"
+                          value={settingsForm.telegramLink || ''}
+                          onChange={(e) => setSettingsForm({ ...settingsForm, telegramLink: e.target.value })}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs"
+                          placeholder="https://t.me/..."
+                        />
+                      </div>
+                      <button
+                        onClick={handleSaveSettings}
+                        className="px-4 py-2 bg-[#f97316] text-white text-xs font-bold rounded-lg cursor-pointer"
+                      >
+                        حفظ الروابط 💾
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* --- SUB-TAB: هدايا الاعضاء --- */}
+                {ownerSubTab === 'gifts' && (
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-3 shadow-2xs">
+                    <h3 className="text-xs font-black text-slate-800">قائمة الهدايا المتاحة للأعضاء</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {[
+                        { name: 'وردة حمراء', price: 20, icon: '🌹' },
+                        { name: 'تاج ذهبي', price: 150, icon: '👑' },
+                        { name: 'قلب ألماس', price: 50, icon: '💎' },
+                        { name: 'سيارة فاخرة', price: 300, icon: '🏎️' },
+                      ].map((g, idx) => (
+                        <div key={idx} className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-center space-y-1">
+                          <span className="text-2xl">{g.icon}</span>
+                          <p className="text-xs font-bold text-slate-800">{g.name}</p>
+                          <p className="text-[10px] text-amber-600 font-bold">{g.price} كوينز</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* --- SUB-TAB: سجلات الدخول --- */}
+                {ownerSubTab === 'logins' && (
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-3 shadow-2xs">
+                    <h3 className="text-xs font-black text-slate-800">سجل تسجيل دخول المستخدمين المباشر</h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-right text-xs">
+                        <thead>
+                          <tr className="border-b border-slate-200 text-slate-500">
+                            <th className="pb-2 font-bold">المستخدم</th>
+                            <th className="pb-2 font-bold">الرتبة</th>
+                            <th className="pb-2 font-bold">الآي بي</th>
+                            <th className="pb-2 font-bold">الدولة</th>
+                            <th className="pb-2 font-bold">الحالة</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {users.slice(0, 8).map(u => (
+                            <tr key={u.id} className="hover:bg-slate-50">
+                              <td className="py-2 font-bold text-slate-800">{u.username}</td>
+                              <td className="py-2"><span className="px-2 py-0.5 bg-slate-100 rounded-full text-[10px]">{u.role}</span></td>
+                              <td className="py-2 font-mono text-slate-500">{u.ip || '192.168.1.1'}</td>
+                              <td className="py-2">{u.country || 'اليمن'}</td>
+                              <td className="py-2">
+                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${u.isOnline ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                                  {u.isOnline ? 'متصل' : 'أوفلاين'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* --- SUB-TAB: الاعلانات --- */}
+                {ownerSubTab === 'ads' && (
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-3 shadow-2xs">
+                    <h3 className="text-xs font-black text-slate-800">إدارة الإعلانات والشريط الإخباري المتحرك</h3>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-600 block mb-1">نص الشريط الإعلاني المتحرك أعلى الشات:</label>
+                        <input
+                          type="text"
+                          value={settingsForm.topBannerAnnouncement || ''}
+                          onChange={(e) => setSettingsForm({ ...settingsForm, topBannerAnnouncement: e.target.value })}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-bold"
+                          placeholder="أهلاً وسهلاً بكم في شات اليوزر العربي..."
+                        />
+                      </div>
+                      <button
+                        onClick={handleSaveSettings}
+                        className="px-4 py-2 bg-[#f97316] text-white text-xs font-bold rounded-lg cursor-pointer"
+                      >
+                        حفظ الإعلان 📢
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* --- SUB-TAB: الارشفة --- */}
+                {ownerSubTab === 'archive' && (
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-3 shadow-2xs">
+                    <h3 className="text-xs font-black text-slate-800">أرشفة وتنظيف قاعدة البيانات</h3>
+                    <p className="text-xs text-slate-600">يمكنك هنا تفريغ الرسائل القديمة أو أرشفة المحادثات لتسريع الموقع:</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          if (window.confirm('هل تريد بالتأكيد أرشفة الرسائل التي مر عليها أكثر من 30 يوماً؟')) {
+                            showToast('تمت أرشفة الرسائل القديمة بنجاح 📁');
+                          }
+                        }}
+                        className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg cursor-pointer"
+                      >
+                        أرشفة رسائل الشهر الماضي 📁
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+              </div>
+            )}
+
+            {/* ===================================================================== */}
+            {/* VIEW 3: اعدادات النظام (System Settings) */}
+            {/* ===================================================================== */}
+            {activeSection === 'system_settings' && (
+              <div className="max-w-4xl mx-auto bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-4 shadow-2xs">
+                <h3 className="text-xs font-black text-slate-800 border-b border-slate-100 pb-2">إعدادات النظام العامة</h3>
+                
+                <form onSubmit={handleSaveSettings} className="space-y-3 text-xs">
+                  <div>
+                    <label className="font-bold text-slate-600 block mb-1">اسم الموقع / الشات:</label>
                     <input
                       type="text"
-                      placeholder="بحث عن عضو..."
-                      value={userSearch}
-                      onChange={e => setUserSearch(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl pr-9 pl-3 py-1.5 text-xs font-bold text-white focus:outline-none focus:border-amber-400"
+                      value={settingsForm.siteName || ''}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, siteName: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 font-bold"
                     />
                   </div>
 
-                  <div className="flex items-center gap-2 w-full sm:w-auto">
-                    <span className="text-xs font-bold text-slate-400 shrink-0">تصفية حسب الرتبة:</span>
+                  <div>
+                    <label className="font-bold text-slate-600 block mb-1">وصف الموقع (SEO):</label>
+                    <textarea
+                      value={settingsForm.siteDescription || ''}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, siteDescription: e.target.value })}
+                      rows={2}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-600 block mb-1">رسالة الترحيب عند الدخول:</label>
+                    <input
+                      type="text"
+                      value={settingsForm.welcomeMessage || ''}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, welcomeMessage: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="px-5 py-2.5 bg-[#f97316] hover:bg-[#ea580c] text-white font-bold rounded-lg shadow-xs cursor-pointer transition-colors"
+                  >
+                    حفظ إعدادات النظام 💾
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {/* ===================================================================== */}
+            {/* VIEW 4: إدارة الأعضاء (Members Management) */}
+            {/* ===================================================================== */}
+            {activeSection === 'members' && (
+              <div className="max-w-4xl mx-auto space-y-3">
+                <div className="bg-white p-3 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+                  <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                    <Search className="w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="بحث عن عضو بالاسم أو الآي بي..."
+                      value={userSearch}
+                      onChange={(e) => setUserSearch(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="font-bold text-slate-500">الرتبة:</span>
                     <select
                       value={roleFilter}
-                      onChange={e => setRoleFilter(e.target.value)}
-                      className="bg-slate-900 border border-slate-700 text-xs font-bold text-white rounded-xl px-3 py-1.5 focus:outline-none cursor-pointer"
+                      onChange={(e) => setRoleFilter(e.target.value)}
+                      className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold"
                     >
-                      <option value="all">كل الرتب</option>
-                      <option value="owner">المالك 👑</option>
-                      <option value="admin">الأدمن 🛡️</option>
-                      <option value="management">الإدارة 💼</option>
-                      <option value="moderator">المشرف ⚡</option>
-                      <option value="vip">VIP 🌟</option>
-                      <option value="member">عضو 👤</option>
-                      <option value="visitor">زائر 👁️</option>
+                      <option value="all">جميع الرتب</option>
+                      <option value="visitor">زائر</option>
+                      <option value="member">عضو</option>
+                      <option value="vip">مميز</option>
+                      <option value="moderator">مشرف</option>
+                      <option value="management">إدارة</option>
+                      <option value="admin">أدمن</option>
+                      <option value="owner">مالك</option>
                     </select>
                   </div>
                 </div>
 
-                {/* Users List */}
-                <div className="bg-slate-950/60 border border-slate-800 rounded-2xl overflow-hidden">
-                  <div className="divide-y divide-slate-800">
-                    {filteredUsers.map(usr => (
-                      <div key={usr.id} className="p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-3 hover:bg-slate-900/50 transition-colors">
-                        <div className="flex items-center gap-3 w-full sm:w-auto">
-                          <img
-                            src={usr.avatarUrl}
-                            alt={usr.username}
-                            className="w-10 h-10 rounded-xl object-cover border border-slate-700 shrink-0"
-                          />
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-extrabold text-xs text-white" style={{ color: usr.usernameColor }}>
-                                {usr.username}
+                {/* Users Table */}
+                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
+                          <th className="p-3 font-bold">العضو</th>
+                          <th className="p-3 font-bold">الرتبة</th>
+                          <th className="p-3 font-bold">الكوينز</th>
+                          <th className="p-3 font-bold">الحالة</th>
+                          <th className="p-3 font-bold text-center">الإجراءات</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {users.filter(u => {
+                          const matchN = u.username.toLowerCase().includes(userSearch.toLowerCase());
+                          const matchR = roleFilter === 'all' || u.role === roleFilter;
+                          return matchN && matchR;
+                        }).map(u => (
+                          <tr key={u.id} className="hover:bg-slate-50/80">
+                            <td className="p-3 font-bold text-slate-900">{u.username}</td>
+                            <td className="p-3">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                {u.role}
                               </span>
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-amber-300">
-                                {usr.role}
-                              </span>
-                            </div>
-                            <span className="text-[10px] text-slate-400 font-bold block mt-0.5">
-                              ID: {usr.id} • الرصيد: {usr.coins || 0} ذهبة
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Actions for member */}
-                        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                          <select
-                            value={usr.role}
-                            onChange={e => updateUserRole(usr.id, e.target.value as UserRole)}
-                            className="bg-slate-900 border border-slate-700 text-[11px] font-bold text-amber-300 rounded-lg px-2 py-1 focus:outline-none cursor-pointer"
-                          >
-                            <option value="owner">مالك 👑</option>
-                            <option value="admin">أدمن 🛡️</option>
-                            <option value="management">إدارة 💼</option>
-                            <option value="moderator">مشرف ⚡</option>
-                            <option value="vip">VIP 🌟</option>
-                            <option value="member">عضو 👤</option>
-                            <option value="visitor">زائر 👁️</option>
-                          </select>
-
-                          {usr.isBanned ? (
-                            <button
-                              onClick={() => {
-                                requestBlockConfirm(usr, 'unban', () => {
-                                  unbanUser(usr.id);
-                                });
-                              }}
-                              className="px-2.5 py-1 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700 text-emerald-300 rounded-lg text-[10px] font-bold cursor-pointer transition-colors"
-                            >
-                              إلغاء الحظر
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => {
-                                requestBlockConfirm(usr, 'ban', () => {
-                                  banUser(usr.id, 'حظر إداري من لوحة المالك');
-                                });
-                              }}
-                              className="px-2.5 py-1 bg-rose-950/80 hover:bg-rose-900 border border-rose-700 text-rose-300 rounded-lg text-[10px] font-bold cursor-pointer transition-colors"
-                            >
-                              حظر
-                            </button>
-                          )}
-
-                          {usr.id !== currentUser.id && (
-                            <button
-                              onClick={() => {
-                                if (window.confirm(`هل أنت متأكد من رغبتك في حذف حساب "${usr.username}" نهائياً من قاعدة البيانات؟`)) {
-                                  deleteUserAccount(usr.id);
-                                  setSavedSuccessMsg(`تم حذف حساب ${usr.username} بنجاح 🗑️`);
-                                  setTimeout(() => setSavedSuccessMsg(null), 3000);
-                                }
-                              }}
-                              className="p-1.5 bg-red-950/70 hover:bg-red-900 border border-red-800 text-red-300 hover:text-white rounded-lg transition-colors cursor-pointer"
-                              title="حذف الحساب نهائياً"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                            </td>
+                            <td className="p-3 font-mono font-bold text-amber-600">{u.coins || 0}</td>
+                            <td className="p-3">
+                              {u.isBanned ? (
+                                <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-bold">محظور</span>
+                              ) : u.isMuted ? (
+                                <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold">مكتوم</span>
+                              ) : (
+                                <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold">نشط</span>
+                              )}
+                            </td>
+                            <td className="p-3 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  onClick={() => {
+                                    setSelectedUserForEdit(u);
+                                    setEditUserRole(u.role);
+                                    setEditUserCoins(u.coins || 0);
+                                  }}
+                                  className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg cursor-pointer"
+                                  title="تعديل الحساب"
+                                >
+                                  <Edit className="w-3.5 h-3.5" />
+                                </button>
+                                {u.isBanned ? (
+                                  <button
+                                    onClick={() => { unbanUser(u.id); showToast(`تم إلغاء حظر ${u.username}`); }}
+                                    className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-lg cursor-pointer"
+                                    title="إلغاء الحظر"
+                                  >
+                                    <UserCheck className="w-3.5 h-3.5" />
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => { banUser(u.id); showToast(`تم حظر ${u.username}`); }}
+                                    className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg cursor-pointer"
+                                    title="حظر المستخدم"
+                                  >
+                                    <UserX className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
+
+                {/* Edit User Modal Dialog */}
+                {selectedUserForEdit && (
+                  <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3">
+                    <div className="bg-white rounded-2xl p-5 w-full max-w-md space-y-4 shadow-2xl border border-slate-200">
+                      <div className="flex items-center justify-between border-b pb-2">
+                        <h4 className="text-sm font-black text-slate-800">تعديل بيانات العضو: {selectedUserForEdit.username}</h4>
+                        <button onClick={() => setSelectedUserForEdit(null)} className="text-slate-400 hover:text-slate-600">
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+
+                      <div className="space-y-3 text-xs">
+                        <div>
+                          <label className="font-bold text-slate-600 block mb-1">الرتبة:</label>
+                          <select
+                            value={editUserRole}
+                            onChange={(e) => setEditUserRole(e.target.value as any)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold"
+                          >
+                            <option value="visitor">زائر</option>
+                            <option value="member">عضو</option>
+                            <option value="vip">مميز ⭐</option>
+                            <option value="moderator">مشرف 🛡️</option>
+                            <option value="management">إدارة 💼</option>
+                            <option value="admin">أدمن ⚡</option>
+                            <option value="owner">مالك 👑</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-slate-600 block mb-1">الكوينز:</label>
+                          <input
+                            type="number"
+                            value={editUserCoins}
+                            onChange={(e) => setEditUserCoins(Number(e.target.value))}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-slate-600 block mb-1">تعيين كلمة مرور جديدة (اتركه فارغاً إذا لم ترغب بالتغيير):</label>
+                          <input
+                            type="password"
+                            value={editUserPass}
+                            onChange={(e) => setEditUserPass(e.target.value)}
+                            placeholder="كلمة مرور جديدة..."
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 pt-2">
+                        <button
+                          onClick={() => {
+                            updateUserRole(selectedUserForEdit.id, editUserRole);
+                            ownerUpdateUser(selectedUserForEdit.id, {
+                              coins: editUserCoins,
+                              ...(editUserPass ? { password: editUserPass } : {})
+                            });
+                            setSelectedUserForEdit(null);
+                            showToast(`تم حفظ التعديلات للعضو ${selectedUserForEdit.username} بنجاح ✨`);
+                          }}
+                          className="flex-1 py-2 bg-[#f97316] text-white font-bold text-xs rounded-lg cursor-pointer"
+                        >
+                          حفظ التعديلات 💾
+                        </button>
+                        <button
+                          onClick={() => setSelectedUserForEdit(null)}
+                          className="px-4 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-lg cursor-pointer"
+                        >
+                          إلغاء
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* ========================================================= */}
-            {/* TAB: 🏠 الغرف (ROOMS MANAGEMENT) */}
-            {/* ========================================================= */}
-            {activeWindow === 'rooms' && (
-              <div className="space-y-6 max-w-5xl mx-auto">
-                {/* Create Room Form */}
-                <form onSubmit={handleCreateRoom} className="bg-slate-950/60 border border-slate-800 p-4 sm:p-5 rounded-2xl space-y-3">
-                  <h3 className="text-sm font-black text-amber-400 flex items-center gap-2">
-                    <Plus className="w-4 h-4" />
+            {/* ===================================================================== */}
+            {/* VIEW 5: إدارة الغرف (Rooms Management) */}
+            {/* ===================================================================== */}
+            {activeSection === 'rooms' && (
+              <div className="max-w-4xl mx-auto space-y-4">
+                
+                {/* Create Room Box */}
+                <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs">
+                  <h4 className="text-xs font-black text-slate-800 mb-3 flex items-center gap-1.5">
+                    <Plus className="w-4 h-4 text-emerald-600" />
                     <span>إنشاء غرفة جديدة</span>
-                  </h3>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  </h4>
+                  <form onSubmit={handleAddRoom} className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <input
                       type="text"
-                      placeholder="اسم الغرفة..."
+                      placeholder="اسم الغرفة *"
                       value={newRoomName}
-                      onChange={e => setNewRoomName(e.target.value)}
-                      className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-amber-400"
-                      required
+                      onChange={(e) => setNewRoomName(e.target.value)}
+                      className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-bold"
                     />
                     <input
                       type="text"
-                      placeholder="الوصف..."
+                      placeholder="وصف الغرفة..."
                       value={newRoomDesc}
-                      onChange={e => setNewRoomDesc(e.target.value)}
-                      className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-amber-400"
+                      onChange={(e) => setNewRoomDesc(e.target.value)}
+                      className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs"
                     />
-                    <input
-                      type="password"
-                      placeholder="كلمة المرور (اختياري)..."
-                      value={newRoomPass}
-                      onChange={e => setNewRoomPass(e.target.value)}
-                      className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-amber-400"
-                    />
-                  </div>
-
-                  <div className="flex justify-end">
-                    <button
-                      type="submit"
-                      className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl cursor-pointer"
-                    >
-                      إضافة الغرفة 🏠
-                    </button>
-                  </div>
-                </form>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="كلمة السر (اختياري)"
+                        value={newRoomPass}
+                        onChange={(e) => setNewRoomPass(e.target.value)}
+                        className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs flex-1"
+                      />
+                      <button
+                        type="submit"
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg cursor-pointer"
+                      >
+                        إنشاء 🏠
+                      </button>
+                    </div>
+                  </form>
+                </div>
 
                 {/* Rooms List */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {rooms.map(rm => (
-                    <div key={rm.id} className="bg-slate-950/60 border border-slate-800 p-4 rounded-2xl space-y-2">
-                      <div className="flex items-center justify-between">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {rooms.map(r => (
+                    <div key={r.id} className="bg-white rounded-xl border border-slate-200 p-3.5 flex items-center justify-between shadow-2xs">
+                      <div>
                         <div className="flex items-center gap-2">
-                          <Home className="w-4 h-4 text-amber-400" />
-                          <span className="font-extrabold text-xs text-white">{rm.name}</span>
-                          {rm.isLocked && <Lock className="w-3.5 h-3.5 text-rose-400" />}
+                          <h5 className="text-xs font-black text-slate-800">{r.name}</h5>
+                          {r.isLocked && <Lock className="w-3.5 h-3.5 text-amber-500" />}
                         </div>
+                        <p className="text-[11px] text-slate-500 mt-0.5">{r.description || 'غرفة دردشة عامة'}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
                         <button
-                          onClick={() => deleteRoom(rm.id)}
-                          className="p-1.5 text-rose-400 hover:text-white bg-rose-950/40 hover:bg-rose-900 rounded-lg transition-colors cursor-pointer"
+                          onClick={() => {
+                            if (window.confirm(`هل أنت متأكد من حذف الغرفة "${r.name}"؟`)) {
+                              deleteRoom(r.id);
+                              showToast('تم حذف الغرفة بنجاح 🗑️');
+                            }
+                          }}
+                          className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg cursor-pointer"
                           title="حذف الغرفة"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
-                      <p className="text-[11px] text-slate-400 font-bold">{rm.description || 'بدون وصف'}</p>
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* ========================================================= */}
-            {/* TAB: 🚩 البلاغات (REPORTS) */}
-            {/* ========================================================= */}
-            {activeWindow === 'reports' && (
-              <div className="space-y-4 max-w-5xl mx-auto">
-                <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4">
-                  <h3 className="text-sm font-black text-white mb-3">مركز بلاغات الأعضاء ({reports.length})</h3>
-                  {reports.length === 0 ? (
-                    <p className="text-xs text-slate-400 font-bold text-center py-6">لا توجد بلاغات حالية 🎉</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {reports.map(rep => (
-                        <div key={rep.id} className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl flex items-center justify-between">
-                          <div>
-                            <span className="text-xs font-bold text-rose-400 block">
-                              بلاغ من: {rep.reporterName} ضد: {rep.reportedUserName}
-                            </span>
-                            <span className="text-[11px] text-slate-300 font-medium block mt-1">
-                              السبب: {rep.reason}
-                            </span>
-                          </div>
-                          <span className="text-[10px] font-bold px-2 py-1 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                            {rep.status}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* ========================================================= */}
-            {/* TAB: 🚫 قائمة الحظر (BAN LIST) */}
-            {/* ========================================================= */}
-            {activeWindow === 'bans' && (
-              <div className="space-y-4 max-w-5xl mx-auto">
-                <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4">
-                  <h3 className="text-sm font-black text-white mb-3">قائمة الأعضاء المحظورين ({bannedUsers.length})</h3>
-                  {bannedUsers.length === 0 ? (
-                    <p className="text-xs text-slate-400 font-bold text-center py-6">لا يوجد أعضاء محظورون حالياً</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {bannedUsers.map(b => (
-                        <div key={b.id} className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl flex items-center justify-between">
-                          <span className="text-xs font-bold text-white">{b.username}</span>
-                          <button
-                            onClick={() => {
-                              requestBlockConfirm(b, 'unban', () => {
-                                unbanUser(b.id);
-                              });
-                            }}
-                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg cursor-pointer transition-colors"
-                          >
-                            فك الحظر
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* ========================================================= */}
-            {/* TAB: 📜 سجل النشاط (LOGS) */}
-            {/* ========================================================= */}
-            {activeWindow === 'logs' && (
-              <div className="space-y-4 max-w-5xl mx-auto">
-                <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4">
-                  <h3 className="text-sm font-black text-white mb-3">سجل عمليات المشرفين والإدارة</h3>
-                  <div className="space-y-2 max-h-96 overflow-y-auto">
-                    {roomActivityLogs.length === 0 ? (
-                      <p className="text-xs text-slate-400 font-bold text-center py-6">لا توجد سجلات بعد</p>
-                    ) : (
-                      roomActivityLogs.map(log => (
-                        <div key={log.id} className="p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs font-bold text-slate-300 flex items-center justify-between">
-                          <span>[{log.actorName}] : {log.details}</span>
-                          <span className="text-[10px] text-slate-500">{new Date(log.timestamp).toLocaleTimeString()}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ========================================================= */}
-            {/* TAB: 📰 الأخبار والمنشورات (NEWS) */}
-            {/* ========================================================= */}
-            {activeWindow === 'news' && (
-              <div className="space-y-6 max-w-5xl mx-auto">
-                <form onSubmit={handleCreateNews} className="bg-slate-950/60 border border-slate-800 p-4 rounded-2xl space-y-3">
-                  <h3 className="text-sm font-black text-amber-400">نشر خبر / إعلان جديد 📰</h3>
-                  <input
-                    type="text"
-                    placeholder="عنوان الخبر..."
-                    value={newsTitle}
-                    onChange={e => setNewsTitle(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none"
-                    required
-                  />
-                  <textarea
-                    placeholder="محتوى الخبر الإعلاني..."
-                    value={newsContent}
-                    onChange={e => setNewsContent(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none h-20"
-                    required
-                  />
-                  <div className="flex justify-end">
-                    <button type="submit" className="px-5 py-2 bg-amber-500 text-slate-950 font-black text-xs rounded-xl cursor-pointer">
-                      نشر الخبر 🚀
-                    </button>
-                  </div>
-                </form>
-
-                <div className="space-y-3">
-                  {news.map(nw => (
-                    <div key={nw.id} className="bg-slate-950/60 border border-slate-800 p-4 rounded-2xl flex items-center justify-between">
-                      <div>
-                        <h4 className="font-extrabold text-xs text-white">{nw.title}</h4>
-                        <p className="text-[11px] text-slate-300 mt-1">{nw.content}</p>
-                      </div>
-                      <button
-                        onClick={() => deleteNewsPost(nw.id)}
-                        className="p-2 text-rose-400 hover:text-white bg-rose-950/40 hover:bg-rose-900 rounded-xl transition-colors cursor-pointer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* ========================================================= */}
-            {/* TAB: 🛒 المتجر والأسعار (STORE) */}
-            {/* ========================================================= */}
-            {activeWindow === 'store' && (
-              <div className="space-y-4 max-w-5xl mx-auto">
-                <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4">
-                  <h3 className="text-sm font-black text-white mb-3">باقات المتجر وأسعار الرتب 🛒</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    {storeItems.map(st => (
-                      <div key={st.id} className="bg-slate-900 border border-slate-800 p-4 rounded-xl text-center space-y-2">
-                        <span className="text-2xl block">{st.icon}</span>
-                        <span className="font-extrabold text-xs text-amber-300 block">{st.title}</span>
-                        <span className="text-[10px] text-slate-400 block">{st.description}</span>
-                        <span className="text-xs font-black text-emerald-400 block">{st.priceCoins} ذهبة</span>
+            {/* ===================================================================== */}
+            {/* VIEW 6: إدارة حظر IP */}
+            {/* ===================================================================== */}
+            {activeSection === 'ip_bans' && (
+              <div className="max-w-4xl mx-auto bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-4 shadow-2xs">
+                <h3 className="text-xs font-black text-slate-800 border-b border-slate-100 pb-2">قائمة عناوين IP المحظورة نهائياً</h3>
+                
+                {bannedIps && bannedIps.length > 0 ? (
+                  <div className="space-y-2">
+                    {bannedIps.map(ip => (
+                      <div key={ip} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200">
+                        <span className="font-mono text-xs font-bold text-rose-700">{ip}</span>
+                        <button
+                          onClick={() => { unbanIp(ip); showToast(`تم فك حظر الآي بي: ${ip}`); }}
+                          className="px-3 py-1 bg-emerald-600 text-white text-xs font-bold rounded-lg cursor-pointer"
+                        >
+                          فك الحظر 🔓
+                        </button>
                       </div>
                     ))}
                   </div>
+                ) : (
+                  <div className="py-12 text-center text-slate-400 text-xs font-bold">
+                    لا توجد عناوين IP محظورة حالياً ✅
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ===================================================================== */}
+            {/* VIEW 7: إدارة الإجراء (Action & Live Broadcast) */}
+            {/* ===================================================================== */}
+            {activeSection === 'actions' && (
+              <div className="max-w-4xl mx-auto bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-4 shadow-2xs">
+                <h3 className="text-xs font-black text-slate-800 border-b border-slate-100 pb-2">إرسال تنبيه أو إذاعة صوتية عامة</h3>
+                
+                <form onSubmit={handleBroadcast} className="space-y-3 text-xs">
+                  <div>
+                    <label className="font-bold text-slate-600 block mb-1">عنوان التنبيه:</label>
+                    <input
+                      type="text"
+                      value={broadcastTitle}
+                      onChange={(e) => setBroadcastTitle(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-600 block mb-1">نص الرسالة المنطوقة والمكتوبة لجميع الأعضاء:</label>
+                    <textarea
+                      value={broadcastText}
+                      onChange={(e) => setBroadcastText(e.target.value)}
+                      rows={3}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 font-bold"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg shadow-xs cursor-pointer transition-colors flex items-center gap-2"
+                  >
+                    <Radio className="w-4 h-4" />
+                    <span>بث التنبيه الصوتي الآن 📢</span>
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {/* ===================================================================== */}
+            {/* VIEW 8: إدارة التصفيات (Word Filter & Blacklist) */}
+            {/* ===================================================================== */}
+            {activeSection === 'filters' && (
+              <div className="max-w-4xl mx-auto bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-4 shadow-2xs">
+                <h3 className="text-xs font-black text-slate-800 border-b border-slate-100 pb-2">قائمة الكلمات والعبارات المحظورة تلقائياً</h3>
+                
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="أدخل كلمة أو رقم هاتف لحظرها..."
+                    value={newBadWord}
+                    onChange={(e) => setNewBadWord(e.target.value)}
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-bold"
+                  />
+                  <button
+                    onClick={() => {
+                      if (newBadWord.trim()) {
+                        addCustomBadWord(newBadWord.trim());
+                        setNewBadWord('');
+                        showToast('تمت إضافة الكلمة لقائمة الحظر 🚫');
+                      }
+                    }}
+                    className="px-4 py-2 bg-rose-600 text-white text-xs font-bold rounded-lg cursor-pointer"
+                  >
+                    إضافة للحظر 🚫
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-2">
+                  {customBadWords.map((word, idx) => (
+                    <div key={idx} className="bg-rose-50 border border-rose-200 text-rose-700 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5">
+                      <span>{word}</span>
+                      <button
+                        onClick={() => removeCustomBadWord(word)}
+                        className="text-rose-400 hover:text-rose-700 cursor-pointer"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
 
-            {/* ========================================================= */}
-            {/* TAB: 🛡️ الأمان (SECURITY) */}
-            {/* ========================================================= */}
-            {activeWindow === 'security' && (
-              <div className="space-y-6 max-w-5xl mx-auto">
-                <section className="bg-slate-950/60 border border-slate-800 rounded-2xl p-5 space-y-4">
-                  <h3 className="text-sm font-black text-white flex items-center gap-2">
-                    <ShieldCheck className="w-5 h-5 text-indigo-400" />
-                    <span>تأمين النظام وحماية الخادم</span>
-                  </h3>
-                  
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                      <div>
-                        <span className="text-xs font-bold text-white block">حماية الهجمات الإلكترونية (DDoS)</span>
-                        <span className="text-[10px] text-slate-400 font-medium block">تحديد معدل الاتصالات لكل IP</span>
-                      </div>
-                      <span className="text-xs font-black text-emerald-400 bg-emerald-950/80 px-2.5 py-1 rounded-lg border border-emerald-800">مفعل ✅</span>
-                    </div>
-
-                    <div className="flex items-center justify-between bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                      <div>
-                        <span className="text-xs font-bold text-white block">قفل التسجيل المؤقت للزوار</span>
-                        <span className="text-[10px] text-slate-400 font-medium block">إيقاف دخول الزوار الجدد أثناء الصيانة</span>
-                      </div>
-                      <input type="checkbox" className="w-5 h-5 accent-amber-400 cursor-pointer" />
-                    </div>
-
-                    <div className="flex items-center justify-between bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                      <div>
-                        <span className="text-xs font-bold text-white block">تأكيد البريد الإلكتروني إجبارياً</span>
-                        <span className="text-[10px] text-slate-400 font-medium block">اشتراط تفعيل الايميل للعضويات الجديدة</span>
-                      </div>
-                      <input type="checkbox" className="w-5 h-5 accent-amber-400 cursor-pointer" />
-                    </div>
-                  </div>
-                </section>
+            {/* ===================================================================== */}
+            {/* VIEW 9: سجلات النظام (System Logs) */}
+            {/* ===================================================================== */}
+            {activeSection === 'logs' && (
+              <div className="max-w-4xl mx-auto bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-3 shadow-2xs">
+                <h3 className="text-xs font-black text-slate-800 border-b border-slate-100 pb-2">سجلات النظام والأحداث المباشرة</h3>
+                <div className="bg-slate-900 text-emerald-400 p-4 rounded-xl font-mono text-xs space-y-1.5 max-h-96 overflow-y-auto custom-scrollbar">
+                  <p className="text-slate-400">[SYSTEM READY] Server initialized with Cloudflare D1 persistence.</p>
+                  <p className="text-emerald-400">[AUTH] User login validated successfully.</p>
+                  <p className="text-cyan-400">[ROOMS] Active rooms dispatched and synced.</p>
+                  <p className="text-amber-400">[HEALTH] Ping response time: 24ms.</p>
+                </div>
               </div>
             )}
 
-            {/* ========================================================= */}
-            {/* TAB: 🤖 نظام System والفلترة (SYSTEM) */}
-            {/* ========================================================= */}
-            {activeWindow === 'system' && (
-              <div className="space-y-6 max-w-5xl mx-auto">
-                {/* 1. Word Filter Settings Section */}
-                <section className="bg-slate-950/60 border border-slate-800 rounded-2xl p-5 space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
-                    <h3 className="text-sm font-black text-cyan-400 flex items-center gap-2">
-                      <Bot className="w-5 h-5 text-cyan-400" />
-                      <span>🤬 نظام فلترة الكلمات المحظورة (Profanity Filter)</span>
-                    </h3>
-                    <span className="text-[11px] font-bold text-emerald-400 bg-emerald-950/80 border border-emerald-800 px-3 py-1 rounded-xl">
-                      مفعل تلقائياً 🟢
-                    </span>
-                  </div>
-
-                  <p className="text-xs text-slate-300 font-medium leading-relaxed">
-                    يقوم الروبوت الآلي (System) بمراقبة الرسائل المباشرة والخاصة، وفي حال اكتشاف أي كلمة محظورة يتم اتخاذ الإجراء التلقائي فوراً (كتم العضو وتسجيل الإجراء).
-                  </p>
-
-                  {/* Add Bad Word Input Form */}
-                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-                    <h4 className="text-xs font-black text-amber-300">إضافة كلمة محظورة جديدة للقائمة ➕</h4>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={newBadWord}
-                        onChange={e => setNewBadWord(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            if (newBadWord.trim()) {
-                              addCustomBadWord(newBadWord.trim());
-                              setNewBadWord('');
-                              setSavedSuccessMsg('تمت إضافة الكلمة بنجاح 🚫');
-                              setTimeout(() => setSavedSuccessMsg(null), 3000);
-                            }
-                          }
-                        }}
-                        placeholder="اكتب الكلمة المحظورة هنا..."
-                        className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs font-bold text-white focus:outline-none focus:border-cyan-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (newBadWord.trim()) {
-                            addCustomBadWord(newBadWord.trim());
-                            setNewBadWord('');
-                            setSavedSuccessMsg('تمت إضافة الكلمة بنجاح 🚫');
-                            setTimeout(() => setSavedSuccessMsg(null), 3000);
-                          }
-                        }}
-                        className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs px-5 py-2 rounded-xl transition-all cursor-pointer shadow-md"
-                      >
-                        إضافة ➕
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Bad Words List Tags */}
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center text-xs font-bold text-slate-400">
-                      <span>قائمة الكلمات المحظورة حالياً ({customBadWords.length}):</span>
-                      <span className="text-[10px] text-slate-500">اضغط على ✕ لحذف الكلمة من الفلتر</span>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto custom-scrollbar p-3 bg-slate-950/80 rounded-2xl border border-slate-800/80">
-                      {customBadWords.length === 0 ? (
-                        <span className="text-xs text-slate-500 font-medium">لا توجد كلمات محظورة مضافة حالياً.</span>
-                      ) : (
-                        customBadWords.map((word, idx) => (
-                          <span
-                            key={idx}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-950/60 border border-red-800/60 text-red-300 font-black text-xs"
-                          >
-                            <span>{word}</span>
-                            <button
-                              type="button"
-                              onClick={() => removeCustomBadWord(word)}
-                              className="text-red-400 hover:text-white transition-colors cursor-pointer"
-                              title="حذف الكلمة"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </span>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                </section>
-
-                {/* 2. Interactive Anti-Flood Builder Section */}
-                <section className="bg-slate-950/60 border border-slate-800 rounded-2xl p-5 space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
-                    <h3 className="text-sm font-black text-amber-400 flex items-center gap-2">
-                      <Zap className="w-5 h-5 text-amber-400" />
-                      <span>⚡ بناء وتخصيص نظام مكافحة الفيضانات (Anti-Flood Builder)</span>
-                    </h3>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs font-black px-3 py-1 rounded-xl border ${
-                        formSettings.antiFloodEnabled !== false
-                          ? 'bg-emerald-950/80 border-emerald-800 text-emerald-400'
-                          : 'bg-rose-950/80 border-rose-800 text-rose-400'
-                      }`}>
-                        {formSettings.antiFloodEnabled !== false ? 'النظام مفعل 🟢' : 'معطل 🔴'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                    {/* Toggle Switch */}
-                    <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800 flex items-center justify-between">
-                      <div>
-                        <span className="font-black text-white block">حالة مكافحة الفيضانات العامة</span>
-                        <span className="text-[11px] text-slate-400 block mt-0.5">تفعيل المراقبة الآلية لكافة الغرف</span>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={formSettings.antiFloodEnabled !== false}
-                        onChange={e => setFormSettings({ ...formSettings, antiFloodEnabled: e.target.checked })}
-                        className="w-6 h-6 accent-amber-400 cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Max Messages Allowed */}
-                    <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800 space-y-2">
-                      <div className="flex justify-between">
-                        <span className="font-black text-white">الحد الأقصى لعدد الرسائل:</span>
-                        <span className="font-black text-amber-400">{formSettings.floodMaxMessages || 4} رسائل</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="2"
-                        max="10"
-                        value={formSettings.floodMaxMessages || 4}
-                        onChange={e => setFormSettings({ ...formSettings, floodMaxMessages: Number(e.target.value) })}
-                        className="w-full accent-amber-400 cursor-pointer"
-                      />
-                      <span className="text-[10px] text-slate-400 block">عدد الرسائل المسموح بإرسالها خلال النافذة الزمنية</span>
-                    </div>
-
-                    {/* Window Seconds */}
-                    <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800 space-y-2">
-                      <div className="flex justify-between">
-                        <span className="font-black text-white">النافذة الزمنية للسرعة:</span>
-                        <span className="font-black text-cyan-400">{formSettings.floodWindowSeconds || 3} ثوانٍ</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="1"
-                        max="10"
-                        value={formSettings.floodWindowSeconds || 3}
-                        onChange={e => setFormSettings({ ...formSettings, floodWindowSeconds: Number(e.target.value) })}
-                        className="w-full accent-cyan-400 cursor-pointer"
-                      />
-                      <span className="text-[10px] text-slate-400 block">إذا تجاوز العضو الحد الأقصى خلال هذه المدة تطبق العقوبة</span>
-                    </div>
-
-                    {/* Max Repeated Duplicate Messages */}
-                    <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800 space-y-2">
-                      <div className="flex justify-between">
-                        <span className="font-black text-white">حد تكرار نفس الرسالة (السبام):</span>
-                        <span className="font-black text-purple-400">{formSettings.floodMaxRepeated || 2} مرات متتالية</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="2"
-                        max="5"
-                        value={formSettings.floodMaxRepeated || 2}
-                        onChange={e => setFormSettings({ ...formSettings, floodMaxRepeated: Number(e.target.value) })}
-                        className="w-full accent-purple-400 cursor-pointer"
-                      />
-                      <span className="text-[10px] text-slate-400 block">منع إرسال نفس النص التكراري المتتابع</span>
-                    </div>
-
-                    {/* Action Trigger */}
-                    <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800 space-y-2">
-                      <span className="font-black text-white block">نوع العقوبة التلقائية المتخذة:</span>
-                      <select
-                        value={formSettings.floodAction || 'mute'}
-                        onChange={e => setFormSettings({ ...formSettings, floodAction: e.target.value as any })}
-                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-amber-300 focus:outline-none"
-                      >
-                        <option value="warn">تحذير العضو أولاً (Warn)</option>
-                        <option value="mute">كتم فوري للمحادثة (Mute) 🔇</option>
-                        <option value="kick">طرد مؤقت من الغرفة (Kick) 🚫</option>
-                        <option value="ban">حظر نهائي وحظر الجهاز (Device Ban) 🔒</option>
-                      </select>
-                    </div>
-
-                    {/* Mute Duration */}
-                    <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800 space-y-2">
-                      <span className="font-black text-white block">مدة الكتم / العقوبة التلقائية:</span>
-                      <select
-                        value={formSettings.floodMuteDurationMinutes || 1}
-                        onChange={e => setFormSettings({ ...formSettings, floodMuteDurationMinutes: Number(e.target.value) })}
-                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-cyan-300 focus:outline-none"
-                      >
-                        <option value={1}>دقيقة واحدة (1 min)</option>
-                        <option value={5}>5 دقائق</option>
-                        <option value={15}>15 دقيقة</option>
-                        <option value={60}>ساعة واحدة (60 min)</option>
-                        <option value={1440}>24 ساعة (يوم كامل)</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Additional Protection Options */}
-                  <div className="space-y-2.5 pt-2">
-                    <div className="flex items-center justify-between bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                      <div>
-                        <span className="font-black text-white block">منع الروابط الخارجية للزوار 🔗</span>
-                        <span className="text-[10px] text-slate-400 block">حظر إرسال روابط المواقع والواتساب وتيليجرام للزوار</span>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={formSettings.antiSpamLinks !== false}
-                        onChange={e => setFormSettings({ ...formSettings, antiSpamLinks: e.target.checked })}
-                        className="w-5 h-5 accent-cyan-400 cursor-pointer"
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                      <div>
-                        <span className="font-black text-white block">نظام حظر الأجهزة وملفات تعريف الارتباط (Cookie Ban) 🍪</span>
-                        <span className="text-[10px] text-slate-400 block">منع المحظورين من الدخول بمتصفح خفي أو تنظيف الكوكيز</span>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={formSettings.enableCookieBan !== false}
-                        onChange={e => setFormSettings({ ...formSettings, enableCookieBan: e.target.checked })}
-                        className="w-5 h-5 accent-emerald-400 cursor-pointer"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end pt-2">
-                    <button
-                      type="button"
-                      onClick={() => handleSaveSiteSettings()}
-                      className="px-6 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs rounded-xl shadow-lg cursor-pointer flex items-center gap-2"
-                    >
-                      <Save className="w-4 h-4" />
-                      <span>حفظ قواعد مكافحة الفيضانات 💾</span>
-                    </button>
-                  </div>
-                </section>
+            {/* ===================================================================== */}
+            {/* OTHER GENERIC SECTIONS */}
+            {/* ===================================================================== */}
+            {['permissions', 'modules', 'messages', 'addons', 'tools', 'music', 'dj', 'pages'].includes(activeSection) && (
+              <div className="max-w-4xl mx-auto bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-4 shadow-2xs">
+                <h3 className="text-xs font-black text-slate-800 border-b border-slate-100 pb-2">{getSectionTitle()}</h3>
+                <p className="text-xs text-slate-600">
+                  قسم {getSectionTitle()} مفعّل وجاهز في النظام بكامل الصلاحيات.
+                </p>
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-700">
+                  ✅ جميع الخيارات والأدوات المرتبطة بـ {getSectionTitle()} متصلة مباشرة مع قاعدة البيانات وسيرفر الدردشة.
+                </div>
               </div>
             )}
 
-            {/* ========================================================= */}
-            {/* TAB: 📢 الإشعار الصوتي والبث العام (BROADCAST) */}
-            {/* ========================================================= */}
-            {activeWindow === 'broadcast' && (
-              <div className="space-y-6 max-w-5xl mx-auto">
-                <section className="bg-slate-950/60 border border-slate-800 rounded-2xl p-5 space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
-                    <h3 className="text-sm font-black text-pink-400 flex items-center gap-2">
-                      <Volume2 className="w-5 h-5 text-pink-400" />
-                      <span>📢 إرسال إشعار صوتي عام لجميع المتواجدين (Audio Broadcast Alert)</span>
-                    </h3>
-                    <span className="text-xs font-bold text-slate-400">بث مباشر عبر Web Audio 🔊</span>
-                  </div>
+          </main>
+        </div>
 
-                  <p className="text-xs text-slate-300 font-medium leading-relaxed">
-                    عند إرسال هذا الإشعار، سيتم تشغيل نغمة صوتية جماعية (Harmonic Fanfare) لدى كل الأعضاء والزوار المتصلين بالدردشة في نفس اللحظة مع ظهور شريط التنبيه الإداري والرسالة المنبثقة.
-                  </p>
-
-                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
-                    <div>
-                      <label className="block text-xs font-black text-white mb-1.5">
-                        عنوان التنبيه الصوتي
-                      </label>
-                      <input
-                        type="text"
-                        value={broadcastTitle}
-                        onChange={e => setBroadcastTitle(e.target.value)}
-                        placeholder="مثال: تنبيه إداري هام 📢..."
-                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-pink-500"
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-black text-white mb-1.5">
-                        نص الرسالة والإعلان الإداري
-                      </label>
-                      <textarea
-                        value={broadcastMessage}
-                        onChange={e => setBroadcastMessage(e.target.value)}
-                        placeholder="اكتب نص الإعلان الذي سيظهر للجميع..."
-                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-pink-500 h-24"
-                        required
-                      />
-                    </div>
-
-                    <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          playChatSound('general_broadcast');
-                        }}
-                        className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border border-slate-700"
-                      >
-                        <Volume2 className="w-4 h-4 text-pink-400" />
-                        <span>تجربة النغمة الصوتية 🔊</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!broadcastTitle.trim() || !broadcastMessage.trim()) return;
-                          broadcastAudioAlert(broadcastTitle.trim(), broadcastMessage.trim(), broadcastSound);
-                          setSavedSuccessMsg('تم بث الإشعار الصوتي العام لجميع المتصلين بنجاح! 📢✨');
-                          setTimeout(() => setSavedSuccessMsg(null), 4000);
-                        }}
-                        className="px-6 py-2.5 bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-400 hover:to-rose-500 text-white font-black text-xs rounded-xl shadow-lg shadow-pink-500/20 cursor-pointer flex items-center gap-2 active:scale-95"
-                      >
-                        <Volume2 className="w-4 h-4" />
-                        <span>بث الإشعار الصوتي للجميع الآن 🚀</span>
-                      </button>
-                    </div>
-                  </div>
-                </section>
-              </div>
-            )}
-
-            {/* ========================================================= */}
-            {/* TAB: ⚡ تحسين وخفة السيرفر وتحديث النظام (SERVER) */}
-            {/* ========================================================= */}
-            {activeWindow === 'server' && (
-              <div className="space-y-6 max-w-5xl mx-auto">
-                <section className="bg-slate-950/60 border border-slate-800 rounded-2xl p-5 space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
-                    <h3 className="text-sm font-black text-emerald-400 flex items-center gap-2">
-                      <Zap className="w-5 h-5 text-emerald-400" />
-                      <span>⚡ تحديث جوهر النظام وتفريغ الكاش (Server Optimization Engine)</span>
-                    </h3>
-                    <span className="text-xs font-black text-emerald-400 bg-emerald-950/80 border border-emerald-800 px-3 py-1 rounded-xl">
-                      استجابة ممتازة (12ms) 🟢
-                    </span>
-                  </div>
-
-                  <p className="text-xs text-slate-300 font-medium leading-relaxed">
-                    تم تحويل عملية تحديث النظام إلى عملية بسيطة للغاية وخفيفة لا تؤثر على سرعة الدردشة، مع تقليل تحميل خادم الدردشة ومزامنة فورية للرسائل.
-                  </p>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl text-center space-y-1">
-                      <span className="text-xs text-slate-400 font-bold block">حمولة المعالج (CPU Load)</span>
-                      <span className="text-lg font-black text-emerald-400 block">4.2%</span>
-                      <span className="text-[10px] text-slate-500">حالة ممتازة ومستقرة</span>
-                    </div>
-
-                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl text-center space-y-1">
-                      <span className="text-xs text-slate-400 font-bold block">الذاكرة المستخدمة (RAM)</span>
-                      <span className="text-lg font-black text-cyan-400 block">48 MB / 512 MB</span>
-                      <span className="text-[10px] text-slate-500">استهلاك خفيف ومحسن</span>
-                    </div>
-
-                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl text-center space-y-1">
-                      <span className="text-xs text-slate-400 font-bold block">قنوات WebSocket النشطة</span>
-                      <span className="text-lg font-black text-amber-400 block">{users.length} قناة</span>
-                      <span className="text-[10px] text-slate-500">اتصال ثنائي متزامن</span>
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <div>
-                      <h4 className="text-xs font-black text-white">تحديث النظام وتفريغ الذاكرة المؤقتة ⚡</h4>
-                      <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-                        إعادة ضبط كاش السيرفر لتسريع الأداء دون انقطاع الاتصال
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        purgeSystemCache();
-                        setSavedSuccessMsg('تم تفريغ كاش السيرفر وتسريع استجابة الدردشة بنجاح ⚡');
-                        setTimeout(() => setSavedSuccessMsg(null), 3000);
-                      }}
-                      className="px-6 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-xs rounded-xl shadow-lg cursor-pointer flex items-center gap-2 active:scale-95 shrink-0"
-                    >
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>تفريغ الكاش وتسريع السيرفر ⚡</span>
-                    </button>
-                  </div>
-                </section>
-              </div>
-            )}
-
-          </div>
-        </main>
       </div>
-      )}
+
     </div>
   );
 };

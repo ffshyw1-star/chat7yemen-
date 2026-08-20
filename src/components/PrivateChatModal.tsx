@@ -11,6 +11,7 @@ import { ReportMessageModal } from './ReportMessageModal';
 import { PrivateMessage, User } from '../types';
 import { getRankTitle, canBeIgnored } from '../utils/permissions';
 import { toEnglishDigits } from '../utils/dateUtils';
+import { CUSTOM_EMOJIS_LIST, CUSTOM_EMOJI_CATEGORIES, renderTextWithCustomEmojis } from './CustomEmojis';
 
 export const PrivateChatModal: React.FC = () => {
   const {
@@ -365,7 +366,7 @@ export const PrivateChatModal: React.FC = () => {
                           }`}
                         >
                           {pm.type === 'text' && (
-                            <p className="leading-relaxed whitespace-pre-wrap break-words">{pm.text}</p>
+                            <div className="leading-relaxed whitespace-pre-wrap break-words">{renderTextWithCustomEmojis(pm.text, 24)}</div>
                           )}
 
                           {pm.type === 'image' && pm.mediaUrl && pm.mediaUrl.trim() !== '' && (
@@ -458,8 +459,8 @@ export const PrivateChatModal: React.FC = () => {
                   <div className="absolute bottom-full right-2 mb-2 w-72 sm:w-80 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-2.5 z-50 animate-in fade-in duration-150 text-white">
                     <div className="flex items-center justify-between pb-1.5 border-b border-slate-800 mb-2">
                       <div className="flex items-center gap-1 text-xs font-black text-amber-400">
-                        <span>😊</span>
-                        <span>قائمة الإيموجيات والسمايلات</span>
+                        <span>✨</span>
+                        <span>الإيموجيات والسمايلات المخصصة</span>
                       </div>
                       <button
                         type="button"
@@ -471,11 +472,7 @@ export const PrivateChatModal: React.FC = () => {
                     </div>
 
                     <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[10px] font-bold custom-scrollbar mb-2">
-                      {[
-                        { id: 'all', label: 'الكل 😊' },
-                        { id: 'smileys', label: 'وجوه 😊' },
-                        { id: 'emoticons', label: 'سمايلات 💬' },
-                      ].map((cat) => (
+                      {CUSTOM_EMOJI_CATEGORIES.map((cat) => (
                         <button
                           key={cat.id}
                           type="button"
@@ -491,38 +488,28 @@ export const PrivateChatModal: React.FC = () => {
                       ))}
                     </div>
 
-                    <div className="grid grid-cols-4 gap-1.5 max-h-52 overflow-y-auto p-1 custom-scrollbar">
-                      {[
-                        { id: '1', emoji: '😊', name: 'ابتسامة', category: 'smileys' },
-                        { id: '2', emoji: '😂', name: 'ضحك', category: 'smileys' },
-                        { id: '3', emoji: '🤣', name: 'كركرة', category: 'smileys' },
-                        { id: '4', emoji: '🥰', name: 'حب', category: 'smileys' },
-                        { id: '5', emoji: '😍', name: 'عشق', category: 'smileys' },
-                        { id: '6', emoji: '😎', name: 'هيبة', category: 'smileys' },
-                        { id: '7', emoji: '🥳', name: 'احتفال', category: 'smileys' },
-                        { id: '8', emoji: '🫡', name: 'تحية', category: 'smileys' },
-                        { id: '23', emoji: ':1:', name: 'سمايل 1', category: 'emoticons' },
-                        { id: '24', emoji: ':love:', name: 'حب وقلب', category: 'emoticons' },
-                        { id: '25', emoji: ':haha3:', name: 'كركرة', category: 'emoticons' },
-                        { id: '26', emoji: ':وردة:', name: 'وردة', category: 'emoticons' },
-                        { id: '27', emoji: ':تيم:', name: 'تيم', category: 'emoticons' },
-                        { id: '28', emoji: ':النصر:', name: 'النصر', category: 'emoticons' },
-                      ]
+                    <div className="grid grid-cols-3 gap-2 max-h-56 overflow-y-auto p-1 custom-scrollbar">
+                      {CUSTOM_EMOJIS_LIST
                         .filter(item => emojiCategory === 'all' || item.category === emojiCategory)
-                        .map((item) => (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => {
-                              setText(prev => prev + item.emoji);
-                            }}
-                            className="bg-slate-800 hover:bg-slate-700 border border-slate-700/80 rounded-lg p-1.5 flex flex-col items-center justify-center cursor-pointer transition-transform hover:scale-110 active:scale-95"
-                            title={item.name}
-                          >
-                            <span className="text-xl leading-none">{item.emoji}</span>
-                            <span className="text-[8px] text-slate-400 mt-0.5 truncate w-full text-center">{item.name}</span>
-                          </button>
-                        ))}
+                        .map((item) => {
+                          const Comp = item.component;
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => {
+                                setText(prev => (prev ? `${prev} ${item.tag} ` : `${item.tag} `));
+                              }}
+                              className="bg-slate-800 hover:bg-slate-700 border border-slate-700/80 rounded-xl p-2 flex flex-col items-center justify-center cursor-pointer transition-transform hover:scale-105 active:scale-95 min-h-[64px]"
+                              title={item.name}
+                            >
+                              <div className="h-8 flex items-center justify-center">
+                                <Comp size={32} animated={true} />
+                              </div>
+                              <span className="text-[8px] text-slate-300 mt-1 truncate w-full text-center">{item.name}</span>
+                            </button>
+                          );
+                        })}
                     </div>
                   </div>
                 )}

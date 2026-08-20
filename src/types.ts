@@ -4,7 +4,7 @@ export type RoomRole = 'none' | 'room_moderator' | 'room_supervisor' | 'room_own
 
 export type Gender = 'male' | 'female' | 'other';
 
-export type OnlineStatus = 'online' | 'away' | 'busy';
+export type OnlineStatus = 'online' | 'away' | 'busy' | 'offline';
 
 export type PrivatePrivacySetting = 'everyone' | 'members' | 'friends' | 'none';
 
@@ -32,7 +32,9 @@ export interface User {
   showCountryFlag?: boolean;
   currentRoomId: string;
   joinedDate: string;
+  joinedTimestamp?: number;
   lastSeen: string;
+  lastSeenTimestamp?: number;
   usernameColor?: string;
   usernameFontSize?: string;
   fontFamily?: string;
@@ -284,6 +286,9 @@ export interface SiteSettings {
   showOnlineCount: boolean;
   showThirdPartyAds: boolean;
   sendEmailNotifications: boolean;
+  // Owner Presence & Room Switch Controls
+  onlinePresenceTimeoutHours?: number; // 0 = instant, 6, 12, 24, 48, -1 = forever
+  hideRoomSwitchNotifications?: boolean; // Hide room switch announcement messages
   // Enhanced Anti-Flood & Moderation Features
   antiFloodEnabled?: boolean;
   floodMaxMessages?: number;

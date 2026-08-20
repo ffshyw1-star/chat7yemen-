@@ -217,7 +217,7 @@ interface ChatContextType {
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
 export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Persistent users list
+  // Persistent users list (purging mock users)
   const [users, setUsers] = useState<User[]>(() => {
     try {
       const saved = localStorage.getItem('araby_users');
@@ -225,7 +225,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
           const map = new Map(INITIAL_USERS.map(u => [u.id, u]));
-          parsed.forEach((u: User) => map.set(u.id, u));
+          parsed.forEach((u: User) => {
+            if (u && u.id && !['user-1', 'user-2', 'user-3', 'user-4', 'user-5', 'user-6', 'user-7', 'user-8'].includes(u.id)) {
+              map.set(u.id, u);
+            }
+          });
           return Array.from(map.values());
         }
       }
@@ -771,11 +775,13 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   setFriendRequests(payload.friendRequests);
                 }
                 if (payload.users && payload.users.length > 0) {
-                  setUsers(prev => {
-                    const userMap = new Map(prev.map(u => [u.id, u]));
-                    payload.users.forEach((u: User) => userMap.set(u.id, u));
-                    return Array.from(userMap.values());
-                  });
+                  const cleanUsers = payload.users
+                    .filter((u: User) => !['user-1', 'user-2', 'user-3', 'user-4', 'user-5', 'user-6', 'user-7', 'user-8'].includes(u.id))
+                    .map((u: User) => ({
+                      ...u,
+                      friends: (u.friends || []).filter(fId => fId !== 'user-system' && fId !== 'system')
+                    }));
+                  setUsers(cleanUsers);
                 }
                 if (payload.rooms && payload.rooms.length > 0) {
                   setRooms(payload.rooms);
@@ -1358,6 +1364,21 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => clearInterval(interval);
   }, [currentUser?.isMuted, currentUser?.muteUntil, currentUser?.isKicked, currentUser?.kickUntil]);
+
+  // Active Presence Reward: Increase user balance by 1 every 90 seconds (1.5 minutes) for online members and visitors
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const presenceRewardInterval = setInterval(() => {
+      setCurrentUser(prev => {
+        if (!prev) return null;
+        const newCoins = (prev.coins || 0) + 1;
+        return { ...prev, coins: newCoins };
+      });
+      setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, coins: (u.coins || 0) + 1 } : u));
+    }, 90000); // 1.5 minutes (90,000ms)
+
+    return () => clearInterval(presenceRewardInterval);
+  }, [currentUser?.id]);
   const [inputInsertedUsername, setInputInsertedUsername] = useState<string | null>(null);
   const [topBannerMessage, setTopBannerMessage] = useState<string | null>(null);
 
@@ -1514,8 +1535,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       role: 'visitor',
       gender: gender || 'male',
       age: cleanAge,
-      avatar: '',
-      coins: 100,
+      avatar: '/default_guest.svg',
+      coins: 0,
       likes: 0,
       country: 'اليمن',
       countryFlag: '🇾🇪',
@@ -1883,8 +1904,10 @@ ${modsText}
 
     setCurrentRoom(room);
     if (currentUser) {
-      setCurrentUser(prev => prev ? { ...prev, currentRoomId: room.id } : null);
-      setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, currentRoomId: room.id } : u));
+      const updatedCurUser: User = { ...currentUser, currentRoomId: room.id };
+      setCurrentUser(updatedCurUser);
+      setUsers(prev => prev.map(u => u.id === currentUser.id ? updatedCurUser : u));
+      sendSocketEvent('UPDATE_USER', updatedCurUser);
       // Log join activity
       addRoomActivityLog(
         room.id,
@@ -2218,9 +2241,9 @@ ${modsText}
     sendSocketEvent('SEND_MESSAGE', newMsg);
 
     // Give activity coins reward
-    const coinReward = currentUser.role === 'visitor' ? 2 : 5;
-    setCurrentUser(prev => prev ? { ...prev, coins: prev.coins + coinReward } : null);
-    setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, coins: u.coins + coinReward } : u));
+    const coinReward = 1;
+    setCurrentUser(prev => prev ? { ...prev, coins: (prev.coins || 0) + coinReward } : null);
+    setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, coins: (u.coins || 0) + coinReward } : u));
 
     // Sound effect
     if (audioSettings.publicSound) {
@@ -2508,6 +2531,11 @@ ${modsText}
   // Send Friend Request
   const sendFriendRequest = (targetUserId: string) => {
     if (!currentUser) return;
+    if (targetUserId === 'user-system' || targetUserId === 'system') {
+      alert('🚫 لا يمكن إضافة حساب النظام (System) كصديق نهائياً!');
+      showTopBanner('🚫 لا يمكن إضافة حساب النظام (System) كصديق نهائياً!');
+      return;
+    }
     if (currentUser.role === 'visitor') {
       alert('الزوار ليس لديهم خيار الأصدقاء، قم بإنشاء حساب للتمتع بميزة إضافة الأصدقاء.');
       return;

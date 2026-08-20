@@ -14,10 +14,18 @@ export const BottomNav: React.FC = () => {
 
   if (!currentUser) return null;
 
-  // Filter out invisible stealth owner users and banned users from counter
-  const visibleOnlineUsers = users.filter(u => {
+  // Filter real active users in current room and across all rooms
+  const currentRoomOnlineUsers = users.filter(u => {
     if (u.isBanned) return false;
-    if (u.role === 'owner' && u.isStealth) return false;
+    if (u.role === 'owner' && u.isStealth && currentUser?.role !== 'owner') return false;
+    if (u.onlineStatus === 'offline') return false;
+    return (u.currentRoomId || 'room-general') === currentRoom.id;
+  });
+
+  const allVisibleOnlineUsers = users.filter(u => {
+    if (u.isBanned) return false;
+    if (u.role === 'owner' && u.isStealth && currentUser?.role !== 'owner') return false;
+    if (u.onlineStatus === 'offline') return false;
     return true;
   });
 
@@ -36,11 +44,12 @@ export const BottomNav: React.FC = () => {
             className={`flex flex-col items-center justify-center text-[11px] font-medium transition-colors cursor-pointer group relative ${
               isOnlineListOpen ? 'text-amber-400' : 'text-slate-300 hover:text-white'
             }`}
+            title={`المتواجدين في ${currentRoom.name} (${currentRoomOnlineUsers.length}) | الإجمالي (${allVisibleOnlineUsers.length})`}
           >
             <div className="relative">
               <Users className={`w-5 h-5 transition-colors ${isOnlineListOpen ? 'text-amber-400' : 'text-slate-300 group-hover:text-amber-400'}`} />
-              <span className="absolute -top-1 -right-2 bg-amber-500 text-slate-950 text-[9px] font-black px-1 rounded-full">
-                {visibleOnlineUsers.length}
+              <span className="absolute -top-1 -right-2 bg-amber-500 text-slate-950 text-[9px] font-black px-1 rounded-full min-w-[16px] text-center">
+                {currentRoomOnlineUsers.length}
               </span>
             </div>
             <span>المتواجدين</span>

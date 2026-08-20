@@ -8,6 +8,7 @@ import { Play, Pause, MoreVertical, MoreHorizontal, Flag, Trash2, Volume2, Smile
 import { ReportMessageModal } from './ReportMessageModal';
 import { NEON_COLORS } from './ProfileEditorModal';
 import { toEnglishDigits } from '../utils/dateUtils';
+import { renderTextWithCustomEmojis } from './CustomEmojis';
 
 const EMOJI_STICKER_MAP: Record<string, string> = {};
 const PAGE_SIZE = 10;
@@ -139,7 +140,7 @@ const renderTextWithMentionsAndRanks = (
       );
     }
 
-    return <span key={`text-${idx}`}>{token}</span>;
+    return <span key={`text-${idx}`}>{renderTextWithCustomEmojis(token, 28)}</span>;
   });
 };
 

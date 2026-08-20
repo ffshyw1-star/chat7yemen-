@@ -5,8 +5,8 @@ import fs from "fs";
 import initSqlJs, { Database } from "sql.js";
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer as createViteServer } from "vite";
-import { INITIAL_USERS, INITIAL_MESSAGES, INITIAL_ROOMS, INITIAL_NOTIFICATIONS } from "./src/data/initialData";
-import { Message, PrivateMessage, User, Room, IPModerationRecord, FriendRequest, Notification } from "./src/types";
+import { INITIAL_USERS, INITIAL_MESSAGES, INITIAL_ROOMS, INITIAL_NOTIFICATIONS, INITIAL_SITE_SETTINGS } from "./src/data/initialData";
+import { Message, PrivateMessage, User, Room, IPModerationRecord, FriendRequest, Notification, SiteSettings } from "./src/types";
 
 const app = express();
 const server = http.createServer(app);
@@ -38,6 +38,7 @@ let serverFriendRequests: FriendRequest[] = [];
 let serverRooms: Room[] = [];
 let serverIPModerations: IPModerationRecord[] = [];
 let serverNotifications: Notification[] = [];
+let serverSiteSettings: SiteSettings = { ...INITIAL_SITE_SETTINGS };
 
 // Helper to extract client real IP
 function getClientIp(req: express.Request): string {
@@ -233,6 +234,10 @@ async function initD1Database() {
       timestamp TEXT,
       data TEXT
     );
+    CREATE TABLE IF NOT EXISTS site_settings (
+      id TEXT PRIMARY KEY,
+      data TEXT
+    );
   `);
 
   // Check if owner is already present and matches the requested clean state
@@ -245,7 +250,22 @@ async function initD1Database() {
       console.log("🧹 Detected stale database records. Performing clean reset...");
       shouldReset = true;
     } else {
-      serverUsers = loadedUsers;
+      // Purge any mock/dummy users, strip user-system from friends, and retain only real accounts
+      const mockIds = ['user-1', 'user-2', 'user-3', 'user-4', 'user-5', 'user-6', 'user-7', 'user-8'];
+      serverUsers = loadedUsers
+        .filter(u => !mockIds.includes(u.id))
+        .map(u => ({
+          ...u,
+          friends: (u.friends || []).filter(fId => fId !== 'user-system' && fId !== 'system')
+        }));
+      mockIds.forEach(id => {
+        try {
+          db.run("DELETE FROM users WHERE id = ?", [id]);
+        } catch (e) {}
+      });
+      // Resave cleaned users to db
+      serverUsers.forEach(saveUserToD1);
+      saveD1ToDisk();
     }
   } else {
     shouldReset = true;
@@ -277,10 +297,11 @@ async function initD1Database() {
     serverPrivateMessages = [];
   }
 
-  // 4. Rooms
+  // 4. Rooms (Purge any fake baseUserCount)
   const roomRows = db.exec("SELECT data FROM rooms");
   if (roomRows.length > 0 && roomRows[0].values.length > 0) {
-    serverRooms = roomRows[0].values.map((v) => JSON.parse(v[0] as string));
+    const rawRooms: Room[] = roomRows[0].values.map((v) => JSON.parse(v[0] as string));
+    serverRooms = rawRooms.map(r => ({ ...r, baseUserCount: undefined }));
   } else {
     serverRooms = [...INITIAL_ROOMS];
     const stmt = db.prepare("INSERT OR REPLACE INTO rooms (id, data) VALUES (?, ?)");
@@ -319,10 +340,32 @@ async function initD1Database() {
     stmt.free();
   }
 
+  // 8. Site Settings
+  const settingsRows = db.exec("SELECT data FROM site_settings WHERE id = 'global'");
+  if (settingsRows.length > 0 && settingsRows[0].values.length > 0) {
+    serverSiteSettings = { ...INITIAL_SITE_SETTINGS, ...JSON.parse(settingsRows[0].values[0][0] as string) };
+  } else {
+    serverSiteSettings = { ...INITIAL_SITE_SETTINGS };
+    const stmt = db.prepare("INSERT OR REPLACE INTO site_settings (id, data) VALUES ('global', ?)");
+    stmt.run([JSON.stringify(serverSiteSettings)]);
+    stmt.free();
+  }
+
   saveD1ToDisk();
 }
 
 // Helper SQL Persistence functions
+function saveSiteSettingsToD1(settings: SiteSettings) {
+  try {
+    const stmt = db.prepare("INSERT OR REPLACE INTO site_settings (id, data) VALUES ('global', ?)");
+    stmt.run([JSON.stringify(settings)]);
+    stmt.free();
+    saveD1ToDisk();
+  } catch (e) {
+    console.error("D1 saveSiteSettings error:", e);
+  }
+}
+
 function saveUserToD1(user: User) {
   try {
     const stmt = db.prepare("INSERT OR REPLACE INTO users (id, username, role, data) VALUES (?, ?, ?, ?)");
@@ -575,6 +618,7 @@ wss.on("connection", (ws: WebSocket) => {
         rooms: serverRooms,
         ipModerations: serverIPModerations,
         notifications: serverNotifications,
+        siteSettings: serverSiteSettings,
       },
     })
   );
@@ -747,7 +791,14 @@ wss.on("connection", (ws: WebSocket) => {
 
         case "SEND_FRIEND_REQUEST": {
           const req: FriendRequest = payload;
-          if (req && !serverFriendRequests.some(r => r.id === req.id)) {
+          if (
+            req &&
+            req.receiverId !== 'user-system' &&
+            req.receiverId !== 'system' &&
+            req.senderId !== 'user-system' &&
+            req.senderId !== 'system' &&
+            !serverFriendRequests.some(r => r.id === req.id)
+          ) {
             serverFriendRequests.push(req);
             try {
               const stmt = db.prepare("INSERT OR REPLACE INTO friend_requests (id, data) VALUES (?, ?)");
@@ -928,6 +979,16 @@ wss.on("connection", (ws: WebSocket) => {
           break;
         }
 
+        case "UPDATE_SETTINGS": {
+          const newSettings: Partial<SiteSettings> = payload;
+          if (newSettings) {
+            serverSiteSettings = { ...serverSiteSettings, ...newSettings };
+            saveSiteSettingsToD1(serverSiteSettings);
+            broadcast({ type: "SYNC_SETTINGS", payload: serverSiteSettings });
+          }
+          break;
+        }
+
         case "PING": {
           ws.send(JSON.stringify({ type: "PONG" }));
           break;
@@ -940,9 +1001,23 @@ wss.on("connection", (ws: WebSocket) => {
 
   ws.on("close", () => {
     if (currentUserId) {
+      const now = new Date();
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const formattedTime = `${hours}:${minutes} ${day}/${month}/${year}`;
+      const nowTimestamp = Date.now();
+
       serverUsers = serverUsers.map((u) => {
         if (u.id === currentUserId) {
-          const updated = { ...u, onlineStatus: "away" as const, lastSeen: "منذ قليل" };
+          const updated = {
+            ...u,
+            onlineStatus: "offline" as const,
+            lastSeen: formattedTime,
+            lastSeenTimestamp: nowTimestamp
+          };
           saveUserToD1(updated);
           return updated;
         }

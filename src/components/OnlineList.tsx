@@ -4,15 +4,15 @@ import { UserAvatar } from './UserAvatar';
 import { User } from '../types';
 import { getRankEmoji, getRankEmojiClass, isSystemUser } from '../utils/permissions';
 import { NEON_COLORS } from './ProfileEditorModal';
-import { UserPlus, Home, Search, X, Users, Check } from 'lucide-react';
+import { UserPlus, Home, Search, X, Users, Check, MapPin } from 'lucide-react';
 
 type SortMode = 'random' | 'new_members' | 'last_seen' | 'username' | 'rank';
 
 export const OnlineList: React.FC = () => {
   const {
-    users, currentUser, setIsOnlineListOpen,
+    users, currentUser, currentRoom, rooms, setIsOnlineListOpen,
     setSelectedUserForCard, setIsFriendRequestsOpen, setIsRoomsListOpen,
-    updateUserProfile, banList, ipModerations
+    banList, ipModerations, siteSettings
   } = useChat();
 
   const [activeTab, setActiveTab] = useState<'online' | 'search'>('online');
@@ -35,6 +35,17 @@ export const OnlineList: React.FC = () => {
     return 0;
   };
 
+  // Helper to determine if user should appear in the online list based on owner timeout setting
+  const isUserConsideredOnline = (u: User): boolean => {
+    if (u.onlineStatus === 'online') return true;
+    const timeoutHours = siteSettings?.onlinePresenceTimeoutHours || 0;
+    if (timeoutHours > 0 && u.lastSeenTimestamp) {
+      const diffHours = (Date.now() - u.lastSeenTimestamp) / (1000 * 60 * 60);
+      return diffHours <= timeoutHours;
+    }
+    return false;
+  };
+
   // Filter stealth mode owners unless logged in as owner, and filter out banned users
   const baseUsers = users.filter(u => {
     if (u.isBanned) return false;
@@ -46,19 +57,29 @@ export const OnlineList: React.FC = () => {
     return true;
   });
 
-  // Filter users by search query, type filter, and status filter
+  const allOnlineUsers = baseUsers.filter(u => isUserConsideredOnline(u));
+
+  // Filter users based on search query, type filter, and status filter
   const filteredUsers = baseUsers.filter(u => {
+    // In online tab, filter by presence
+    if (activeTab === 'online') {
+      if (!isUserConsideredOnline(u)) return false;
+    }
+
+    // 1. Search Query
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       if (!u.username.toLowerCase().includes(q)) return false;
     }
 
+    // 3. Gender/Role Filter
     if (selectedTypeFilter === 'male') return u.gender === 'male';
     if (selectedTypeFilter === 'female') return u.gender === 'female';
     if (selectedTypeFilter === 'admin') return ['owner', 'admin', 'management', 'moderator'].includes(u.role);
     if (selectedTypeFilter === 'vip') return u.role === 'vip';
     if (selectedTypeFilter === 'visitor') return u.role === 'visitor';
 
+    // 4. Status Filter
     if (statusFilter === 'active') return u.onlineStatus === 'online';
     if (statusFilter === 'inactive') return u.onlineStatus !== 'online';
 
@@ -77,19 +98,44 @@ export const OnlineList: React.FC = () => {
           return (hashA % 17) - (hashB % 17);
         });
 
-      case 'new_members':
-        return list.sort((a, b) => {
-          const dateA = new Date(a.joinedDate || 0).getTime();
-          const dateB = new Date(b.joinedDate || 0).getTime();
-          return dateB - dateA;
+      case 'new_members': {
+        // Display users who joined within the last 8 hours, sorted newest first
+        const EIGHT_HOURS_MS = 8 * 60 * 60 * 1000;
+        const now = Date.now();
+        const newMembersList = list.filter(u => {
+          if (u.joinedTimestamp) {
+            return (now - u.joinedTimestamp) <= EIGHT_HOURS_MS;
+          }
+          return true;
         });
+        return newMembersList.sort((a, b) => {
+          const timeA = a.joinedTimestamp || 0;
+          const timeB = b.joinedTimestamp || 0;
+          if (timeA !== timeB) return timeB - timeA;
+          return (b.id || '').localeCompare(a.id || '');
+        });
+      }
 
-      case 'last_seen':
-        return list.sort((a, b) => {
+      case 'last_seen': {
+        // Display users active in the site or within the last 1 hour, sorted latest first
+        const ONE_HOUR_MS = 1 * 60 * 60 * 1000;
+        const now = Date.now();
+        const activeOrRecentList = list.filter(u => {
+          if (u.onlineStatus === 'online') return true;
+          if (u.lastSeenTimestamp) {
+            return (now - u.lastSeenTimestamp) <= ONE_HOUR_MS;
+          }
+          return false;
+        });
+        return activeOrRecentList.sort((a, b) => {
           if (a.onlineStatus === 'online' && b.onlineStatus !== 'online') return -1;
           if (a.onlineStatus !== 'online' && b.onlineStatus === 'online') return 1;
+          const timeA = a.lastSeenTimestamp || 0;
+          const timeB = b.lastSeenTimestamp || 0;
+          if (timeA !== timeB) return timeB - timeA;
           return a.username.localeCompare(b.username, 'ar');
         });
+      }
 
       case 'username':
         return list
@@ -131,7 +177,7 @@ export const OnlineList: React.FC = () => {
   return (
     <div className="w-full h-full bg-white flex flex-col select-none relative text-slate-800">
       
-      {/* 1. Top Bar Navigation (matching arabsyemen.com header in Screenshot 1) */}
+      {/* 1. Top Bar Navigation */}
       <div className="p-2.5 bg-white border-b border-slate-200 flex items-center justify-between shrink-0">
         
         {/* Right Side in RTL: Action Icons */}
@@ -206,66 +252,81 @@ export const OnlineList: React.FC = () => {
         {/* View A: Online Users Default View ('online') */}
         {activeTab === 'online' && (
           <div>
-            {/* User List Rows */}
-            <div className="divide-y divide-slate-100">
-              {sortedUsers.map((user) => (
-                <div
-                  key={user.id}
-                  onClick={() => setSelectedUserForCard(user)}
-                  className="px-3 py-2.5 hover:bg-sky-50/60 transition-colors cursor-pointer flex items-center justify-between gap-3 group"
-                >
-                  {/* Right side in RTL: Avatar + Username & Subtitle */}
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    {/* User Avatar */}
-                    <div className="relative shrink-0">
-                      <UserAvatar
-                        avatarUrl={user.avatar}
-                        gender={user.gender}
-                        role={user.role}
-                        username={user.username}
-                        size="md"
-                      />
-                    </div>
+            {sortedUsers.length === 0 ? (
+              <div className="text-center py-12 px-4 text-slate-400 space-y-2">
+                <Users className="w-10 h-10 mx-auto text-slate-300 stroke-[1.5]" />
+                <p className="text-xs font-semibold">
+                  لا يوجد متواجدون متصلون حالياً
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {sortedUsers.map((user) => {
+                  const userRoom = rooms.find(r => r.id === (user.currentRoomId || 'room-general')) || currentRoom;
+                  return (
+                    <div
+                      key={user.id}
+                      onClick={() => setSelectedUserForCard(user)}
+                      className="px-3 py-2.5 hover:bg-sky-50/60 transition-colors cursor-pointer flex items-center justify-between gap-3 group"
+                    >
+                      {/* Right side in RTL: Avatar + Username & Subtitle */}
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        {/* User Avatar */}
+                        <div className="relative shrink-0">
+                          <UserAvatar
+                            avatarUrl={user.avatar}
+                            gender={user.gender}
+                            role={user.role}
+                            username={user.username}
+                            size="md"
+                          />
+                        </div>
 
-                    {/* Name & Bio */}
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span
-                          style={{
-                            color: user.usernameColor || undefined,
-                            fontSize: user.usernameFontSize || undefined,
-                            textShadow: NEON_COLORS.some(n => n.value.toLowerCase() === (user.usernameColor || '').toLowerCase())
-                              ? `0 0 6px ${user.usernameColor}`
-                              : 'none'
-                          }}
-                          className="text-xs sm:text-sm font-bold text-slate-900 truncate group-hover:text-sky-600 transition-colors"
-                        >
-                          {user.username}
-                        </span>
-                        {user.role === 'owner' && user.isStealth && (
-                          <span className="text-[10px] bg-purple-100 text-purple-700 border border-purple-300 px-1.5 py-0.2 rounded font-black">
-                            مخفي 🕵️‍♂️
+                        {/* Name & Bio & Location Badge */}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span
+                              style={{
+                                color: user.usernameColor || undefined,
+                                fontSize: user.usernameFontSize || undefined,
+                                textShadow: NEON_COLORS.some(n => n.value.toLowerCase() === (user.usernameColor || '').toLowerCase())
+                                  ? `0 0 6px ${user.usernameColor}`
+                                  : 'none'
+                              }}
+                              className="text-xs sm:text-sm font-bold text-slate-900 truncate group-hover:text-sky-600 transition-colors"
+                            >
+                              {user.username}
+                            </span>
+                            {user.role === 'owner' && user.isStealth && (
+                              <span className="text-[10px] bg-purple-100 text-purple-700 border border-purple-300 px-1.5 py-0.2 rounded font-black">
+                                مخفي 🕵️‍♂️
+                              </span>
+                            )}
+                            <span className="text-[10px] bg-slate-100 text-slate-600 border border-slate-200 px-1.5 py-0.2 rounded font-medium flex items-center gap-0.5">
+                              <MapPin className="w-2.5 h-2.5 text-sky-600" />
+                              {userRoom.name}
+                            </span>
+                          </div>
+
+                          <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                            {user.statusMessage || user.bio || `${user.countryFlag || '🇾🇪'} ${user.country || 'اليمن'}`}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Left side in RTL: Rank Icon (Crown 👑, Android 🤖, Shield 🛡️, Diamond 💎) */}
+                      <div className="shrink-0 pl-1">
+                        {!isSystemUser(user) && (
+                          <span className={`text-lg sm:text-xl shrink-0 ${getRankEmojiClass(user.role, user.username)}`}>
+                            {getRankEmoji(user.role, user.username)}
                           </span>
                         )}
                       </div>
-
-                      <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                        {user.statusMessage || user.bio || `${user.countryFlag || '🇸🇦'} ${user.country || 'اليمن'}`}
-                      </p>
                     </div>
-                  </div>
-
-                  {/* Left side in RTL: Rank Icon (Crown 👑, Android 🤖, Shield 🛡️, Diamond 💎) */}
-                  <div className="shrink-0 pl-1">
-                    {!isSystemUser(user) && (
-                      <span className={`text-lg sm:text-xl shrink-0 ${getRankEmojiClass(user.role, user.username)}`}>
-                        {getRankEmoji(user.role, user.username)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -325,55 +386,62 @@ export const OnlineList: React.FC = () => {
                   لا توجد نتائج مطابقة للبحث
                 </div>
               ) : (
-                sortedUsers.map((user) => (
-                  <div
-                    key={user.id}
-                    onClick={() => setSelectedUserForCard(user)}
-                    className="py-2.5 px-2 hover:bg-sky-50/60 transition-colors cursor-pointer flex items-center justify-between gap-2.5 group"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      {sortMode === 'new_members' && (
-                        <span className="text-base shrink-0 animate-bounce text-sky-500" title="عضو جديد">
-                          🖐️
-                        </span>
-                      )}
-
-                      {!isSystemUser(user) && (
-                        <span className={`text-base shrink-0 ${getRankEmojiClass(user.role, user.username)}`}>
-                          {getRankEmoji(user.role, user.username)}
-                        </span>
-                      )}
-
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span
-                            style={{
-                              color: user.usernameColor || undefined,
-                              fontSize: user.usernameFontSize || undefined,
-                            }}
-                            className="text-xs sm:text-sm font-bold text-slate-900 truncate group-hover:text-sky-600 transition-colors block"
-                          >
-                            {user.username}
+                sortedUsers.map((user) => {
+                  const userRoom = rooms.find(r => r.id === (user.currentRoomId || 'room-general')) || currentRoom;
+                  return (
+                    <div
+                      key={user.id}
+                      onClick={() => setSelectedUserForCard(user)}
+                      className="py-2.5 px-2 hover:bg-sky-50/60 transition-colors cursor-pointer flex items-center justify-between gap-2.5 group"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        {sortMode === 'new_members' && (
+                          <span className="text-base shrink-0 animate-bounce text-sky-500" title="عضو جديد">
+                            🖐️
                           </span>
+                        )}
+
+                        {!isSystemUser(user) && (
+                          <span className={`text-base shrink-0 ${getRankEmojiClass(user.role, user.username)}`}>
+                            {getRankEmoji(user.role, user.username)}
+                          </span>
+                        )}
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span
+                              style={{
+                                color: user.usernameColor || undefined,
+                                fontSize: user.usernameFontSize || undefined,
+                              }}
+                              className="text-xs sm:text-sm font-bold text-slate-900 truncate group-hover:text-sky-600 transition-colors block"
+                            >
+                              {user.username}
+                            </span>
+                            <span className="text-[9px] bg-slate-100 text-slate-600 px-1 py-0.2 rounded flex items-center gap-0.5">
+                              <MapPin className="w-2 h-2 text-sky-600" />
+                              {userRoom.name}
+                            </span>
+                          </div>
+                          
+                          <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                            {user.statusMessage || user.bio || `${user.countryFlag || '🇸🇦'} ${user.country || 'اليمن'}`}
+                          </p>
                         </div>
-                        
-                        <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                          {user.statusMessage || user.bio || `${user.countryFlag || '🇸🇦'} ${user.country}`}
-                        </p>
+                      </div>
+
+                      <div className="relative shrink-0">
+                        <UserAvatar
+                          avatarUrl={user.avatar}
+                          gender={user.gender}
+                          role={user.role}
+                          username={user.username}
+                          size="sm"
+                        />
                       </div>
                     </div>
-
-                    <div className="relative shrink-0">
-                      <UserAvatar
-                        avatarUrl={user.avatar}
-                        gender={user.gender}
-                        role={user.role}
-                        username={user.username}
-                        size="sm"
-                      />
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
@@ -382,7 +450,7 @@ export const OnlineList: React.FC = () => {
 
       </div>
 
-      {/* 3. Sort Mode Picker Modal Overlay */}
+      {/* 4. Sort Mode Picker Modal Overlay */}
       {isSortModalOpen && (
         <div className="absolute inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl shadow-2xl p-4 w-full max-w-xs border border-slate-200 animate-in zoom-in-95 duration-150 text-slate-800">

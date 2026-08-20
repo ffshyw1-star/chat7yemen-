@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+  <!-- Steel Blue Background -->
+  <rect width="200" height="200" fill="#688ca8"/>
+  
+  <!-- Minimalist White Stroked Head -->
+  <circle cx="100" cy="84" r="30" fill="none" stroke="#ffffff" stroke-width="10"/>
+  
+  <!-- Minimalist White Stroked Shoulders Arc -->
+  <path d="M 62 142 C 62 112, 138 112, 138 142" fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round"/>
+</svg>
