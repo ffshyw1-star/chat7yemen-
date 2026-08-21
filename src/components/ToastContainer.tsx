@@ -28,6 +28,8 @@ export const ToastContainer: React.FC = () => {
             className={`absolute right-0 top-0 bottom-0 w-1.5 ${
               toast.type === 'private_message'
                 ? 'bg-[#00aeeF]'
+                : toast.type === 'mention'
+                ? 'bg-rose-500'
                 : toast.type === 'user_join'
                 ? 'bg-emerald-500'
                 : 'bg-amber-500'
@@ -48,6 +50,8 @@ export const ToastContainer: React.FC = () => {
               <div className="w-10 h-10 rounded-full bg-sky-50 text-[#00aeeF] flex items-center justify-center">
                 {toast.type === 'private_message' ? (
                   <MessageSquare className="w-5 h-5" />
+                ) : toast.type === 'mention' ? (
+                  <Bell className="w-5 h-5 text-rose-500" />
                 ) : toast.type === 'user_join' ? (
                   <LogIn className="w-5 h-5 text-emerald-600" />
                 ) : (
@@ -64,6 +68,9 @@ export const ToastContainer: React.FC = () => {
                 {toast.type === 'private_message' && (
                   <span className="bg-sky-100 text-[#0284c7] text-[10px] px-1.5 py-0.2 rounded font-bold">خاص</span>
                 )}
+                {toast.type === 'mention' && (
+                  <span className="bg-rose-100 text-rose-600 text-[10px] px-1.5 py-0.2 rounded font-bold">إشارة 📣</span>
+                )}
                 {toast.type === 'user_join' && (
                   <span className="bg-emerald-100 text-emerald-700 text-[10px] px-1.5 py-0.2 rounded font-bold">انضمام</span>
                 )}
@@ -79,6 +86,12 @@ export const ToastContainer: React.FC = () => {
             {toast.type === 'private_message' && (
               <div className="mt-1.5 text-[11px] font-bold text-[#00aeeF] flex items-center gap-1 group-hover:translate-x-[-2px] transition-transform">
                 <span>انقر بالضغط للرد المباشر</span>
+                <ChevronLeft className="w-3 h-3" />
+              </div>
+            )}
+            {toast.type === 'mention' && (
+              <div className="mt-1.5 text-[11px] font-bold text-rose-500 flex items-center gap-1 group-hover:translate-x-[-2px] transition-transform">
+                <span>انقر للانتقال للرسالة</span>
                 <ChevronLeft className="w-3 h-3" />
               </div>
             )}

@@ -1,19 +1,31 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useChat } from '../context/ChatContext';
-import { X, User, ShieldAlert, Heart, UserCheck, Bell } from 'lucide-react';
+import { X, User, ShieldAlert, Heart, UserCheck, Bell, BellRing, CheckCircle2 } from 'lucide-react';
 import { UserAvatar } from './UserAvatar';
 import { toEnglishDigits } from '../utils/dateUtils';
+import {
+  isBrowserNotificationSupported,
+  getBrowserNotificationPermission,
+  requestBrowserNotificationPermission
+} from '../utils/browserNotifications';
 
 export const NotificationsModal: React.FC = () => {
   const {
     notifications, setIsNotificationsOpen, markNotificationsAsRead, deleteNotification,
-    currentUser, setNotifications, setActivePrivateUserId, setIsPrivateChatOpen
+    currentUser, setNotifications, setActivePrivateUserId, setIsPrivateChatOpen, setCurrentView
   } = useChat();
   const [selectedNotifId, setSelectedNotifId] = useState<string | null>(null);
+  const [browserPerm, setBrowserPerm] = useState<NotificationPermission | 'unsupported'>('default');
 
-  React.useEffect(() => {
+  useEffect(() => {
     markNotificationsAsRead();
+    setBrowserPerm(getBrowserNotificationPermission());
   }, []);
+
+  const handleEnableBrowserNotifications = async () => {
+    const granted = await requestBrowserNotificationPermission();
+    setBrowserPerm(granted ? 'granted' : getBrowserNotificationPermission());
+  };
 
   const myNotifications = notifications.filter(n => !n.userId || n.userId === currentUser?.id || n.userId === 'all');
 
@@ -30,6 +42,11 @@ export const NotificationsModal: React.FC = () => {
       setIsPrivateChatOpen(true);
       return;
     }
+    if (notif.type === 'mention') {
+      setIsNotificationsOpen(false);
+      setCurrentView('chat');
+      return;
+    }
     if (selectedNotifId === notif.id) {
       setSelectedNotifId(null);
     } else {
@@ -42,8 +59,13 @@ export const NotificationsModal: React.FC = () => {
       <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl relative flex flex-col max-h-[85vh]">
         
         {/* 1. Dark Top Header Bar (#0B252E matching Screenshot 3) */}
-        <div className="bg-[#0B252E] px-4 py-3 flex items-center justify-start shrink-0 border-b border-[#081d24]">
-          {/* Close (X) button on the top right */}
+        <div className="bg-[#0B252E] px-4 py-3 flex items-center justify-between shrink-0 border-b border-[#081d24]">
+          <span className="text-white font-black text-sm flex items-center gap-2">
+            <Bell className="w-4 h-4 text-amber-400" />
+            <span>الإشعارات والتنبيهات</span>
+          </span>
+
+          {/* Close (X) button */}
           <button
             onClick={() => setIsNotificationsOpen(false)}
             className="text-white hover:text-slate-300 transition-colors cursor-pointer"
@@ -52,6 +74,22 @@ export const NotificationsModal: React.FC = () => {
             <X className="w-6 h-6 stroke-[3]" />
           </button>
         </div>
+
+        {/* Browser Desktop Notification Quick Permission Banner */}
+        {isBrowserNotificationSupported() && browserPerm !== 'granted' && (
+          <div className="bg-gradient-to-r from-sky-50 to-blue-50 border-b border-sky-200 px-3.5 py-2.5 flex items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2 text-sky-950 font-bold">
+              <BellRing className="w-4 h-4 text-[#00aeeF] shrink-0 animate-bounce" />
+              <span>تفعيل إشعارات المتصفح للرسائل والمنشن</span>
+            </div>
+            <button
+              onClick={handleEnableBrowserNotifications}
+              className="bg-[#00aeeF] hover:bg-[#0096ce] text-white px-3 py-1 rounded-xl font-black text-xs shadow-xs cursor-pointer transition-colors shrink-0"
+            >
+              تفعيل الآن
+            </button>
+          </div>
+        )}
 
         {/* 2. Notifications List Content (White Canvas matching Screenshot 3) */}
         <div className="flex-1 overflow-y-auto bg-white custom-scrollbar min-h-[220px]">

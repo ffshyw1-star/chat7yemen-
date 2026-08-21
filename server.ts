@@ -18,13 +18,15 @@ app.use(express.json({ limit: "20mb" }));
 const DB_FILE = path.join(process.cwd(), "d1_chat_database.sqlite");
 let db: Database;
 
-// Save D1 SQLite database state to disk
+// Save D1 SQLite database state to disk atomically
 function saveD1ToDisk() {
   if (!db) return;
   try {
     const data = db.export();
     const buffer = Buffer.from(data);
-    fs.writeFileSync(DB_FILE, buffer);
+    const tmpFile = `${DB_FILE}.tmp`;
+    fs.writeFileSync(tmpFile, buffer);
+    fs.renameSync(tmpFile, DB_FILE);
   } catch (err) {
     console.error("Error writing D1 database to disk:", err);
   }
@@ -170,13 +172,20 @@ function resetD1Database() {
 async function initD1Database() {
   const SQL = await initSqlJs();
 
+  let loadedSuccessfully = false;
   if (fs.existsSync(DB_FILE)) {
     try {
       const filebuffer = fs.readFileSync(DB_FILE);
       db = new SQL.Database(filebuffer);
+      // Run quick integrity check
+      db.exec("SELECT 1;");
       console.log("💾 Loaded existing D1 SQLite database from disk.");
+      loadedSuccessfully = true;
     } catch (e) {
-      console.warn("Failed to load DB file, initializing fresh SQLite D1:", e);
+      console.warn("Corrupted or incompatible DB file found. Resetting SQLite D1 database:", e);
+      try {
+        if (fs.existsSync(DB_FILE)) fs.unlinkSync(DB_FILE);
+      } catch (_) {}
       db = new SQL.Database();
     }
   } else {
@@ -184,94 +193,101 @@ async function initD1Database() {
     console.log("✨ Initialized new Cloudflare D1 SQLite database.");
   }
 
-  // Create tables in SQLite D1
-  db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      username TEXT,
-      role TEXT,
-      data TEXT
-    );
-    CREATE TABLE IF NOT EXISTS messages (
-      id TEXT PRIMARY KEY,
-      roomId TEXT,
-      senderId TEXT,
-      timestamp TEXT,
-      data TEXT
-    );
-    CREATE TABLE IF NOT EXISTS private_messages (
-      id TEXT PRIMARY KEY,
-      senderId TEXT,
-      receiverId TEXT,
-      timestamp TEXT,
-      data TEXT
-    );
-    CREATE TABLE IF NOT EXISTS rooms (
-      id TEXT PRIMARY KEY,
-      data TEXT
-    );
-    CREATE TABLE IF NOT EXISTS wall_posts (
-      id TEXT PRIMARY KEY,
-      data TEXT
-    );
-    CREATE TABLE IF NOT EXISTS reports (
-      id TEXT PRIMARY KEY,
-      data TEXT
-    );
-    CREATE TABLE IF NOT EXISTS friend_requests (
-      id TEXT PRIMARY KEY,
-      data TEXT
-    );
-    CREATE TABLE IF NOT EXISTS ip_moderations (
-      id TEXT PRIMARY KEY,
-      ip TEXT,
-      type TEXT,
-      data TEXT
-    );
-    CREATE TABLE IF NOT EXISTS notifications (
-      id TEXT PRIMARY KEY,
-      userId TEXT,
-      timestamp TEXT,
-      data TEXT
-    );
-    CREATE TABLE IF NOT EXISTS site_settings (
-      id TEXT PRIMARY KEY,
-      data TEXT
-    );
-  `);
+  try {
+    // Create tables in SQLite D1
+    db.run(`
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        username TEXT,
+        role TEXT,
+        data TEXT
+      );
+      CREATE TABLE IF NOT EXISTS messages (
+        id TEXT PRIMARY KEY,
+        roomId TEXT,
+        senderId TEXT,
+        timestamp TEXT,
+        data TEXT
+      );
+      CREATE TABLE IF NOT EXISTS private_messages (
+        id TEXT PRIMARY KEY,
+        senderId TEXT,
+        receiverId TEXT,
+        timestamp TEXT,
+        data TEXT
+      );
+      CREATE TABLE IF NOT EXISTS rooms (
+        id TEXT PRIMARY KEY,
+        data TEXT
+      );
+      CREATE TABLE IF NOT EXISTS wall_posts (
+        id TEXT PRIMARY KEY,
+        data TEXT
+      );
+      CREATE TABLE IF NOT EXISTS reports (
+        id TEXT PRIMARY KEY,
+        data TEXT
+      );
+      CREATE TABLE IF NOT EXISTS friend_requests (
+        id TEXT PRIMARY KEY,
+        data TEXT
+      );
+      CREATE TABLE IF NOT EXISTS ip_moderations (
+        id TEXT PRIMARY KEY,
+        ip TEXT,
+        type TEXT,
+        data TEXT
+      );
+      CREATE TABLE IF NOT EXISTS notifications (
+        id TEXT PRIMARY KEY,
+        userId TEXT,
+        timestamp TEXT,
+        data TEXT
+      );
+      CREATE TABLE IF NOT EXISTS site_settings (
+        id TEXT PRIMARY KEY,
+        data TEXT
+      );
+    `);
 
-  // Check if owner is already present and matches the requested clean state
-  const userRows = db.exec("SELECT data FROM users");
-  let shouldReset = false;
-  if (userRows.length > 0 && userRows[0].values.length > 0) {
-    const loadedUsers: User[] = userRows[0].values.map((v) => JSON.parse(v[0] as string));
-    const hasCleanOwner = loadedUsers.some(u => u.role === 'owner' && u.username === 'المالك');
-    if (!hasCleanOwner) {
-      console.log("🧹 Detected stale database records. Performing clean reset...");
-      shouldReset = true;
+    // Check if owner is already present and matches the requested clean state
+    const userRows = db.exec("SELECT data FROM users");
+    let shouldReset = false;
+    if (userRows.length > 0 && userRows[0].values.length > 0) {
+      const loadedUsers: User[] = userRows[0].values.map((v) => JSON.parse(v[0] as string));
+      const hasCleanOwner = loadedUsers.some(u => u.role === 'owner' && u.username === 'المالك');
+      if (!hasCleanOwner) {
+        console.log("🧹 Detected stale database records. Performing clean reset...");
+        shouldReset = true;
+      } else {
+        // Purge any mock/dummy users, strip user-system from friends, and retain only real accounts
+        const mockIds = ['user-1', 'user-2', 'user-3', 'user-4', 'user-5', 'user-6', 'user-7', 'user-8'];
+        serverUsers = loadedUsers
+          .filter(u => !mockIds.includes(u.id))
+          .map(u => ({
+            ...u,
+            friends: (u.friends || []).filter(fId => fId !== 'user-system' && fId !== 'system')
+          }));
+        mockIds.forEach(id => {
+          try {
+            db.run("DELETE FROM users WHERE id = ?", [id]);
+          } catch (e) {}
+        });
+        // Resave cleaned users to db
+        serverUsers.forEach(saveUserToD1);
+        saveD1ToDisk();
+      }
     } else {
-      // Purge any mock/dummy users, strip user-system from friends, and retain only real accounts
-      const mockIds = ['user-1', 'user-2', 'user-3', 'user-4', 'user-5', 'user-6', 'user-7', 'user-8'];
-      serverUsers = loadedUsers
-        .filter(u => !mockIds.includes(u.id))
-        .map(u => ({
-          ...u,
-          friends: (u.friends || []).filter(fId => fId !== 'user-system' && fId !== 'system')
-        }));
-      mockIds.forEach(id => {
-        try {
-          db.run("DELETE FROM users WHERE id = ?", [id]);
-        } catch (e) {}
-      });
-      // Resave cleaned users to db
-      serverUsers.forEach(saveUserToD1);
-      saveD1ToDisk();
+      shouldReset = true;
     }
-  } else {
-    shouldReset = true;
-  }
 
-  if (shouldReset) {
+    if (shouldReset) {
+      resetD1Database();
+      return;
+    }
+  } catch (err) {
+    console.error("Database schema or data query error, recovering with clean reset:", err);
+    db = new SQL.Database();
     resetD1Database();
     return;
   }
@@ -589,6 +605,139 @@ app.post("/api/ip/action", (req, res) => {
   }
 
   res.json({ success: true, ipModerations: serverIPModerations });
+});
+
+// REST Endpoint to update user profile, avatar, username, coins, roles
+app.post("/api/users/update", (req, res) => {
+  const { user } = req.body || {};
+  if (user && user.id) {
+    const existingIdx = serverUsers.findIndex((u) => u.id === user.id);
+    if (existingIdx !== -1) {
+      serverUsers[existingIdx] = { ...serverUsers[existingIdx], ...user };
+    } else {
+      serverUsers.push(user);
+    }
+    const updated = serverUsers.find((u) => u.id === user.id);
+    if (updated) {
+      saveUserToD1(updated);
+    }
+    broadcast({ type: "USER_UPDATED", payload: user });
+    broadcast({ type: "SYNC_USERS", payload: serverUsers });
+    return res.json({ success: true, user: updated });
+  }
+  res.status(400).json({ success: false, error: "Invalid user data" });
+});
+
+// REST Endpoint to delete user account
+app.post("/api/users/delete", (req, res) => {
+  const { userId } = req.body || {};
+  if (userId) {
+    serverUsers = serverUsers.filter((u) => u.id !== userId);
+    try {
+      db.run("DELETE FROM users WHERE id = ?", [userId]);
+      saveD1ToDisk();
+    } catch (e) {
+      console.error("D1 delete user error via REST:", e);
+    }
+    broadcast({ type: "USER_DELETED", payload: { userId } });
+    broadcast({ type: "SYNC_USERS", payload: serverUsers });
+    return res.json({ success: true });
+  }
+  res.status(400).json({ success: false, error: "Missing userId" });
+});
+
+// REST Endpoint to update site settings
+app.post("/api/settings/update", (req, res) => {
+  const { settings } = req.body || {};
+  if (settings) {
+    serverSiteSettings = { ...serverSiteSettings, ...settings };
+    saveSiteSettingsToD1(serverSiteSettings);
+    broadcast({ type: "SYNC_SETTINGS", payload: serverSiteSettings });
+    return res.json({ success: true, settings: serverSiteSettings });
+  }
+  res.status(400).json({ success: false, error: "Invalid settings" });
+});
+
+// GET /sitemap.xml dynamic generator
+app.get("/sitemap.xml", (req, res) => {
+  const host = req.get("host") || "yemen-chat.app";
+  const protocol = req.protocol === "https" || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+  const baseUrl = `${protocol}://${host}`;
+  const now = new Date().toISOString();
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
+        http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
+  <url>
+    <loc>${baseUrl}/</loc>
+    <lastmod>${now}</lastmod>
+    <changefreq>always</changefreq>
+    <priority>1.00</priority>
+  </url>
+  <url>
+    <loc>${baseUrl}/rooms</loc>
+    <lastmod>${now}</lastmod>
+    <changefreq>hourly</changefreq>
+    <priority>0.90</priority>
+  </url>
+  <url>
+    <loc>${baseUrl}/terms-of-service</loc>
+    <lastmod>${now}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.50</priority>
+  </url>
+  <url>
+    <loc>${baseUrl}/privacy-policy</loc>
+    <lastmod>${now}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.50</priority>
+  </url>
+  <url>
+    <loc>${baseUrl}/chat-rules</loc>
+    <lastmod>${now}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.60</priority>
+  </url>
+  <url>
+    <loc>${baseUrl}/about-us</loc>
+    <lastmod>${now}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.60</priority>
+  </url>
+  <url>
+    <loc>${baseUrl}/contact-us</loc>
+    <lastmod>${now}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.60</priority>
+  </url>
+</urlset>`;
+
+  res.header("Content-Type", "application/xml");
+  res.send(xml);
+});
+
+// GET /robots.txt
+app.get("/robots.txt", (req, res) => {
+  const host = req.get("host") || "yemen-chat.app";
+  const protocol = req.protocol === "https" || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+  const sitemapUrl = `${protocol}://${host}/sitemap.xml`;
+
+  res.header("Content-Type", "text/plain");
+  res.send(`User-agent: *\nAllow: /\nSitemap: ${sitemapUrl}\n`);
+});
+
+// REST Endpoint to update rooms
+app.post("/api/rooms/update", (req, res) => {
+  const { rooms } = req.body || {};
+  if (Array.isArray(rooms)) {
+    serverRooms = rooms;
+    saveRoomsToD1(serverRooms);
+    broadcast({ type: "SYNC_ROOMS", payload: serverRooms });
+    return res.json({ success: true, rooms: serverRooms });
+  }
+  res.status(400).json({ success: false, error: "Invalid rooms data" });
 });
 
 // WebSocket Server on /ws

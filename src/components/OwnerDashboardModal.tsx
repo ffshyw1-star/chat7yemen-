@@ -10,6 +10,16 @@ import {
   Download, Upload, ExternalLink, Globe, Key, AlertTriangle, UserCheck,
   UserX, Sliders, Music, RadioTower, Database, Menu, Bell
 } from 'lucide-react';
+import { DjView } from './owner-dashboard/DjView';
+import { PermissionsView } from './owner-dashboard/PermissionsView';
+import { ModulesView } from './owner-dashboard/ModulesView';
+import { MessagesView } from './owner-dashboard/MessagesView';
+import { AddonsView } from './owner-dashboard/AddonsView';
+import { ToolsView } from './owner-dashboard/ToolsView';
+import { MusicView } from './owner-dashboard/MusicView';
+import { PagesView } from './owner-dashboard/PagesView';
+import { LogsView } from './owner-dashboard/LogsView';
+import { ActionsView } from './owner-dashboard/ActionsView';
 
 export const OwnerDashboardModal: React.FC = () => {
   const {
@@ -62,6 +72,11 @@ export const OwnerDashboardModal: React.FC = () => {
 
   // Local Site Settings Form State
   const [settingsForm, setSettingsForm] = useState({ ...siteSettings });
+
+  // Sync settings form if context updates
+  useEffect(() => {
+    setSettingsForm(prev => ({ ...prev, ...siteSettings }));
+  }, [siteSettings]);
 
   // Users Filter & Search
   const [userSearch, setUserSearch] = useState('');
@@ -1430,39 +1445,7 @@ export const OwnerDashboardModal: React.FC = () => {
             {/* VIEW 7: إدارة الإجراء (Action & Live Broadcast) */}
             {/* ===================================================================== */}
             {activeSection === 'actions' && (
-              <div className="max-w-4xl mx-auto bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-4 shadow-2xs">
-                <h3 className="text-xs font-black text-slate-800 border-b border-slate-100 pb-2">إرسال تنبيه أو إذاعة صوتية عامة</h3>
-                
-                <form onSubmit={handleBroadcast} className="space-y-3 text-xs">
-                  <div>
-                    <label className="font-bold text-slate-600 block mb-1">عنوان التنبيه:</label>
-                    <input
-                      type="text"
-                      value={broadcastTitle}
-                      onChange={(e) => setBroadcastTitle(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 font-bold"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="font-bold text-slate-600 block mb-1">نص الرسالة المنطوقة والمكتوبة لجميع الأعضاء:</label>
-                    <textarea
-                      value={broadcastText}
-                      onChange={(e) => setBroadcastText(e.target.value)}
-                      rows={3}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 font-bold"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg shadow-xs cursor-pointer transition-colors flex items-center gap-2"
-                  >
-                    <Radio className="w-4 h-4" />
-                    <span>بث التنبيه الصوتي الآن 📢</span>
-                  </button>
-                </form>
-              </div>
+              <ActionsView showToast={showToast} />
             )}
 
             {/* ===================================================================== */}
@@ -1514,31 +1497,20 @@ export const OwnerDashboardModal: React.FC = () => {
             {/* VIEW 9: سجلات النظام (System Logs) */}
             {/* ===================================================================== */}
             {activeSection === 'logs' && (
-              <div className="max-w-4xl mx-auto bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-3 shadow-2xs">
-                <h3 className="text-xs font-black text-slate-800 border-b border-slate-100 pb-2">سجلات النظام والأحداث المباشرة</h3>
-                <div className="bg-slate-900 text-emerald-400 p-4 rounded-xl font-mono text-xs space-y-1.5 max-h-96 overflow-y-auto custom-scrollbar">
-                  <p className="text-slate-400">[SYSTEM READY] Server initialized with Cloudflare D1 persistence.</p>
-                  <p className="text-emerald-400">[AUTH] User login validated successfully.</p>
-                  <p className="text-cyan-400">[ROOMS] Active rooms dispatched and synced.</p>
-                  <p className="text-amber-400">[HEALTH] Ping response time: 24ms.</p>
-                </div>
-              </div>
+              <LogsView showToast={showToast} />
             )}
 
             {/* ===================================================================== */}
-            {/* OTHER GENERIC SECTIONS */}
+            {/* DEDICATED SECTIONS */}
             {/* ===================================================================== */}
-            {['permissions', 'modules', 'messages', 'addons', 'tools', 'music', 'dj', 'pages'].includes(activeSection) && (
-              <div className="max-w-4xl mx-auto bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-4 shadow-2xs">
-                <h3 className="text-xs font-black text-slate-800 border-b border-slate-100 pb-2">{getSectionTitle()}</h3>
-                <p className="text-xs text-slate-600">
-                  قسم {getSectionTitle()} مفعّل وجاهز في النظام بكامل الصلاحيات.
-                </p>
-                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-700">
-                  ✅ جميع الخيارات والأدوات المرتبطة بـ {getSectionTitle()} متصلة مباشرة مع قاعدة البيانات وسيرفر الدردشة.
-                </div>
-              </div>
-            )}
+            {activeSection === 'dj' && <DjView showToast={showToast} />}
+            {activeSection === 'permissions' && <PermissionsView showToast={showToast} />}
+            {activeSection === 'modules' && <ModulesView showToast={showToast} />}
+            {activeSection === 'messages' && <MessagesView showToast={showToast} />}
+            {activeSection === 'addons' && <AddonsView showToast={showToast} />}
+            {activeSection === 'tools' && <ToolsView showToast={showToast} />}
+            {activeSection === 'music' && <MusicView showToast={showToast} />}
+            {activeSection === 'pages' && <PagesView showToast={showToast} />}
 
           </main>
         </div>

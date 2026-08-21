@@ -24,6 +24,12 @@ import {
   formatEnglishShortDateTime,
   formatEnglishSecondsTime
 } from '../utils/dateUtils';
+import {
+  showBrowserNotification,
+  tabTitleManager,
+  requestBrowserNotificationPermission,
+  getBrowserNotificationPermission
+} from '../utils/browserNotifications';
 
 interface AudioSettings {
   publicSound: boolean;
@@ -180,6 +186,7 @@ interface ChatContextType {
   toggleOwnerStealth: () => void;
   moderatorAction: (targetUserId: string, actionType: 'mute' | 'kick' | 'unmute' | 'unkick' | 'ban' | 'edit_name' | 'delete_account', durationMinutes?: number, reason?: string, newName?: string) => void;
   deleteMessage: (messageId: string) => void;
+  clearChat: (roomId?: string) => void;
   ownerUpdateUser: (userId: string, updates: Partial<User>) => void;
   ownerUpdateStorePrices: (vipPrice: number, modPrice: number) => void;
   ownerUpdateRoomName: (roomId: string, newName: string) => void;
@@ -247,7 +254,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [users]);
 
-  // Persistent currentUser state across reloads
+  // Persistent currentUser state across reloads (browser-specific session)
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
       const saved = localStorage.getItem('araby_current_user');
@@ -258,7 +265,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (e) {
       console.error(e);
     }
-    return INITIAL_USERS.find(u => u.role === 'owner') || INITIAL_USERS[1] || null;
+    return null;
   });
 
   useEffect(() => {
@@ -283,13 +290,13 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [users]);
 
-  // Persistent currentView state across reloads
+  // Persistent currentView state across reloads (starts at landing for new browser sessions)
   const [currentView, setCurrentView] = useState<'landing' | 'rooms' | 'chat'>(() => {
     try {
       const savedUser = localStorage.getItem('araby_current_user');
       const savedView = localStorage.getItem('araby_current_view') as 'landing' | 'rooms' | 'chat' | null;
-      if (savedUser && savedView && ['landing', 'rooms', 'chat'].includes(savedView)) {
-        return savedView === 'landing' ? 'rooms' : savedView;
+      if (savedUser && savedView && ['rooms', 'chat'].includes(savedView)) {
+        return savedView;
       }
       if (savedUser) return 'rooms';
     } catch (e) {
@@ -496,6 +503,15 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [hiddenPrivateUserIds]);
 
+  // WebSocket Client Connection Reference
+  const socketRef = useRef<WebSocket | null>(null);
+
+  const sendSocketEvent = useCallback((type: string, payload: any) => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type, payload }));
+    }
+  }, []);
+
   const hidePrivateConversation = useCallback((targetUserId: string) => {
     setHiddenPrivateUserIds(prev => prev.includes(targetUserId) ? prev : [...prev, targetUserId]);
   }, []);
@@ -562,8 +578,17 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   const updateSiteSettings = useCallback((newSettings: Partial<SiteSettings>) => {
-    setSiteSettings(prev => ({ ...prev, ...newSettings }));
-  }, []);
+    setSiteSettings(prev => {
+      const updated = { ...prev, ...newSettings };
+      sendSocketEvent('UPDATE_SETTINGS', updated);
+      fetch('/api/settings/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: updated })
+      }).catch(err => console.warn('Failed to persist site settings to D1:', err));
+      return updated;
+    });
+  }, [sendSocketEvent]);
   const [isSideMenuOpen, setIsSideMenuOpen] = useState<boolean>(false);
   const [isReportsOpen, setIsReportsOpen] = useState<boolean>(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
@@ -646,15 +671,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem('araby_client_ip', clientIp);
     } catch (e) {}
   }, [clientIp]);
-
-  // WebSocket Client Connection Reference
-  const socketRef = useRef<WebSocket | null>(null);
-
-  const sendSocketEvent = useCallback((type: string, payload: any) => {
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({ type, payload }));
-    }
-  }, []);
 
   // Automatically mark private messages as read when opening a conversation
   useEffect(() => {
@@ -765,10 +781,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             switch (type) {
               case "INIT_STATE": {
-                if (payload.messages && payload.messages.length > 0) {
+                if (payload.messages && Array.isArray(payload.messages)) {
                   setMessages(payload.messages);
                 }
-                if (payload.privateMessages) {
+                if (payload.privateMessages && Array.isArray(payload.privateMessages)) {
                   setPrivateMessages(payload.privateMessages);
                 }
                 if (payload.friendRequests && Array.isArray(payload.friendRequests)) {
@@ -792,6 +808,16 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (payload.notifications && Array.isArray(payload.notifications)) {
                   setNotifications(payload.notifications);
                 }
+                if (payload.siteSettings && typeof payload.siteSettings === 'object') {
+                  setSiteSettings(prev => ({ ...prev, ...payload.siteSettings }));
+                }
+                break;
+              }
+
+              case "SYNC_SETTINGS": {
+                if (payload && typeof payload === 'object') {
+                  setSiteSettings(prev => ({ ...prev, ...payload }));
+                }
                 break;
               }
 
@@ -802,7 +828,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   return [...prev, newMsg];
                 });
 
-                // In-app Notification for Mention in Public Chat
+                // In-app & Browser Notification for Mention in Public Chat
                 const curUserMsg = currentUserRef.current;
                 if (
                   curUserMsg &&
@@ -812,13 +838,27 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   curUserMsg.username
                 ) {
                   const mentionKeyword = curUserMsg.username.trim();
-                  if (mentionKeyword && (newMsg.text.includes(`@${mentionKeyword}`) || newMsg.text.toLowerCase().includes(mentionKeyword.toLowerCase()))) {
+                  const isDirectlyMentioned = mentionKeyword && (
+                    newMsg.text.includes(`@${mentionKeyword}`) ||
+                    newMsg.text.toLowerCase().includes(mentionKeyword.toLowerCase())
+                  );
+                  const isAllMentioned = ['owner', 'admin', 'management'].includes(newMsg.senderRole || '') && (
+                    newMsg.text.includes('@الجميع') || newMsg.text.toLowerCase().includes('@all')
+                  );
+
+                  if (isDirectlyMentioned || isAllMentioned) {
+                    const mentionTitle = isAllMentioned
+                      ? `نداء عام من ${newMsg.senderName || 'الإدارة'} 📢`
+                      : `قام ${newMsg.senderName || 'مستخدم'} بذكرك 📣`;
+
                     const mentionNotif: Notification = {
                       id: `notif-mention-${Date.now()}-${Math.random()}`,
                       userId: curUserMsg.id,
                       type: 'mention',
-                      title: 'إشارة / ذكر اسم 📣',
-                      message: `قام "${newMsg.senderName || 'مستخدم'}" بذكر اسمك في العامة: "${newMsg.text}"`,
+                      title: isAllMentioned ? 'نداء عام للجميع 📢' : 'إشارة / ذكر اسم 📣',
+                      message: isAllMentioned
+                        ? `نداء عام من الإدارة "${newMsg.senderName || 'الإدارة'}": "${newMsg.text}"`
+                        : `قام "${newMsg.senderName || 'مستخدم'}" بذكر اسمك في العامة: "${newMsg.text}"`,
                       senderId: newMsg.senderId,
                       senderName: newMsg.senderName,
                       senderAvatar: newMsg.senderAvatar,
@@ -827,9 +867,35 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     };
                     setNotifications(prev => [mentionNotif, ...prev]);
                     showTopBanner(`📣 قام "${newMsg.senderName || 'مستخدم'}" بذكر اسمك في العامة: ${newMsg.text.substring(0, 30)}`);
+
+                    // 1. In-app toast notification
+                    addToast({
+                      type: 'mention',
+                      title: mentionTitle,
+                      message: newMsg.text.length > 50 ? newMsg.text.substring(0, 50) + '...' : newMsg.text,
+                      avatar: newMsg.senderAvatar,
+                      senderName: newMsg.senderName,
+                      senderId: newMsg.senderId,
+                    });
+
+                    // 2. Audio Alert
                     if (audioSettingsRef.current?.mentionSound !== false) {
                       playChatSound('mention');
                     }
+
+                    // 3. Desktop Native Web Notification
+                    showBrowserNotification(mentionTitle, {
+                      body: newMsg.text,
+                      icon: newMsg.senderAvatar,
+                      onClick: () => {
+                        try {
+                          window.focus();
+                        } catch {}
+                      }
+                    });
+
+                    // 4. Tab Title Flashing Alert for inactive tabs
+                    tabTitleManager.triggerAlert(`📣 إشارة من ${newMsg.senderName || 'مستخدم'}`);
                   }
                 }
                 break;
@@ -845,15 +911,19 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   unhidePrivateConversation(newPMsg.senderId);
                 }
 
-                // In-app Notification for New Private Message
+                // In-app & Browser Notification for New Private Message
                 const curUserPM = currentUserRef.current;
                 if (curUserPM && newPMsg?.receiverId === curUserPM.id && newPMsg?.senderId !== curUserPM.id) {
+                  const previewText = newPMsg.text
+                    ? (newPMsg.text.length > 35 ? newPMsg.text.substring(0, 35) + '...' : newPMsg.text)
+                    : (newPMsg.type === 'voice' ? '🎙️ رسالة صوتية' : '📷 محتوى وسائط / صورة');
+
                   const privateNotif: Notification = {
                     id: `notif-pm-${Date.now()}-${Math.random()}`,
                     userId: curUserPM.id,
                     type: 'private_message',
                     title: 'رسالة خاصة جديدة 📩',
-                    message: `أرسل لك "${newPMsg.senderName || 'مستخدم'}" رسالة خاصة: "${newPMsg.text ? (newPMsg.text.length > 30 ? newPMsg.text.substring(0, 30) + '...' : newPMsg.text) : 'محتوى وسائط/صوت'}"`,
+                    message: `أرسل لك "${newPMsg.senderName || 'مستخدم'}" رسالة خاصة: "${previewText}"`,
                     senderId: newPMsg.senderId,
                     senderName: newPMsg.senderName,
                     senderAvatar: newPMsg.senderAvatar,
@@ -861,18 +931,38 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     isRead: false
                   };
                   setNotifications(prev => [privateNotif, ...prev]);
-                  showTopBanner(`📩 رسالة خاصة جديدة من "${newPMsg.senderName || 'مستخدم'}": ${newPMsg.text ? (newPMsg.text.length > 25 ? newPMsg.text.substring(0, 25) + '...' : newPMsg.text) : 'وسائط / صوت'}`);
+                  showTopBanner(`📩 رسالة خاصة جديدة من "${newPMsg.senderName || 'مستخدم'}": ${previewText}`);
+
+                  // 1. In-app Toast
                   addToast({
                     type: 'private_message',
                     title: `رسالة خاصة من ${newPMsg.senderName || 'مستخدم'} 📩`,
-                    message: newPMsg.text ? (newPMsg.text.length > 40 ? newPMsg.text.substring(0, 40) + '...' : newPMsg.text) : 'محتوى وسائط / صوت',
+                    message: previewText,
                     avatar: newPMsg.senderAvatar,
                     senderName: newPMsg.senderName,
                     senderId: newPMsg.senderId,
                   });
+
+                  // 2. Audio Alert
                   if (audioSettingsRef.current?.privateSound !== false) {
                     playChatSound('private');
                   }
+
+                  // 3. Desktop Native Web Notification
+                  showBrowserNotification(`📩 رسالة خاصة من ${newPMsg.senderName || 'مستخدم'}`, {
+                    body: previewText,
+                    icon: newPMsg.senderAvatar,
+                    onClick: () => {
+                      try {
+                        window.focus();
+                      } catch {}
+                      setActivePrivateUserId(newPMsg.senderId);
+                      setIsPrivateChatOpen(true);
+                    }
+                  });
+
+                  // 4. Tab Title Flashing Alert for inactive tabs
+                  tabTitleManager.triggerAlert(`📩 رسالة خاصة من ${newPMsg.senderName || 'مستخدم'}`);
                 }
                 break;
               }
@@ -1664,10 +1754,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       gender: gender || 'male',
       age: age || 'عدم الإظهار',
       avatar: defaultGenderAvatar,
-      statusMessage: '🧑💼 عضو جديد في شات عربي المطور',
-      bio: 'أهلاً بك في ملفي الشخصي',
-      coins: 500,
+      statusMessage: '',
+      bio: '',
+      coins: 0,
       likes: 0,
+      likedBy: [],
       country: 'اليمن',
       countryFlag: '🇾🇪',
       ip: clientIp,
@@ -2156,6 +2247,14 @@ ${modsText}
   // Send Public Message
   const sendMessage = (text: string, type: Message['type'] = 'text', mediaUrl?: string, voiceDuration?: number, textStyle?: { color?: string; fontSize?: string; fontWeight?: string }) => {
     if (!currentUser) return;
+
+    // Check for /Clear or /clear command to clear public room chat
+    const trimmedRawText = text ? text.trim() : '';
+    const lowerCmd = trimmedRawText.toLowerCase();
+    if (lowerCmd === '/clear' || lowerCmd === '/clearchat' || trimmedRawText === '/مسح' || trimmedRawText === '/تفريغ') {
+      clearChat(currentRoom.id);
+      return;
+    }
 
     // Check Guest Chat Allowed Mode
     if (currentUser.role === 'visitor') {
@@ -2807,7 +2906,7 @@ ${modsText}
     }
 
     try {
-      localStorage.setItem('araby_chat_user', JSON.stringify(updatedUser));
+      localStorage.setItem('araby_current_user', JSON.stringify(updatedUser));
     } catch (e) {
       console.error('Failed to save user in localStorage:', e);
     }
@@ -2815,6 +2914,11 @@ ${modsText}
     setCurrentUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === currentUser.id ? updatedUser : u));
     sendSocketEvent('UPDATE_USER', updatedUser);
+    fetch('/api/users/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: updatedUser })
+    }).catch(err => console.warn('Failed to persist user profile update to D1:', err));
   };
 
   // Audio Settings
@@ -3010,12 +3114,25 @@ ${modsText}
         alert(`🚫 الاسم "${cleanNew}" مستخدم بالفعل لعضو آخر، يرجى اختيار اسم فريد.`);
         return;
       }
-      setUsers(prev => prev.map(u => u.id === targetUserId ? { ...u, username: cleanNew } : u));
+      const updatedTargetUser = { ...targetUser, username: cleanNew };
+      setUsers(prev => prev.map(u => u.id === targetUserId ? updatedTargetUser : u));
       if (currentUser.id === targetUserId) {
         setCurrentUser(prev => prev ? { ...prev, username: cleanNew } : null);
       }
+      sendSocketEvent('UPDATE_USER', updatedTargetUser);
+      fetch('/api/users/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: updatedTargetUser })
+      }).catch(err => console.warn('Failed to persist name change to D1:', err));
     } else if (actionType === 'delete_account') {
       setUsers(prev => prev.filter(u => u.id !== targetUserId));
+      sendSocketEvent('DELETE_USER_ACCOUNT', { userId: targetUserId });
+      fetch('/api/users/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: targetUserId })
+      }).catch(err => console.warn('Failed to persist delete user to D1:', err));
     }
 
     const nowObj = new Date();
@@ -3217,6 +3334,58 @@ ${modsText}
     }
     setMessages(prev => prev.filter(m => m.id !== messageId));
     sendSocketEvent('DELETE_MESSAGE', { messageId });
+  };
+
+  // Clear Room Public Messages (Command /Clear or Admin/Staff action)
+  const clearChat = (roomId?: string) => {
+    if (!currentUser) return;
+    const targetRoomId = roomId || currentRoom.id;
+    const targetRoom = rooms.find(r => r.id === targetRoomId) || currentRoom;
+
+    // Allowed ONLY for Owner, Admin, and Management (المشرف أو الرتب الأخرى يظهر له حدث خطأ ما)
+    const hasClearPermission = ['owner', 'admin', 'management'].includes(currentUser.role);
+
+    if (hasClearPermission) {
+      // Clear for everyone in room & database & WebSocket
+      setMessages(prev => prev.filter(m => m.roomId !== targetRoomId));
+      sendSocketEvent('CLEAR_CHAT', { roomId: targetRoomId });
+
+      addRoomActivityLog(
+        targetRoomId,
+        targetRoom.name,
+        currentUser.id,
+        currentUser.username,
+        currentUser.role,
+        'clear_chat',
+        `مسح محادثة الغرفة بالكامل عبر الأمر (/Clear) بواسطة ${currentUser.username}`,
+        'الجميع'
+      );
+
+      // Post system announcement message to room
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: false });
+      const dateStr = now.toLocaleDateString('ar-EG');
+      const sysMsg: Message = {
+        id: `sys-clear-${Date.now()}`,
+        roomId: targetRoomId,
+        senderId: 'user-system',
+        senderName: 'System',
+        senderRole: 'management',
+        senderGender: 'other',
+        senderAvatar: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=300&q=80',
+        text: `🧹 قام (${currentUser.username}) بمسح الدردشة العامة للغرفة بنجاح`,
+        type: 'text',
+        timestamp: timeStr,
+        date: dateStr
+      };
+      setMessages(prev => [...prev.filter(m => m.roomId !== targetRoomId), sysMsg]);
+      sendSocketEvent('SEND_MESSAGE', sysMsg);
+
+      showTopBanner(`🧹 تم مسح محادثة غرفة (${targetRoom.name}) بنجاح`);
+    } else {
+      // Moderator, Member, Visitor get an error message: حدث خطأ ما
+      showTopBanner('⚠️ حدث خطأ ما: ليس لديك صلاحية تنفيذ هذا الأمر (متاح للمالك والإدارة فقط)');
+    }
   };
 
   // Role-Authorized Administrative User Update (Owner, Admin, Management)
@@ -3528,6 +3697,11 @@ ${modsText}
       setCurrentUser(prev => prev ? { ...prev, role: newRole } : null);
     }
     sendSocketEvent('UPDATE_USER', updatedUser);
+    fetch('/api/users/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: updatedUser })
+    }).catch(err => console.warn('Failed to persist role change to D1:', err));
 
     const roleTitleMap: Record<string, string> = {
       visitor: 'زائر',
@@ -3559,17 +3733,47 @@ ${modsText}
 
   // Add coins to user
   const addCoins = (userId: string, amount: number) => {
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, coins: (u.coins || 0) + amount } : u));
+    let updatedTargetUser: User | null = null;
+    setUsers(prev => prev.map(u => {
+      if (u.id === userId) {
+        updatedTargetUser = { ...u, coins: (u.coins || 0) + amount };
+        return updatedTargetUser;
+      }
+      return u;
+    }));
     if (currentUser?.id === userId) {
       setCurrentUser(prev => prev ? { ...prev, coins: (prev.coins || 0) + amount } : null);
+    }
+    if (updatedTargetUser) {
+      sendSocketEvent('UPDATE_USER', updatedTargetUser);
+      fetch('/api/users/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: updatedTargetUser })
+      }).catch(err => console.warn('Failed to persist coins update to D1:', err));
     }
   };
 
   // Clear moderation state
   const clearModerationState = (userId: string) => {
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, isMuted: false, muteUntil: undefined, isKicked: false, kickUntil: undefined } : u));
+    let updatedTargetUser: User | null = null;
+    setUsers(prev => prev.map(u => {
+      if (u.id === userId) {
+        updatedTargetUser = { ...u, isMuted: false, muteUntil: undefined, isKicked: false, kickUntil: undefined };
+        return updatedTargetUser;
+      }
+      return u;
+    }));
     if (currentUser?.id === userId) {
       setCurrentUser(prev => prev ? { ...prev, isMuted: false, muteUntil: undefined, isKicked: false, kickUntil: undefined } : null);
+    }
+    if (updatedTargetUser) {
+      sendSocketEvent('UPDATE_USER', updatedTargetUser);
+      fetch('/api/users/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: updatedTargetUser })
+      }).catch(err => console.warn('Failed to persist clear mod state to D1:', err));
     }
   };
 
@@ -3958,6 +4162,7 @@ ${modsText}
 
         moderatorAction,
         deleteMessage,
+        clearChat,
         ownerUpdateUser,
         ownerUpdateStorePrices,
         ownerUpdateRoomName,

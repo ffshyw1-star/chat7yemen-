@@ -644,8 +644,24 @@ export const LandingPage: React.FC = () => {
       </section>
 
       {/* FOOTER */}
-      <footer className="bg-[#131b26] text-slate-400 border-t border-slate-800 py-4 text-center text-xs">
-        <p>© 2026 Araby Chat - جميع الحقوق محفوظة | شات عربى ودردشة تعارف</p>
+      <footer className="bg-[#131b26] text-slate-400 border-t border-slate-800 py-4 text-center text-xs space-y-2">
+        <div className="flex items-center justify-center gap-4 text-xs">
+          <span>© 2026 Araby Chat - جميع الحقوق محفوظة</span>
+          <span>•</span>
+          <button
+            id="open-cookie-policy-btn"
+            onClick={() => {
+              try {
+                localStorage.removeItem('araby_cookies_consented');
+                window.location.reload();
+              } catch (e) {}
+            }}
+            className="text-amber-400 hover:text-amber-300 underline cursor-pointer"
+          >
+            إعدادات ملفات تعريف الارتباط والخصوصية 🍪
+          </button>
+        </div>
+        <p className="text-slate-500 text-[11px]">يتم حفظ بيانات تسجيل الدخول وتفضيلات الدردشة في متصفحك المحلي بأمان</p>
       </footer>
 
     </div>

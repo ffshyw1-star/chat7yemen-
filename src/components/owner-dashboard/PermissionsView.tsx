@@ -30,7 +30,7 @@ const PERMISSIONS_LIST: PermissionItem[] = [
 
 const ROLES: { key: UserRole; name: string; color: string; badge: string }[] = [
   { key: 'owner', name: 'المالك', color: 'text-amber-600 bg-amber-50 border-amber-200', badge: '👑' },
-  { key: 'super_admin', name: 'مدير عام', color: 'text-rose-600 bg-rose-50 border-rose-200', badge: '🛡️' },
+  { key: 'management', name: 'الإدارة العليا', color: 'text-rose-600 bg-rose-50 border-rose-200', badge: '🛡️' },
   { key: 'admin', name: 'مدير', color: 'text-blue-600 bg-blue-50 border-blue-200', badge: '⭐' },
   { key: 'moderator', name: 'مشرف', color: 'text-emerald-600 bg-emerald-50 border-emerald-200', badge: '⚡' },
   { key: 'vip', name: 'عضو VIP', color: 'text-purple-600 bg-purple-50 border-purple-200', badge: '💎' },

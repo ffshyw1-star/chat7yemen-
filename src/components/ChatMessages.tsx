@@ -341,6 +341,14 @@ export const ChatMessages: React.FC = () => {
     }
   };
 
+  const [isTopicBannerOpen, setIsTopicBannerOpen] = useState(true);
+  const [activePlayingYtId, setActivePlayingYtId] = useState<string | null>(null);
+
+  // Always show the room topic message whenever entering the room or refreshing
+  useEffect(() => {
+    setIsTopicBannerOpen(true);
+  }, [currentRoom.id]);
+
   return (
     <div
       ref={scrollContainerRef}
@@ -395,6 +403,45 @@ export const ChatMessages: React.FC = () => {
               <span>وصلت إلى بداية سجل المحادثة</span>
             </div>
           ) : null}
+        </div>
+      )}
+
+      {/* Room Topic Banner matching Screenshots: mint-green (#e6f4ea), envelope icon, "الموضوع" displayed on room entry/refresh and followed by user messages */}
+      {isTopicBannerOpen && (
+        <div
+          id="room-topic-banner"
+          dir="rtl"
+          className="sticky top-0 z-20 bg-[#e6f4ea] border-b border-emerald-200/90 px-3.5 py-2 flex items-center justify-between shadow-xs select-none animate-in fade-in duration-200"
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            {/* Circular Envelope Icon with Yellow Badge Alert */}
+            <div className="relative w-8 h-8 rounded-full bg-white border border-emerald-300 flex items-center justify-center shrink-0 shadow-2xs">
+              <span className="text-base">✉️</span>
+              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-400 border border-white flex items-center justify-center text-[8px] font-black text-slate-950">
+                !
+              </span>
+            </div>
+
+            {/* Topic Text Details */}
+            <div className="flex flex-col min-w-0">
+              <span className="text-xs font-black text-slate-900 leading-tight">
+                الموضوع
+              </span>
+              <p className="text-[11px] font-bold text-emerald-800 truncate">
+                {currentRoom.topic || `اهلا وسهلا بكم في ${currentRoom.name} ${currentRoom.flag || '🇾🇪'}`}
+              </p>
+            </div>
+          </div>
+
+          {/* Close Banner Button */}
+          <button
+            type="button"
+            onClick={() => setIsTopicBannerOpen(false)}
+            className="p-1 text-slate-400 hover:text-slate-700 hover:bg-emerald-200/60 rounded-full transition-colors cursor-pointer shrink-0"
+            title="إخفاء شريط الموضوع"
+          >
+            <span className="text-slate-500 font-bold text-xs">✕</span>
+          </button>
         </div>
       )}
 
@@ -621,6 +668,73 @@ export const ChatMessages: React.FC = () => {
                         </p>
                       )
                     )}
+
+                    {/* YouTube Video Message Card - Matching Screenshot 2 with Thumbnail and Red Play Button */}
+                    {(msg.type === 'youtube' || (msg.mediaUrl && getYouTubeVideoId(msg.mediaUrl)) || getYouTubeVideoId(msg.text)) && (() => {
+                      const ytId = msg.type === 'youtube'
+                        ? (msg.mediaUrl || getYouTubeVideoId(msg.text) || 'wD2l3r9O1zA')
+                        : (getYouTubeVideoId(msg.mediaUrl) || getYouTubeVideoId(msg.text) || 'wD2l3r9O1zA');
+                      const isPlayingThisYt = activePlayingYtId === msg.id;
+
+                      return (
+                        <div className="mt-2 max-w-sm sm:max-w-md w-full bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-md">
+                          {isPlayingThisYt ? (
+                            <div className="relative aspect-video w-full bg-black">
+                              <iframe
+                                src={`https://www.youtube-nocookie.com/embed/${ytId}?autoplay=1`}
+                                title={msg.text || 'فيديو يوتيوب'}
+                                className="w-full h-full"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowFullScreen
+                              />
+                              <button
+                                onClick={() => setActivePlayingYtId(null)}
+                                className="absolute top-2 left-2 bg-black/70 hover:bg-black text-white text-[10px] px-2 py-1 rounded-lg font-bold cursor-pointer"
+                              >
+                                تصغير ✕
+                              </button>
+                            </div>
+                          ) : (
+                            <div
+                              onClick={() => setActivePlayingYtId(msg.id)}
+                              className="relative aspect-video w-full bg-slate-950 group cursor-pointer overflow-hidden"
+                              title="اضغط لتشغيل الفيديو في الشات ▶️"
+                            >
+                              <img
+                                src={`https://img.youtube.com/vi/${ytId}/hqdefault.jpg`}
+                                alt={msg.text || 'YouTube Video'}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-90 group-hover:opacity-100"
+                                onError={(e) => {
+                                  // fallback image if yt thumbnail fails
+                                  (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600&auto=format&fit=crop';
+                                }}
+                                referrerPolicy="no-referrer"
+                              />
+
+                              {/* Dark subtle gradient overlay */}
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+
+                              {/* Center YouTube Big Red Play Button matching Screenshot 2 */}
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <div className="w-14 h-10 bg-[#ff0000] hover:bg-[#cc0000] text-white rounded-2xl flex items-center justify-center shadow-2xl group-hover:scale-110 active:scale-95 transition-all duration-200 ring-4 ring-black/40">
+                                  <Play className="w-6 h-6 fill-white text-white translate-x-0.5" />
+                                </div>
+                              </div>
+
+                              {/* Bottom Info Bar with Video Title */}
+                              <div className="absolute bottom-0 inset-x-0 p-2.5 flex items-center justify-between text-white text-xs font-bold bg-black/60 backdrop-blur-xs">
+                                <span className="truncate flex-1 ml-2 font-sans">
+                                  {msg.text && msg.text !== ytId ? msg.text : 'مقطع من YouTube 📺'}
+                                </span>
+                                <div className="flex items-center gap-1 text-[10px] bg-red-600 px-1.5 py-0.5 rounded font-black">
+                                  <span>YouTube</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {/* Media Attachments */}
                     {msg.type === 'image' && msg.mediaUrl && (
