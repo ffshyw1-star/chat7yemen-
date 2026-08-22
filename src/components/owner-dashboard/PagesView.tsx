@@ -14,41 +14,43 @@ interface PageItem {
 }
 
 export const PagesView: React.FC<{ showToast: (msg: string) => void }> = ({ showToast }) => {
+  const { siteSettings, updateSiteSettings } = useChat();
+
   const [pages, setPages] = useState<PageItem[]>([
     {
       id: 'terms',
       title: 'شروط الاستخدام',
       slug: 'terms-of-service',
       icon: Scale,
-      content: 'مرحباً بكم في شات اليوزر العربي.\nباستخدامك لهذا الموقع، فإنك توافق على الالتزام بجميع القوانين واللوائح المعمول بها، والاحترام المتبادل لجميع الأعضاء والزوار، وعدم استخدام أي لغة غير لائقة أو مشاركة محتوى محظور.'
+      content: siteSettings.customPages?.['terms'] || 'مرحباً بكم في شات اليمن المطور.\nباستخدامك لهذا الموقع، فإنك توافق على الالتزام بجميع القوانين واللوائح المعمول بها، والاحترام المتبادل لجميع الأعضاء والزوار، وعدم استخدام أي لغة غير لائقة أو مشاركة محتوى محظور.'
     },
     {
       id: 'privacy',
       title: 'سياسة الخصوصية',
       slug: 'privacy-policy',
       icon: Shield,
-      content: 'نحن نولي خصوصية بياناتك اهتماماً فائقاً.\nلا يتم مشاركة أي معلومات خاصة أو عناوين IP مع أي جهة خارجية. جميع المحادثات الخاصة مشفرة وتتم في بيئة آمنة تماماً.'
+      content: siteSettings.customPages?.['privacy'] || 'نحن نولي خصوصية بياناتك اهتماماً فائقاً.\nلا يتم مشاركة أي معلومات خاصة أو عناوين IP مع أي جهة خارجية. جميع المحادثات الخاصة مشفرة وتتم في بيئة آمنة تماماً.'
     },
     {
       id: 'rules',
       title: 'قوانين الدردشة العامة',
       slug: 'chat-rules',
       icon: FileText,
-      content: '1. يمنع منعاً باتاً نشر الإعلانات وروابط المواقع الأخرى.\n2. يمنع السب والشتم والحديث في الأمور السياسية والطائفية.\n3. احترام طاقم الإدارة والمشرفين والاستجابة للتوجيهات.'
+      content: siteSettings.customPages?.['rules'] || '1. يمنع منعاً باتاً نشر الإعلانات وروابط المواقع الأخرى.\n2. يمنع السب والشتم والحديث في الأمور السياسية والطائفية.\n3. احترام طاقم الإدارة والمشرفين والاستجابة للتوجيهات.'
     },
     {
       id: 'about',
       title: 'نبذة عن الموقع',
       slug: 'about-us',
       icon: Info,
-      content: 'شات اليوزر العربي هو المنصة العربية الأولى للتواصل الصوتي والكتابي، تأسس لتقديم تجربة تواصل عصرية وممتعة تجمع الأصدقاء من كافة أرجاء الوطن العربي في غرف تفاعلية حماسية.'
+      content: siteSettings.customPages?.['about'] || 'شات اليمن المطور هو المنصة العربية الأولى للتواصل الصوتي والكتابي، تأسس لتقديم تجربة تواصل عصرية وممتعة تجمع الأصدقاء من كافة أرجاء الوطن العربي في غرف تفاعلية حماسية.'
     },
     {
       id: 'contact',
       title: 'اتصل بنا والدعم الفني',
       slug: 'contact-us',
       icon: Phone,
-      content: 'للشكاوى والاستفسارات والاقتراحات أو لطلب عضويات خاصة وإعلانات:\nالبريد الإلكتروني: support@3rb-user.com\nرقم الواتساب الإداري: +967-770000000'
+      content: siteSettings.customPages?.['contact'] || `للشكاوى والاستفسارات والاقتراحات أو لطلب عضويات خاصة وإعلانات:\nالبريد الإلكتروني: ${siteSettings.supportEmail || 'support@yemenchat.dev'}\nرقم الواتساب الإداري: ${siteSettings.whatsappNumber || '+967700000000'}`
     },
   ]);
 
@@ -62,7 +64,12 @@ export const PagesView: React.FC<{ showToast: (msg: string) => void }> = ({ show
   };
 
   const handleSavePage = () => {
-    showToast(`تم حفظ ونشر صفحة "${selectedPage.title}" بنجاح 💾`);
+    const updatedCustomPages: Record<string, string> = { ...(siteSettings.customPages || {}) };
+    pages.forEach(p => {
+      updatedCustomPages[p.id] = p.content;
+    });
+    updateSiteSettings({ customPages: updatedCustomPages });
+    showToast(`تم حفظ وتحديث صفحة "${selectedPage.title}" وحفظها في السيرفر بنجاح 💾`);
   };
 
   return (

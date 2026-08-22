@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { useChat } from '../context/ChatContext';
 import { UserAvatar } from './UserAvatar';
 import { canPerformModActions, canBeIgnored } from '../utils/permissions';
-import { getUserFlagEmoji } from '../utils/geoip';
+import { getUserFlagEmoji, getEnglishCountryName } from '../utils/geoip';
+import { toEnglishDigits } from '../utils/dateUtils';
 import {
-  User as UserIcon, MessageSquare, Zap, X, VolumeX, Edit3, Check, CheckCircle2, ChevronDown, MicOff, Ban
+  User as UserIcon, MessageSquare, Zap, X, VolumeX, Edit3, Check, CheckCircle2, ChevronDown, MicOff, Ban, Briefcase
 } from 'lucide-react';
 
 const DURATION_OPTIONS = [

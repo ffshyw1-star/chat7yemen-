@@ -11,7 +11,7 @@ import { ReportMessageModal } from './ReportMessageModal';
 import { PrivateMessage, User } from '../types';
 import { getRankTitle, canBeIgnored } from '../utils/permissions';
 import { toEnglishDigits } from '../utils/dateUtils';
-import { CUSTOM_EMOJIS_LIST, CUSTOM_EMOJI_CATEGORIES, renderTextWithCustomEmojis } from './CustomEmojis';
+import { CUSTOM_EMOJIS_LIST, CUSTOM_EMOJI_CATEGORIES, renderTextWithCustomEmojis, getAllCustomEmojis } from './CustomEmojis';
 
 export const PrivateChatModal: React.FC = () => {
   const {
@@ -20,7 +20,7 @@ export const PrivateChatModal: React.FC = () => {
     isUserBlocked, setSelectedUserForProfile, toggleIgnore, updateUserProfile,
     requestBlockConfirm,
     hiddenPrivateUserIds, hidePrivateConversation, clearAllPrivateConversations,
-    audioSettings, updateAudioSettings
+    audioSettings, updateAudioSettings, customEmojis
   } = useChat();
 
   const [text, setText] = useState('');
@@ -366,7 +366,7 @@ export const PrivateChatModal: React.FC = () => {
                           }`}
                         >
                           {pm.type === 'text' && (
-                            <div className="leading-relaxed whitespace-pre-wrap break-words">{renderTextWithCustomEmojis(pm.text, 24)}</div>
+                            <div className="leading-relaxed whitespace-pre-wrap break-words">{renderTextWithCustomEmojis(pm.text, 24, customEmojis)}</div>
                           )}
 
                           {pm.type === 'image' && pm.mediaUrl && pm.mediaUrl.trim() !== '' && (
@@ -454,44 +454,53 @@ export const PrivateChatModal: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Emoji Popover in Private Chat */}
+                {/* Emoji Popover in Private Chat - Exact Match */}
                 {isEmojiOpen && (
-                  <div className="absolute bottom-full right-2 mb-2 w-72 sm:w-80 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-2.5 z-50 animate-in fade-in duration-150 text-white">
-                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-800 mb-2">
-                      <div className="flex items-center gap-1 text-xs font-black text-amber-400">
-                        <span>✨</span>
-                        <span>الإيموجيات والسمايلات المخصصة</span>
+                  <div className="absolute bottom-full inset-x-0 mb-1 w-full bg-white border border-[#003947] rounded-t-xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-bottom-2 duration-150">
+                    <div className="bg-[#003947] px-2.5 py-1.5 flex items-center justify-between select-none">
+                      <div className="flex items-center">
+                        <div
+                          className="w-8 h-7 rounded bg-[#00bcd4] text-slate-950 flex items-center justify-center text-xs font-black shadow-xs cursor-default"
+                        >
+                          😊
+                        </div>
                       </div>
                       <button
                         type="button"
                         onClick={() => setIsEmojiOpen(false)}
-                        className="text-slate-400 hover:text-white p-1 rounded-full hover:bg-slate-800 cursor-pointer"
+                        className="text-white hover:text-red-300 transition-colors p-1 rounded cursor-pointer font-bold flex items-center justify-center"
+                        title="إغلاق"
                       >
-                        <X className="w-3.5 h-3.5" />
+                        <X className="w-4 h-4 stroke-[2.5]" />
                       </button>
                     </div>
 
-                    <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[10px] font-bold custom-scrollbar mb-2">
-                      {CUSTOM_EMOJI_CATEGORIES.map((cat) => (
-                        <button
-                          key={cat.id}
-                          type="button"
-                          onClick={() => setEmojiCategory(cat.id)}
-                          className={`px-2 py-0.5 rounded-full whitespace-nowrap cursor-pointer transition-all ${
-                            emojiCategory === cat.id
-                              ? 'bg-amber-500 text-slate-950 font-black'
-                              : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                          }`}
-                        >
-                          {cat.label}
-                        </button>
-                      ))}
-                    </div>
+                    <div className="p-2 bg-white max-h-60 overflow-y-auto custom-scrollbar select-none">
+                      {/* Banners */}
+                      {getAllCustomEmojis(customEmojis).some(item => item.isBanner) && (
+                        <div className="grid grid-cols-2 gap-1.5 mb-2">
+                          {getAllCustomEmojis(customEmojis).filter(item => item.isBanner).map((item) => {
+                            const Comp = item.component;
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => {
+                                  setText(prev => (prev ? `${prev} ${item.tag} ` : `${item.tag} `));
+                                }}
+                                className="bg-slate-50 hover:bg-amber-50/70 border border-slate-200 hover:border-amber-400 rounded-lg p-1 flex items-center justify-center transition-all cursor-pointer active:scale-95 shadow-2xs min-h-[34px]"
+                                title={item.name}
+                              >
+                                <Comp size={20} animated={true} />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
 
-                    <div className="grid grid-cols-3 gap-2 max-h-56 overflow-y-auto p-1 custom-scrollbar">
-                      {CUSTOM_EMOJIS_LIST
-                        .filter(item => emojiCategory === 'all' || item.category === emojiCategory)
-                        .map((item) => {
+                      {/* Smileys Grid */}
+                      <div className="grid grid-cols-6 sm:grid-cols-7 gap-1 bg-white p-1 rounded-lg border border-slate-100">
+                        {getAllCustomEmojis(customEmojis).filter(item => !item.isBanner).map((item) => {
                           const Comp = item.component;
                           return (
                             <button
@@ -500,16 +509,14 @@ export const PrivateChatModal: React.FC = () => {
                               onClick={() => {
                                 setText(prev => (prev ? `${prev} ${item.tag} ` : `${item.tag} `));
                               }}
-                              className="bg-slate-800 hover:bg-slate-700 border border-slate-700/80 rounded-xl p-2 flex flex-col items-center justify-center cursor-pointer transition-transform hover:scale-105 active:scale-95 min-h-[64px]"
+                              className="bg-transparent hover:bg-slate-100 border border-transparent rounded-lg p-0.5 flex items-center justify-center cursor-pointer transition-transform hover:scale-105 active:scale-90 h-9 w-full"
                               title={item.name}
                             >
-                              <div className="h-8 flex items-center justify-center">
-                                <Comp size={32} animated={true} />
-                              </div>
-                              <span className="text-[8px] text-slate-300 mt-1 truncate w-full text-center">{item.name}</span>
+                              <Comp size={26} animated={true} />
                             </button>
                           );
                         })}
+                      </div>
                     </div>
                   </div>
                 )}

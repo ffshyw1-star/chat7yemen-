@@ -21,6 +21,7 @@ import {
   formatLastSeenDateTime
 } from '../utils/permissions';
 import { getEnglishCountryName } from '../utils/geoip';
+import { formatEnglishNumber, toEnglishDigits } from '../utils/dateUtils';
 import {
   X, Zap, FileText, Heart, MessageSquare, UserPlus, Ban, Unlock,
   Coins, MapPin, Shield, AlertTriangle, Search, Lock,
@@ -28,7 +29,7 @@ import {
   Smartphone, Clock, Sparkles, Check, Globe, Menu,
   Eye, Trash2, CheckCircle, Equal, Camera, ArrowUp, ArrowDown, Paperclip,
   ArrowLeft, Palette, Paintbrush, CheckCircle2, Star, Save, Key,
-  User as UserIcon
+  User as UserIcon, Briefcase
 } from 'lucide-react';
 
 const USERNAME_COLOR_PALETTE = [
@@ -1362,8 +1363,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             {/* 1. Member Balance (رصيد العضو) */}
             <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
               <span className="text-slate-700 font-bold text-sm">رصيد العضو</span>
-              <span className="font-extrabold text-emerald-600 text-sm sm:text-base flex items-center gap-1">
-                <span>{isSystemTarget ? 0 : (target.coins ?? 128795).toLocaleString()}</span>
+              <span className="font-extrabold text-emerald-600 text-sm sm:text-base flex items-center gap-1 font-mono">
+                <span>{isSystemTarget ? '0' : formatEnglishNumber(target.coins ?? 128795)}</span>
                 <span className="text-base">💵</span>
               </span>
             </div>
@@ -1372,35 +1373,46 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
               <span className="text-slate-700 font-bold text-sm">العمر</span>
               <span className="font-bold text-slate-600 text-sm">
-                {target.age ? `${target.age} سنة` : '30 سنة'}
+                {target.age && target.age !== 'عدم الإظهار' ? `${toEnglishDigits(target.age)} سنة` : '30 سنة'}
               </span>
             </div>
 
-            {/* 2. Gender (الجنس) */}
+            {/* 3. Gender (الجنس) */}
             <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
               <span className="text-slate-700 font-bold text-sm">الجنس</span>
               <span className="font-bold text-slate-600 text-sm">
-                {target.gender === 'male' ? 'ذكر' : target.gender === 'female' ? 'أنثى' : 'آخر'}
+                {target.gender === 'male' ? 'ذكر ♂' : target.gender === 'female' ? 'أنثى ♀' : 'آخر ⚥'}
               </span>
             </div>
 
-            {/* 3. Country (البلد) */}
+            {/* 4. Specialty (التخصص) */}
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
+              <span className="text-slate-700 font-bold text-sm flex items-center gap-1">
+                <span>التخصص</span>
+              </span>
+              <span className="font-bold text-amber-700 text-sm bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">
+                {target.specialty || 'عضو مميز 🌟'}
+              </span>
+            </div>
+
+            {/* 5. Country (البلد) */}
             <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
               <span className="text-slate-700 font-bold text-sm">البلد</span>
-              <span className="font-bold text-slate-600 text-sm">
-                {getEnglishCountryName(target.country)}
+              <span className="font-bold text-slate-600 text-sm flex items-center gap-1.5">
+                {target.countryFlag && <span className="text-base">{target.countryFlag}</span>}
+                <span>{getEnglishCountryName(target.country)}</span>
               </span>
             </div>
 
-            {/* 4. Join Date (تاريخ الإنضمام) */}
+            {/* 6. Join Date (تاريخ الإنضمام) */}
             <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
               <span className="text-slate-700 font-bold text-sm">تاريخ الإنضمام</span>
               <span className="font-mono text-slate-500 text-sm dir-ltr">
-                {target.joinedDate || '2024-04-20'}
+                {toEnglishDigits(target.joinedDate || '2024-04-20')}
               </span>
             </div>
 
-            {/* 6. Current Room (الروم الحالي) */}
+            {/* 7. Current Room (الروم الحالي) */}
             <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
               <span className="text-slate-700 font-bold text-sm">الروم الحالي</span>
               <span className="font-bold text-[#0b333e] text-sm">
@@ -1408,7 +1420,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </span>
             </div>
 
-            {/* 6. Bio / Personal Note (معلوماتي) */}
+            {/* 8. Bio / Personal Note (معلوماتي) */}
             <div className="pt-1 space-y-1.5">
               <div className="flex items-center gap-1 text-slate-800 font-black text-sm">
                 <span className="text-red-500">🔴</span>
@@ -1495,8 +1507,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             {/* 2. Language (اللغة) */}
             <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
               <span className="text-slate-700 font-bold text-sm">اللغة</span>
-              <span className="font-bold text-slate-600 text-sm">
-                Arabic
+              <span className="font-bold text-slate-600 text-sm flex items-center gap-1">
+                <span>{target.language || 'العربية 🇸🇦'}</span>
               </span>
             </div>
 

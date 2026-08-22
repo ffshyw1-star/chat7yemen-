@@ -4,8 +4,9 @@ import { Gender } from '../types';
 import { UserAvatar } from './UserAvatar';
 import {
   X, Check, Camera, Image, Palette, User, MessageSquare,
-  Sparkles, Upload, Link, AlertCircle, RefreshCw
+  Sparkles, Upload, Link, AlertCircle, RefreshCw, Briefcase, Globe
 } from 'lucide-react';
+import { SPECIALTIES_LIST, COUNTRIES_LIST, getCountryLanguage } from '../utils/geoip';
 
 export interface DefaultAvatar {
   id: string;
@@ -89,9 +90,24 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
   const [wallCover, setWallCover] = useState(currentUser?.wallCover || '');
   const [gender, setGender] = useState<Gender>(currentUser?.gender || 'male');
   const [age, setAge] = useState<number | string>(currentUser?.age || 'عدم الإظهار');
+  const [specialty, setSpecialty] = useState<string>(currentUser?.specialty || '');
+  const [country, setCountry] = useState<string>(currentUser?.country || 'اليمن');
+  const [countryFlag, setCountryFlag] = useState<string>(currentUser?.countryFlag || '🇾🇪');
+  const [language, setLanguage] = useState<string>(currentUser?.language || 'العربية 🇸🇦');
   const [hideCountry, setHideCountry] = useState<boolean>(currentUser?.hideCountry || false);
   const [usernameColor, setUsernameColor] = useState(currentUser?.usernameColor || '#f59e0b');
   const [usernameFontSize, setUsernameFontSize] = useState(currentUser?.usernameFontSize || '14px');
+
+  // Handle Country Change
+  const handleCountryChange = (countryName: string) => {
+    setCountry(countryName);
+    const found = COUNTRIES_LIST.find(c => c.name === countryName);
+    if (found) {
+      setCountryFlag(found.flag);
+      const autoLang = getCountryLanguage(countryName);
+      setLanguage(autoLang);
+    }
+  };
 
   // Avatar Selection State
   const [avatarCategory, setAvatarCategory] = useState<'men' | 'women' | 'royal' | 'cute'>('men');
@@ -162,6 +178,10 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
       wallCover,
       gender,
       age,
+      specialty: specialty.trim(),
+      country,
+      countryFlag,
+      language,
       hideCountry,
       usernameColor,
       usernameFontSize
@@ -640,6 +660,78 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
                   <option value="female">أنثى ♀</option>
                   <option value="other">آخر ⚥</option>
                 </select>
+              </div>
+            </div>
+
+            {/* Specialty / التخصص المهني أو العلمي */}
+            <div>
+              <label className="block text-xs font-bold text-slate-200 mb-1 flex items-center gap-1">
+                <Briefcase className="w-3.5 h-3.5 text-amber-400" />
+                <span>التخصص أو المجال (Specialty):</span>
+              </label>
+              <div className="space-y-1.5">
+                <select
+                  value={SPECIALTIES_LIST.some(s => s.name === specialty) ? specialty : (specialty ? '__custom__' : '')}
+                  onChange={(e) => {
+                    if (e.target.value === '__custom__') {
+                      // keep custom or blank
+                    } else {
+                      setSpecialty(e.target.value);
+                    }
+                  }}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-slate-100 font-bold focus:outline-none focus:border-amber-500"
+                >
+                  <option value="">اختر التخصص من القائمة...</option>
+                  {SPECIALTIES_LIST.map((spec) => (
+                    <option key={spec.name} value={spec.name}>
+                      {spec.category}: {spec.name}
+                    </option>
+                  ))}
+                  <option value="__custom__">✍️ تخصص آخر (كتابة يدوية)...</option>
+                </select>
+
+                <input
+                  type="text"
+                  value={specialty}
+                  onChange={(e) => setSpecialty(e.target.value)}
+                  placeholder="أو اكتب تخصصك المخصص هنا..."
+                  className="w-full bg-slate-950/80 border border-slate-700 focus:border-amber-500 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Country & Language Selection (الدولة واللغة المرتبطة بالـ IP) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-200 mb-1 flex items-center gap-1">
+                  <Globe className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>الدولة والبلد (Country):</span>
+                </label>
+                <select
+                  value={country}
+                  onChange={(e) => handleCountryChange(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-slate-100 font-bold focus:outline-none focus:border-amber-500"
+                >
+                  {COUNTRIES_LIST.map((c) => (
+                    <option key={c.name} value={c.name}>
+                      {c.flag} {c.name} ({c.nameEn})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-200 mb-1 flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>اللغة (Language):</span>
+                </label>
+                <input
+                  type="text"
+                  value={language}
+                  onChange={(e) => setLanguage(e.target.value)}
+                  placeholder="مثال: العربية 🇸🇦 / English 🇺🇸"
+                  className="w-full bg-slate-950 border border-slate-700 focus:border-amber-500 rounded-xl p-2.5 text-xs text-slate-100 font-bold focus:outline-none"
+                />
               </div>
             </div>
 

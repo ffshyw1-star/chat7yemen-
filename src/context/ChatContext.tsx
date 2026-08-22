@@ -4,7 +4,7 @@ import {
   FriendRequest, Report, NewsPost, WallPost, Notification, StoreItem,
   ModLogEntry, OnlineStatus, PrivatePrivacySetting, ThemeMode,
   RoomActivityLog, RoomActivityType, SiteSettings, ToastNotification,
-  IPModerationRecord, BlockConfirmState, BlockActionType
+  IPModerationRecord, BlockConfirmState, BlockActionType, CustomEmojiItem
 } from '../types';
 import {
   INITIAL_ROOMS, INITIAL_USERS, INITIAL_MESSAGES, INITIAL_REPORTS,
@@ -71,6 +71,10 @@ interface ChatContextType {
   addIPModerationRecord: (record: IPModerationRecord) => void;
   removeIPModerationRecord: (idOrIp: string, type?: string) => void;
   customBadWords: string[];
+  customEmojis: CustomEmojiItem[];
+  addCustomEmoji: (emoji: Omit<CustomEmojiItem, 'id' | 'createdAt'>) => CustomEmojiItem;
+  deleteCustomEmoji: (emojiId: string) => void;
+  clearAllCustomEmojis: () => void;
   audioSettings: AudioSettings;
   themeMode: ThemeMode;
   unreadPrivateCount: number;
@@ -450,6 +454,50 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const removeCustomBadWord = (word: string) => {
     setCustomBadWords(prev => prev.filter(w => w !== word));
   };
+
+  // Custom Emojis Added by Owner
+  const [customEmojis, setCustomEmojis] = useState<CustomEmojiItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('araby_custom_emojis');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return [];
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('araby_custom_emojis', JSON.stringify(customEmojis));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [customEmojis]);
+
+  const addCustomEmoji = useCallback((emojiData: Omit<CustomEmojiItem, 'id' | 'createdAt'>): CustomEmojiItem => {
+    const rawTag = emojiData.tag.trim().replace(/^:+|:+$/g, '');
+    const cleanTag = `:${rawTag || 'custom'}:`;
+    const newEmoji: CustomEmojiItem = {
+      ...emojiData,
+      id: `emoji-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      tag: cleanTag,
+      createdAt: new Date().toLocaleDateString('ar-EG'),
+      createdBy: currentUser?.username || 'الإدارة',
+    };
+    setCustomEmojis(prev => [newEmoji, ...prev]);
+    return newEmoji;
+  }, [currentUser]);
+
+  const deleteCustomEmoji = useCallback((emojiId: string) => {
+    setCustomEmojis(prev => prev.filter(e => e.id !== emojiId));
+  }, []);
+
+  const clearAllCustomEmojis = useCallback(() => {
+    setCustomEmojis([]);
+  }, []);
   
   const [audioSettings, setAudioSettings] = useState<AudioSettings>(() => {
     try {
@@ -4064,6 +4112,10 @@ ${modsText}
         customBadWords,
         addCustomBadWord,
         removeCustomBadWord,
+        customEmojis,
+        addCustomEmoji,
+        deleteCustomEmoji,
+        clearAllCustomEmojis,
         audioSettings,
         themeMode,
         unreadPrivateCount,

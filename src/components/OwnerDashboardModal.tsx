@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useChat } from '../context/ChatContext';
 import { UserRole, Gender } from '../types';
 import {
@@ -8,7 +8,7 @@ import {
   ChevronDown, ChevronLeft, ChevronRight, X, Check, Search, Shield,
   RefreshCw, Trash2, Edit, Plus, Monitor, AlertCircle, Radio, Lock, Unlock,
   Download, Upload, ExternalLink, Globe, Key, AlertTriangle, UserCheck,
-  UserX, Sliders, Music, RadioTower, Database, Menu, Bell
+  UserX, Sliders, Music, RadioTower, Database, Menu, Bell, Smile
 } from 'lucide-react';
 import { DjView } from './owner-dashboard/DjView';
 import { PermissionsView } from './owner-dashboard/PermissionsView';
@@ -20,6 +20,7 @@ import { MusicView } from './owner-dashboard/MusicView';
 import { PagesView } from './owner-dashboard/PagesView';
 import { LogsView } from './owner-dashboard/LogsView';
 import { ActionsView } from './owner-dashboard/ActionsView';
+import { EmojisView } from './owner-dashboard/EmojisView';
 
 export const OwnerDashboardModal: React.FC = () => {
   const {
@@ -48,6 +49,7 @@ export const OwnerDashboardModal: React.FC = () => {
     customBadWords,
     addCustomBadWord,
     removeCustomBadWord,
+    customEmojis,
     broadcastAudioAlert,
     purgeSystemCache,
     toggleAdminStealth,
@@ -217,6 +219,7 @@ export const OwnerDashboardModal: React.FC = () => {
       case 'music': return 'مشغلات الموسيقى';
       case 'dj': return 'نظام Dj';
       case 'pages': return 'الصفحات';
+      case 'emojis': return 'إدارة الإيموجي والسمايلات';
       default: return 'لوحة التحكم';
     }
   };
@@ -538,6 +541,22 @@ export const OwnerDashboardModal: React.FC = () => {
                 </div>
               </button>
 
+              {/* 18. إدارة الإيموجي والسمايلات */}
+              <button
+                onClick={() => { setActiveSection('emojis'); setIsMobileSidebarOpen(false); }}
+                className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
+                  activeSection === 'emojis' ? 'bg-amber-50 text-amber-600 font-black border-r-4 border-amber-500' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Smile className="w-4 h-4 text-amber-500" />
+                  <span>إدارة الإيموجي والسمايلات</span>
+                </div>
+                <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded-full font-mono">
+                  {customEmojis?.length || 0}
+                </span>
+              </button>
+
             </div>
           </aside>
 
@@ -695,6 +714,28 @@ export const OwnerDashboardModal: React.FC = () => {
                     </div>
                   </div>
 
+                </div>
+
+                {/* Quick Emoji Banner Action */}
+                <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 p-3.5 rounded-xl text-slate-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-slate-950/20 flex items-center justify-center text-slate-950 shrink-0">
+                      <Smile className="w-6 h-6 stroke-[2.5]" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-slate-950">إضافة إيموجي وملصقات إلى شريط الكتابة</h4>
+                      <p className="text-[11px] text-slate-900/90 font-medium mt-0.5">
+                        إضافة رموز تعبيرية جديدة، صور GIF متحركة، وعبارات ترحيبية تظهر في شريط الدردشة فورياً
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setActiveSection('emojis')}
+                    className="px-4 py-2 bg-slate-950 hover:bg-slate-900 text-amber-400 font-black text-xs rounded-lg cursor-pointer transition-all shadow-xs flex items-center justify-center gap-1.5 shrink-0"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>إضافة إيموجي الآن ✨</span>
+                  </button>
                 </div>
 
                 {/* Quick Server Control Actions */}
@@ -1511,6 +1552,7 @@ export const OwnerDashboardModal: React.FC = () => {
             {activeSection === 'tools' && <ToolsView showToast={showToast} />}
             {activeSection === 'music' && <MusicView showToast={showToast} />}
             {activeSection === 'pages' && <PagesView showToast={showToast} />}
+            {activeSection === 'emojis' && <EmojisView showToast={showToast} />}
 
           </main>
         </div>

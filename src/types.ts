@@ -30,6 +30,9 @@ export interface User {
   countryFlag?: string;
   hideCountry?: boolean;
   showCountryFlag?: boolean;
+  specialty?: string; // التخصص أو المجال، مثال: "تقنية وبرمجة 💻"
+  specialtyCategory?: string; // فئة التخصص
+  language?: string; // لغة المستخدم المفضلة، مثال: "العربية 🇸🇦"
   currentRoomId: string;
   joinedDate: string;
   joinedTimestamp?: number;
@@ -286,6 +289,7 @@ export interface SiteSettings {
   showOnlineCount: boolean;
   showThirdPartyAds: boolean;
   sendEmailNotifications: boolean;
+  customPages?: Record<string, string>;
   // Owner Presence & Room Switch Controls
   onlinePresenceTimeoutHours?: number; // 0 = instant, 6, 12, 24, 48, -1 = forever
   hideRoomSwitchNotifications?: boolean; // Hide room switch announcement messages
@@ -332,6 +336,20 @@ export interface ToastNotification {
 }
 
 export type BlockActionType = 'block' | 'unblock' | 'ban' | 'unban';
+
+export interface CustomEmojiItem {
+  id: string;
+  name: string;
+  tag: string;
+  category: 'greetings' | 'drinks' | 'emotions' | 'actions' | 'love' | 'custom';
+  imageUrl?: string;
+  emojiChar?: string;
+  bannerText?: string;
+  bannerBg?: string;
+  isBanner?: boolean;
+  createdAt: string;
+  createdBy?: string;
+}
 
 export interface BlockConfirmState {
   isOpen: boolean;
