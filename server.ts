@@ -5,8 +5,8 @@ import fs from "fs";
 import initSqlJs, { Database } from "sql.js";
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer as createViteServer } from "vite";
-import { INITIAL_USERS, INITIAL_MESSAGES, INITIAL_ROOMS, INITIAL_NOTIFICATIONS, INITIAL_SITE_SETTINGS } from "./src/data/initialData";
-import { Message, PrivateMessage, User, Room, IPModerationRecord, FriendRequest, Notification, SiteSettings } from "./src/types";
+import { INITIAL_USERS, INITIAL_MESSAGES, INITIAL_ROOMS, INITIAL_NOTIFICATIONS, INITIAL_SITE_SETTINGS, INITIAL_CUSTOM_EMOJIS } from "./src/data/initialData";
+import { Message, PrivateMessage, User, Room, IPModerationRecord, FriendRequest, Notification, SiteSettings, CustomEmojiItem } from "./src/types";
 
 const app = express();
 const server = http.createServer(app);
@@ -40,6 +40,7 @@ let serverFriendRequests: FriendRequest[] = [];
 let serverRooms: Room[] = [];
 let serverIPModerations: IPModerationRecord[] = [];
 let serverNotifications: Notification[] = [];
+let serverCustomEmojis: CustomEmojiItem[] = [];
 let serverSiteSettings: SiteSettings = { ...INITIAL_SITE_SETTINGS };
 
 // Helper to extract client real IP
@@ -76,6 +77,7 @@ function resetD1Database() {
       DROP TABLE IF EXISTS friend_requests;
       DROP TABLE IF EXISTS ip_moderations;
       DROP TABLE IF EXISTS notifications;
+      DROP TABLE IF EXISTS custom_emojis;
     `);
 
     db.run(`
@@ -127,11 +129,19 @@ function resetD1Database() {
         timestamp TEXT,
         data TEXT
       );
+      CREATE TABLE custom_emojis (
+        id TEXT PRIMARY KEY,
+        tag TEXT,
+        name TEXT,
+        category TEXT,
+        data TEXT
+      );
     `);
 
     serverUsers = [...INITIAL_USERS];
     serverRooms = [...INITIAL_ROOMS];
     serverMessages = [...INITIAL_MESSAGES];
+    serverCustomEmojis = [...INITIAL_CUSTOM_EMOJIS];
     serverPrivateMessages = [];
     serverFriendRequests = [];
     serverIPModerations = [];
@@ -160,6 +170,12 @@ function resetD1Database() {
       nStmt.run([n.id, n.userId, n.timestamp, JSON.stringify(n)]);
     });
     nStmt.free();
+
+    const eStmt = db.prepare("INSERT OR REPLACE INTO custom_emojis (id, tag, name, category, data) VALUES (?, ?, ?, ?, ?)");
+    serverCustomEmojis.forEach((e) => {
+      eStmt.run([e.id, e.tag, e.name, e.category || 'custom', JSON.stringify(e)]);
+    });
+    eStmt.free();
 
     saveD1ToDisk();
     console.log("🔄 Successfully reset and re-seeded SQLite D1 database with clean Owner account (المالك).");
@@ -246,6 +262,13 @@ async function initD1Database() {
       );
       CREATE TABLE IF NOT EXISTS site_settings (
         id TEXT PRIMARY KEY,
+        data TEXT
+      );
+      CREATE TABLE IF NOT EXISTS custom_emojis (
+        id TEXT PRIMARY KEY,
+        tag TEXT,
+        name TEXT,
+        category TEXT,
         data TEXT
       );
     `);
@@ -367,10 +390,56 @@ async function initD1Database() {
     stmt.free();
   }
 
+  // 9. Custom Emojis & Stickers
+  const emojiRows = db.exec("SELECT data FROM custom_emojis");
+  if (emojiRows.length > 0 && emojiRows[0].values.length > 0) {
+    serverCustomEmojis = emojiRows[0].values.map((v) => JSON.parse(v[0] as string));
+  } else {
+    serverCustomEmojis = [...INITIAL_CUSTOM_EMOJIS];
+    const stmt = db.prepare("INSERT OR REPLACE INTO custom_emojis (id, tag, name, category, data) VALUES (?, ?, ?, ?, ?)");
+    serverCustomEmojis.forEach((e) => {
+      stmt.run([e.id, e.tag, e.name, e.category || 'custom', JSON.stringify(e)]);
+    });
+    stmt.free();
+  }
+
   saveD1ToDisk();
 }
 
 // Helper SQL Persistence functions
+function saveCustomEmojisToD1(emojis: CustomEmojiItem[]) {
+  try {
+    db.run("DELETE FROM custom_emojis");
+    const stmt = db.prepare("INSERT INTO custom_emojis (id, tag, name, category, data) VALUES (?, ?, ?, ?, ?)");
+    emojis.forEach((e) => {
+      stmt.run([e.id, e.tag, e.name, e.category || 'custom', JSON.stringify(e)]);
+    });
+    stmt.free();
+    saveD1ToDisk();
+  } catch (e) {
+    console.error("D1 saveCustomEmojis error:", e);
+  }
+}
+
+function saveSingleCustomEmojiToD1(item: CustomEmojiItem) {
+  try {
+    const stmt = db.prepare("INSERT OR REPLACE INTO custom_emojis (id, tag, name, category, data) VALUES (?, ?, ?, ?, ?)");
+    stmt.run([item.id, item.tag, item.name, item.category || 'custom', JSON.stringify(item)]);
+    stmt.free();
+    saveD1ToDisk();
+  } catch (e) {
+    console.error("D1 saveSingleCustomEmoji error:", e);
+  }
+}
+
+function deleteCustomEmojiFromD1(id: string) {
+  try {
+    db.run("DELETE FROM custom_emojis WHERE id = ?", [id]);
+    saveD1ToDisk();
+  } catch (e) {
+    console.error("D1 deleteCustomEmoji error:", e);
+  }
+}
 function saveSiteSettingsToD1(settings: SiteSettings) {
   try {
     const stmt = db.prepare("INSERT OR REPLACE INTO site_settings (id, data) VALUES ('global', ?)");
@@ -740,6 +809,49 @@ app.post("/api/rooms/update", (req, res) => {
   res.status(400).json({ success: false, error: "Invalid rooms data" });
 });
 
+// REST Endpoints for Emojis & Stickers
+app.get("/api/emojis/list", (req, res) => {
+  res.json({ emojis: serverCustomEmojis });
+});
+
+app.post("/api/emojis/sync", (req, res) => {
+  const { emojis } = req.body || {};
+  if (Array.isArray(emojis)) {
+    serverCustomEmojis = emojis;
+    saveCustomEmojisToD1(serverCustomEmojis);
+    broadcast({ type: "SYNC_CUSTOM_EMOJIS", payload: serverCustomEmojis });
+    return res.json({ success: true, count: serverCustomEmojis.length });
+  }
+  res.status(400).json({ success: false, error: "Invalid emojis data" });
+});
+
+app.post("/api/emojis/add", (req, res) => {
+  const { emoji } = req.body || {};
+  if (emoji && emoji.id) {
+    const idx = serverCustomEmojis.findIndex(e => e.id === emoji.id);
+    if (idx !== -1) {
+      serverCustomEmojis[idx] = emoji;
+    } else {
+      serverCustomEmojis.push(emoji);
+    }
+    saveSingleCustomEmojiToD1(emoji);
+    broadcast({ type: "SYNC_CUSTOM_EMOJIS", payload: serverCustomEmojis });
+    return res.json({ success: true, emoji });
+  }
+  res.status(400).json({ success: false, error: "Invalid emoji item" });
+});
+
+app.post("/api/emojis/delete", (req, res) => {
+  const { id } = req.body || {};
+  if (id) {
+    serverCustomEmojis = serverCustomEmojis.filter(e => e.id !== id);
+    deleteCustomEmojiFromD1(id);
+    broadcast({ type: "SYNC_CUSTOM_EMOJIS", payload: serverCustomEmojis });
+    return res.json({ success: true });
+  }
+  res.status(400).json({ success: false, error: "Missing emoji id" });
+});
+
 // WebSocket Server on /ws
 const wss = new WebSocketServer({ server, path: "/ws" });
 
@@ -767,6 +879,7 @@ wss.on("connection", (ws: WebSocket) => {
         rooms: serverRooms,
         ipModerations: serverIPModerations,
         notifications: serverNotifications,
+        customEmojis: serverCustomEmojis,
         siteSettings: serverSiteSettings,
       },
     })
@@ -794,11 +907,13 @@ wss.on("connection", (ws: WebSocket) => {
                   bio: dbUser.bio || user.bio,
                   statusMessage: dbUser.statusMessage || user.statusMessage,
                   role: dbUser.role || user.role,
+                  currentRoomId: user.currentRoomId || dbUser.currentRoomId || 'room-general',
                   onlineStatus: "online" as const,
                   lastSeen: "الآن",
                 }
               : {
                   ...user,
+                  currentRoomId: user.currentRoomId || 'room-general',
                   onlineStatus: "online" as const,
                   lastSeen: "الآن",
                 };
@@ -849,6 +964,63 @@ wss.on("connection", (ws: WebSocket) => {
             broadcast({ type: "USER_UPDATED", payload: updatedUser });
             broadcast({ type: "SYNC_USERS", payload: serverUsers });
           }
+          break;
+        }
+
+        case "CHANGE_ROOM": {
+          const { userId, fromRoomId, toRoomId } = payload || {};
+          if (userId && toRoomId) {
+            serverUsers = serverUsers.map((u) =>
+              u.id === userId ? { ...u, currentRoomId: toRoomId, onlineStatus: "online" as const, lastSeen: "الآن" } : u
+            );
+            const found = serverUsers.find((u) => u.id === userId);
+            if (found) {
+               saveUserToD1(found);
+            }
+            broadcast({ type: "USER_ROOM_CHANGED", payload: { userId, fromRoomId, toRoomId } });
+            broadcast({ type: "SYNC_USERS", payload: serverUsers });
+          }
+          break;
+        }
+
+        case "SYNC_CUSTOM_EMOJIS": {
+          if (Array.isArray(payload)) {
+            serverCustomEmojis = payload;
+            saveCustomEmojisToD1(serverCustomEmojis);
+            broadcast({ type: "SYNC_CUSTOM_EMOJIS", payload: serverCustomEmojis });
+          }
+          break;
+        }
+
+        case "ADD_CUSTOM_EMOJI": {
+          const emoji: CustomEmojiItem = payload;
+          if (emoji && emoji.id) {
+            const idx = serverCustomEmojis.findIndex((e) => e.id === emoji.id);
+            if (idx !== -1) {
+              serverCustomEmojis[idx] = emoji;
+            } else {
+              serverCustomEmojis.push(emoji);
+            }
+            saveSingleCustomEmojiToD1(emoji);
+            broadcast({ type: "SYNC_CUSTOM_EMOJIS", payload: serverCustomEmojis });
+          }
+          break;
+        }
+
+        case "DELETE_CUSTOM_EMOJI": {
+          const { id } = payload || {};
+          if (id) {
+            serverCustomEmojis = serverCustomEmojis.filter((e) => e.id !== id);
+            deleteCustomEmojiFromD1(id);
+            broadcast({ type: "SYNC_CUSTOM_EMOJIS", payload: serverCustomEmojis });
+          }
+          break;
+        }
+
+        case "CLEAR_CUSTOM_EMOJIS": {
+          serverCustomEmojis = [];
+          saveCustomEmojisToD1([]);
+          broadcast({ type: "SYNC_CUSTOM_EMOJIS", payload: [] });
           break;
         }
 

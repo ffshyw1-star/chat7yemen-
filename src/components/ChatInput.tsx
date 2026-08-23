@@ -9,7 +9,7 @@ import {
 import { DrawingCanvasModal } from './DrawingCanvasModal';
 import { ActionChoiceModal } from './ActionChoiceModal';
 import { YouTubeModal } from './YouTubeModal';
-import { CUSTOM_EMOJIS_LIST, CUSTOM_EMOJI_CATEGORIES, getAllCustomEmojis } from './CustomEmojis';
+import { StickerPicker } from './StickerPicker';
 
 const STANDARD_COLORS = [
   { name: 'أسود', value: '#000000' },
@@ -87,9 +87,6 @@ export const ChatInput: React.FC = () => {
   const [selectedFontSize, setSelectedFontSize] = useState<string>('14px');
   const [selectedFontWeight, setSelectedFontWeight] = useState<string>('normal');
 
-  // Emoji Popover state
-  const [emojiCategory, setEmojiCategory] = useState<string>('all');
-
   // Voice recording state
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -97,15 +94,10 @@ export const ChatInput: React.FC = () => {
   const [recordedAudio, setRecordedAudio] = useState<{ blobUrl: string; base64: string; durationSec: number } | null>(null);
   const recorderRef = useRef<VoiceRecorder | null>(null);
 
-  // Insert emoji or emoticon into input
+  // Insert emoji or emoticon tag into input
   const handleInsertEmoji = (emojiTag: string) => {
     setText((prev) => (prev ? `${prev} ${emojiTag} ` : `${emojiTag} `));
   };
-
-  const allEmojis = getAllCustomEmojis(customEmojis);
-  const filteredEmojis = allEmojis.filter((s) =>
-    emojiCategory === 'all' ? true : s.category === emojiCategory
-  );
 
   // If username was clicked in main chat, append it to input field
   useEffect(() => {
@@ -269,90 +261,12 @@ export const ChatInput: React.FC = () => {
         className="hidden"
       />
 
-      {/* Popover for Custom Animated Emojis & Retro Stickers - Exact Match with Screenshots 1, 2, 3 */}
-      {isEmojiOpen && (
-        <div className="absolute bottom-full inset-x-0 mb-1 w-full bg-white border-t-2 border-b border-[#003947] shadow-2xl overflow-hidden z-40 animate-in fade-in slide-in-from-bottom-2 duration-150 rounded-t-xl">
-          {/* Header Bar - Exactly as in the screenshots */}
-          <div className="bg-[#003947] px-2 py-1 flex items-center justify-between select-none shadow-xs">
-            {/* Left Cyan Smiley Button & Quick Add for Owner */}
-            <div className="flex items-center gap-2">
-              <div
-                className="w-10 h-8 rounded bg-[#00bcd4] text-slate-950 flex items-center justify-center text-base font-black shadow-xs cursor-default"
-                title="ابتسامات وشعارات متحركة"
-              >
-                😊
-              </div>
-
-              {/* Owner quick add button */}
-              {(currentUser?.role === 'owner' || currentUser?.role === 'admin') && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsEmojiOpen(false);
-                    setIsOwnerDashboardOpen(true);
-                  }}
-                  className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] rounded-md shadow-xs flex items-center gap-1 cursor-pointer transition-transform active:scale-95"
-                  title="فتح لوحة إدارة وإضافة الإيموجيات في لوحة المالك"
-                >
-                  <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                  <span>إضافة إيموجي</span>
-                </button>
-              )}
-            </div>
-
-            {/* Right White Close Button */}
-            <button
-              type="button"
-              onClick={() => setIsEmojiOpen(false)}
-              className="text-white hover:text-red-300 transition-colors p-1.5 rounded cursor-pointer font-bold flex items-center justify-center"
-              title="إغلاق"
-            >
-              <X className="w-5 h-5 stroke-[2.5]" />
-            </button>
-          </div>
-
-          {/* Body Content - Pure White Background & Compact Grid */}
-          <div className="p-2 sm:p-3 bg-white max-h-64 sm:max-h-72 overflow-y-auto custom-scrollbar select-none">
-            {/* Banners Row (سلام عليكم، ولكمووو، وعليكم السلام، اهلا وسهلا + المخصصة) */}
-            {allEmojis.some((e) => e.isBanner) && (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2 mb-2">
-                {allEmojis.filter((e) => e.isBanner).map((item) => {
-                  const Comp = item.component;
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => handleInsertEmoji(item.tag)}
-                      className="bg-slate-50 hover:bg-amber-50/70 border border-slate-200 hover:border-amber-400 rounded-lg p-1.5 flex items-center justify-center transition-all cursor-pointer active:scale-95 shadow-2xs hover:shadow-xs min-h-[36px]"
-                      title={`إضافة: ${item.name}`}
-                    >
-                      <Comp size={22} animated={true} />
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Compact High-Density Grid of Animated Retro Smileys */}
-            <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-1 bg-white p-1 rounded-lg border border-slate-100">
-              {allEmojis.filter((e) => !e.isBanner).map((item) => {
-                const EmojiComp = item.component;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => handleInsertEmoji(item.tag)}
-                    className="group bg-transparent hover:bg-slate-100 hover:border-slate-300 border border-transparent rounded-lg p-0.5 flex items-center justify-center transition-all cursor-pointer active:scale-90 h-10 w-full"
-                    title={item.name}
-                  >
-                    <EmojiComp size={28} animated={true} />
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* StickerPicker Component displaying Owner's custom emojis & stickers */}
+      <StickerPicker
+        isOpen={isEmojiOpen}
+        onClose={() => setIsEmojiOpen(false)}
+        onSelectSticker={handleInsertEmoji}
+      />
 
       {/* Popover for Plus (➕) Attachments Menu - Exact layout as Screenshot 2 */}
       {isMediaOpen && (

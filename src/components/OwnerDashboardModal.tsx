@@ -541,7 +541,7 @@ export const OwnerDashboardModal: React.FC = () => {
                 </div>
               </button>
 
-              {/* 18. إدارة الإيموجي والسمايلات */}
+              {/* 18. إدارة ملصقات الموقع */}
               <button
                 onClick={() => { setActiveSection('emojis'); setIsMobileSidebarOpen(false); }}
                 className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
@@ -550,7 +550,7 @@ export const OwnerDashboardModal: React.FC = () => {
               >
                 <div className="flex items-center gap-2.5">
                   <Smile className="w-4 h-4 text-amber-500" />
-                  <span>إدارة الإيموجي والسمايلات</span>
+                  <span>إدارة ملصقات الموقع</span>
                 </div>
                 <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded-full font-mono">
                   {customEmojis?.length || 0}

@@ -20,8 +20,8 @@ import {
   canEditProfile,
   formatLastSeenDateTime
 } from '../utils/permissions';
-import { getEnglishCountryName } from '../utils/geoip';
-import { formatEnglishNumber, toEnglishDigits } from '../utils/dateUtils';
+import { getEnglishCountryName, getCountryFlagByName, getUserFlagEmoji } from '../utils/geoip';
+import { formatEnglishNumber, toEnglishDigits, formatEnglishDate } from '../utils/dateUtils';
 import {
   X, Zap, FileText, Heart, MessageSquare, UserPlus, Ban, Unlock,
   Coins, MapPin, Shield, AlertTriangle, Search, Lock,
@@ -1399,8 +1399,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
               <span className="text-slate-700 font-bold text-sm">البلد</span>
               <span className="font-bold text-slate-600 text-sm flex items-center gap-1.5">
-                {target.countryFlag && <span className="text-base">{target.countryFlag}</span>}
-                <span>{getEnglishCountryName(target.country)}</span>
+                {(target.countryFlag || getCountryFlagByName(target.country) || getUserFlagEmoji(target)) && (
+                  <span className="text-base">{target.countryFlag || getCountryFlagByName(target.country) || getUserFlagEmoji(target)}</span>
+                )}
+                <span>{target.country || 'اليمن'}</span>
               </span>
             </div>
 
@@ -1408,7 +1410,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
               <span className="text-slate-700 font-bold text-sm">تاريخ الإنضمام</span>
               <span className="font-mono text-slate-500 text-sm dir-ltr">
-                {toEnglishDigits(target.joinedDate || '2024-04-20')}
+                {toEnglishDigits(target.joinedDate || formatEnglishDate(new Date(target.joinedTimestamp || Date.now())))}
               </span>
             </div>
 
@@ -1427,8 +1429,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 <span>معلوماتي</span>
                 <span className="text-red-500">🔴</span>
               </div>
-              <p className="text-slate-700 text-xs sm:text-sm leading-relaxed font-semibold bg-slate-50 p-3.5 rounded-2xl border border-slate-100 whitespace-pre-line">
-                {target.bio || target.statusMessage || 'حافظوا على الشرفاء حتى ولو كانوا خصومكم، ولا تفرحوا بالسفهاء ولو وقفوا معكم،.. فالشريف عندما تحتاج اليه ولو كان خصمك، لن تجده في مواقف الكرامه الا شهما،..'}
+              <p className="text-slate-700 text-xs sm:text-sm leading-relaxed font-semibold bg-slate-50 p-3.5 rounded-2xl border border-slate-100 whitespace-pre-line min-h-[44px] flex items-center">
+                {target.bio || target.statusMessage || (target.role === 'owner' ? 'حساب المالك الرئيسي والمؤسس للدردشة. يسعدني تواجدكم جميعاً.' : 'لا توجد معلومات إضافية مسجلة')}
               </p>
             </div>
 

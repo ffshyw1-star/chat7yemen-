@@ -82,10 +82,50 @@ export const COUNTRIES_LIST: CountryInfo[] = [
   { code: 'BR', name: 'البرازيل', englishName: 'Brazil', flag: '🇧🇷', language: 'Português 🇧🇷' },
   { code: 'JP', name: 'اليابان', englishName: 'Japan', flag: '🇯🇵', language: '日本語 🇯🇵' },
   { code: 'KR', name: 'كوريا الجنوبية', englishName: 'South Korea', flag: '🇰🇷', language: '한국어 🇰🇷' },
+  { code: 'AU', name: 'أستراليا', englishName: 'Australia', flag: '🇦🇺', language: 'English 🇦🇺' },
+  { code: 'AT', name: 'النمسا', englishName: 'Austria', flag: '🇦🇹', language: 'Deutsch 🇦🇹' },
+  { code: 'BE', name: 'بلجيكا', englishName: 'Belgium', flag: '🇧🇪', language: 'Français / Nederlands 🇧🇪' },
+  { code: 'CH', name: 'سويسرا', englishName: 'Switzerland', flag: '🇨🇭', language: 'Deutsch / Français 🇨🇭' },
+  { code: 'GR', name: 'اليونان', englishName: 'Greece', flag: '🇬🇷', language: 'Ελληνικά 🇬🇷' },
+  { code: 'PT', name: 'البرتغال', englishName: 'Portugal', flag: '🇵🇹', language: 'Português 🇵🇹' },
+  { code: 'PL', name: 'بولندا', englishName: 'Poland', flag: '🇵🇱', language: 'Polski 🇵🇱' },
+  { code: 'UA', name: 'أوكرانيا', englishName: 'Ukraine', flag: '🇺🇦', language: 'Українська 🇺🇦' },
+  { code: 'AR', name: 'الأرجنتين', englishName: 'Argentina', flag: '🇦🇷', language: 'Español 🇦🇷' },
+  { code: 'MX', name: 'المكسيك', englishName: 'Mexico', flag: '🇲🇽', language: 'Español 🇲🇽' },
+  { code: 'CL', name: 'تشيلي', englishName: 'Chile', flag: '🇨🇱', language: 'Español 🇨🇱' },
+  { code: 'CO', name: 'كولومبيا', englishName: 'Colombia', flag: '🇨🇴', language: 'Español 🇨🇴' },
+  { code: 'NZ', name: 'نيوزيلندا', englishName: 'New Zealand', flag: '🇳🇿', language: 'English 🇳🇿' },
+  { code: 'TH', name: 'تايلاند', englishName: 'Thailand', flag: '🇹🇭', language: 'ไทย 🇹🇭' },
+  { code: 'VN', name: 'فيتنام', englishName: 'Vietnam', flag: '🇻🇳', language: 'Tiếng Việt 🇻🇳' },
+  { code: 'PH', name: 'الفلبين', englishName: 'Philippines', flag: '🇵🇭', language: 'Filipino / English 🇵🇭' },
+  { code: 'SG', name: 'سنغافورة', englishName: 'Singapore', flag: '🇸🇬', language: 'English 🇸🇬' },
+  { code: 'ZA', name: 'جنوب أفريقيا', englishName: 'South Africa', flag: '🇿🇦', language: 'English 🇿🇦' },
+  { code: 'IR', name: 'إيران', englishName: 'Iran', flag: '🇮🇷', language: 'فارسی 🇮🇷' },
+  { code: 'AF', name: 'أفغانستان', englishName: 'Afghanistan', flag: '🇦🇫', language: 'پښتو / دری 🇦🇫' },
+  { code: 'AL', name: 'ألبانيا', englishName: 'Albania', flag: '🇦🇱', language: 'Shqip 🇦🇱' },
+  { code: 'BD', name: 'بنغلاديش', englishName: 'Bangladesh', flag: '🇧🇩', language: 'বাংলা 🇧🇩' },
+  { code: 'CY', name: 'قبرص', englishName: 'Cyprus', flag: '🇨🇾', language: 'Ελληνικά / Türkçe 🇨🇾' },
+  { code: 'CZ', name: 'التشيك', englishName: 'Czech Republic', flag: '🇨🇿', language: 'Čeština 🇨🇿' },
+  { code: 'DK', name: 'الدنمارك', englishName: 'Denmark', flag: '🇩🇰', language: 'Dansk 🇩🇰' },
+  { code: 'FI', name: 'فنلندا', englishName: 'Finland', flag: '🇫🇮', language: 'Suomi 🇫🇮' },
+  { code: 'HU', name: 'المجر', englishName: 'Hungary', flag: '🇭🇺', language: 'Magyar 🇭🇺' },
+  { code: 'IE', name: 'أيرلندا', englishName: 'Ireland', flag: '🇮🇪', language: 'English 🇮🇪' },
+  { code: 'RO', name: 'رومانيا', englishName: 'Romania', flag: '🇷🇴', language: 'Română 🇷🇴' },
+  { code: 'RS', name: 'صربيا', englishName: 'Serbia', flag: '🇷🇸', language: 'Српски 🇷🇸' },
+  { code: 'BG', name: 'بلغاريا', englishName: 'Bulgaria', flag: '🇧🇬', language: 'Български 🇧🇬' },
+  { code: 'HR', name: 'كرواتيا', englishName: 'Croatia', flag: '🇭🇷', language: 'Hrvatski 🇭🇷' },
+  { code: 'GE', name: 'جورجيا', englishName: 'Georgia', flag: '🇬🇪', language: 'ქართული 🇬🇪' },
+  { code: 'AZ', name: 'أذربيجان', englishName: 'Azerbaijan', flag: '🇦🇿', language: 'Azərbaycan 🇦🇿' },
+  { code: 'KZ', name: 'كازاخستان', englishName: 'Kazakhstan', flag: '🇰🇿', language: 'Қазақша 🇰🇿' },
+  { code: 'UZ', name: 'أوزبكستان', englishName: 'Uzbekistan', flag: '🇺🇿', language: 'Oʻzbekcha 🇺🇿' },
 ];
 
 export const ARABIC_TO_ENGLISH_COUNTRY_MAP: Record<string, string> = Object.fromEntries(
   COUNTRIES_LIST.map(c => [c.name, c.englishName])
+);
+
+export const ENGLISH_TO_ARABIC_COUNTRY_MAP: Record<string, string> = Object.fromEntries(
+  COUNTRIES_LIST.map(c => [c.englishName.toLowerCase(), c.name])
 );
 
 export function getEnglishCountryName(countryInput?: string): string {
@@ -95,11 +135,37 @@ export function getEnglishCountryName(countryInput?: string): string {
     return ARABIC_TO_ENGLISH_COUNTRY_MAP[trimmed];
   }
   for (const c of COUNTRIES_LIST) {
-    if (trimmed.includes(c.name) || c.englishName.toLowerCase() === trimmed.toLowerCase()) {
+    if (trimmed.toLowerCase() === c.name.toLowerCase() || trimmed.toLowerCase() === c.englishName.toLowerCase()) {
       return c.englishName;
     }
   }
   return trimmed;
+}
+
+export function getArabicCountryName(countryInput?: string): string {
+  if (!countryInput || !countryInput.trim()) return 'اليمن';
+  const trimmed = countryInput.trim();
+  if (ENGLISH_TO_ARABIC_COUNTRY_MAP[trimmed.toLowerCase()]) {
+    return ENGLISH_TO_ARABIC_COUNTRY_MAP[trimmed.toLowerCase()];
+  }
+  for (const c of COUNTRIES_LIST) {
+    if (trimmed.toLowerCase() === c.englishName.toLowerCase() || trimmed === c.name) {
+      return c.name;
+    }
+  }
+  return trimmed;
+}
+
+export function getCountryFlagByName(countryName?: string): string {
+  if (!countryName || countryName === 'عدم إظهار') return '';
+  const trimmed = countryName.trim();
+  const found = COUNTRIES_LIST.find(
+    c => c.name === trimmed ||
+         c.englishName.toLowerCase() === trimmed.toLowerCase() ||
+         c.code === trimmed.toUpperCase()
+  );
+  if (found) return found.flag;
+  return '🇾🇪';
 }
 
 export function getCountryLanguage(countryCodeOrName?: string): string {

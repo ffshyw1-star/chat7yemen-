@@ -4,6 +4,7 @@ import { UserAvatar } from './UserAvatar';
 import { User } from '../types';
 import { getRankEmoji, getRankEmojiClass, isSystemUser } from '../utils/permissions';
 import { NEON_COLORS } from './ProfileEditorModal';
+import { formatEnglishDate } from '../utils/dateUtils';
 import { UserPlus, Home, Search, X, Users, Check, MapPin } from 'lucide-react';
 
 type SortMode = 'random' | 'new_members' | 'last_seen' | 'username' | 'rank';
@@ -61,9 +62,11 @@ export const OnlineList: React.FC = () => {
 
   // Filter users based on search query, type filter, and status filter
   const filteredUsers = baseUsers.filter(u => {
-    // In online tab, filter by presence
+    // In online tab, filter strictly by current active room presence
     if (activeTab === 'online') {
       if (!isUserConsideredOnline(u)) return false;
+      const userRoomId = u.currentRoomId || 'room-general';
+      if (userRoomId !== currentRoom.id) return false;
     }
 
     // 1. Search Query
@@ -99,15 +102,33 @@ export const OnlineList: React.FC = () => {
         });
 
       case 'new_members': {
-        // Display users who joined within the last 8 hours, sorted newest first
-        const EIGHT_HOURS_MS = 8 * 60 * 60 * 1000;
-        const now = Date.now();
-        const newMembersList = list.filter(u => {
-          if (u.joinedTimestamp) {
-            return (now - u.joinedTimestamp) <= EIGHT_HOURS_MS;
+        // Display visitors and users who registered an account ON THE SAME DAY ONLY (اليوم فقط وليس واصل)
+        const now = new Date();
+        const todayEn = formatEnglishDate(now);
+        const todayIso = now.toISOString().split('T')[0];
+
+        const isRegisteredToday = (ts?: number, dateStr?: string): boolean => {
+          if (ts) {
+            const d = new Date(ts);
+            return (
+              d.getFullYear() === now.getFullYear() &&
+              d.getMonth() === now.getMonth() &&
+              d.getDate() === now.getDate()
+            );
           }
-          return true;
+          if (dateStr) {
+            return dateStr.includes(todayEn) || dateStr.includes(todayIso);
+          }
+          return false;
+        };
+
+        const newMembersList = list.filter(u => {
+          // 1. Visitors are included
+          if (u.role === 'visitor') return true;
+          // 2. Newly registered today accounts only
+          return isRegisteredToday(u.joinedTimestamp, u.joinedDate);
         });
+
         return newMembersList.sort((a, b) => {
           const timeA = a.joinedTimestamp || 0;
           const timeB = b.joinedTimestamp || 0;
@@ -252,6 +273,18 @@ export const OnlineList: React.FC = () => {
         {/* View A: Online Users Default View ('online') */}
         {activeTab === 'online' && (
           <div>
+            {/* Room Presence Header */}
+            <div className="px-3.5 py-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between text-xs">
+              <div className="flex items-center gap-1.5 font-bold text-slate-700">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>المتواجدين في غرفة:</span>
+                <span className="text-sky-600 font-black">{currentRoom.name}</span>
+              </div>
+              <span className="text-[11px] font-black bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">
+                {sortedUsers.length}
+              </span>
+            </div>
+
             {sortedUsers.length === 0 ? (
               <div className="text-center py-12 px-4 text-slate-400 space-y-2">
                 <Users className="w-10 h-10 mx-auto text-slate-300 stroke-[1.5]" />

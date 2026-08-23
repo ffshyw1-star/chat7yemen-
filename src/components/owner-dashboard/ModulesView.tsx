@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useChat } from '../../context/ChatContext';
 import {
-  Layers, MessageSquare, Mic, Image, Palette, Radio,
+  Layers, MessageSquare, Mic, Palette, Radio,
   Gift, ShoppingBag, ThumbsUp, AlertTriangle, Disc, Video,
-  Save, Sparkles, Check
+  Save
 } from 'lucide-react';
 
 interface ModuleConfig {
@@ -15,31 +15,60 @@ interface ModuleConfig {
   color: string;
 }
 
+const DEFAULT_MODULES: ModuleConfig[] = [
+  { id: 'wall', name: 'نظام الحائط والمنشورات', desc: 'إمكانية نشر اليوميات والصور والتعليقات والإعجابات للأعضاء', icon: MessageSquare, enabled: true, color: 'text-blue-600 bg-blue-50 border-blue-200' },
+  { id: 'voice', name: 'الرسائل الصوتية المباشرة', desc: 'تسجيل وبث الرسائل الصوتية الحية في الغرف والخاص', icon: Mic, enabled: true, color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
+  { id: 'canvas', name: 'لوحة الرسم والتوقيعات', desc: 'لوحة تفاعلية للرسم ومشاركة الإبداعات مباشرة بالدردشة', icon: Palette, enabled: true, color: 'text-amber-600 bg-amber-50 border-amber-200' },
+  { id: 'private', name: 'محادثات الخاص والمراسلة الفردية', desc: 'نظام المحادثات السرية المشفرة الفردية بين الأعضاء', icon: MessageSquare, enabled: true, color: 'text-indigo-600 bg-indigo-50 border-indigo-200' },
+  { id: 'gifts', name: 'نظام الهدايا والرصيد', desc: 'إرسال الهدايا التفاعلية المتحركة وتبادل الرصيد والنقاط', icon: Gift, enabled: true, color: 'text-pink-600 bg-pink-50 border-pink-200' },
+  { id: 'store', name: 'متجر العضويات والترقيات', desc: 'شراء عضويات VIP، تغيير لون الخط، وأيقونات التاج', icon: ShoppingBag, enabled: true, color: 'text-purple-600 bg-purple-50 border-purple-200' },
+  { id: 'likes', name: 'نظام الإعجابات والتفاعل', desc: 'زر الإعجاب بالملفات الشخصية والمنشورات والرسائل', icon: ThumbsUp, enabled: true, color: 'text-teal-600 bg-teal-50 border-teal-200' },
+  { id: 'reports', name: 'نظام البلاغات والشكاوى التلقائي', desc: 'إمكانية إرسال بلاغ فوري للإدارة مع حفظ نص الرسالة المبلغ عنها', icon: AlertTriangle, enabled: true, color: 'text-rose-600 bg-rose-50 border-rose-200' },
+  { id: 'dj', name: 'نظام DJ الصوتي والبث', desc: 'بث الموسيقى والأغاني والمؤثرات الصوتية للغرف', icon: Disc, enabled: true, color: 'text-violet-600 bg-violet-50 border-violet-200' },
+  { id: 'youtube', name: 'مشغل اليوتيوب التشاركي', desc: 'مشاركة وتشغيل مقاطع اليوتيوب بالدردشة العامة', icon: Video, enabled: true, color: 'text-red-600 bg-red-50 border-red-200' },
+  { id: 'radio', name: 'محطات الراديو الإخبارية والقرآن', desc: 'بث إذاعات القرآن الكريم ومحطات الراديو العربية', icon: Radio, enabled: true, color: 'text-cyan-600 bg-cyan-50 border-cyan-200' },
+];
+
 export const ModulesView: React.FC<{ showToast: (msg: string) => void }> = ({ showToast }) => {
-  const [modules, setModules] = useState<ModuleConfig[]>([
-    { id: 'wall', name: 'نظام الحائط والمنشورات', desc: 'إمكانية نشر اليوميات والصور والتعليقات والإعجابات للأعضاء', icon: MessageSquare, enabled: true, color: 'text-blue-600 bg-blue-50 border-blue-200' },
-    { id: 'voice', name: 'الرسائل الصوتية المباشرة', desc: 'تسجيل وبث الرسائل الصوتية الحية في الغرف والخاص', icon: Mic, enabled: true, color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
-    { id: 'canvas', name: 'لوحة الرسم والتوقيعات', desc: 'لوحة تفاعلية للرسم ومشاركة الإبداعات مباشرة بالدردشة', icon: Palette, enabled: true, color: 'text-amber-600 bg-amber-50 border-amber-200' },
-    { id: 'private', name: 'محادثات الخاص والمراسلة الفردية', desc: 'نظام المحادثات السرية المشفرة الفردية بين الأعضاء', icon: MessageSquare, enabled: true, color: 'text-indigo-600 bg-indigo-50 border-indigo-200' },
-    { id: 'gifts', name: 'نظام الهدايا والرصيد', desc: 'إرسال الهدايا التفاعلية المتحركة وتبادل الرصيد والنقاط', icon: Gift, enabled: true, color: 'text-pink-600 bg-pink-50 border-pink-200' },
-    { id: 'store', name: 'متجر العضويات والترقيات', desc: 'شراء عضويات VIP، تغيير لون الخط، وأيقونات التاج', icon: ShoppingBag, enabled: true, color: 'text-purple-600 bg-purple-50 border-purple-200' },
-    { id: 'likes', name: 'نظام الإعجابات والتفاعل', desc: 'زر الإعجاب بالملفات الشخصية والمنشورات والرسائل', icon: ThumbsUp, enabled: true, color: 'text-teal-600 bg-teal-50 border-teal-200' },
-    { id: 'reports', name: 'نظام البلاغات والشكاوى التلقائي', desc: 'إمكانية إرسال بلاغ فوري للإدارة مع حفظ نص الرسالة المبلغ عنها', icon: AlertTriangle, enabled: true, color: 'text-rose-600 bg-rose-50 border-rose-200' },
-    { id: 'dj', name: 'نظام DJ الصوتي والبث', desc: 'بث الموسيقى والأغاني والمؤثرات الصوتية للغرف', icon: Disc, enabled: true, color: 'text-violet-600 bg-violet-50 border-violet-200' },
-    { id: 'youtube', name: 'مشغل اليوتيوب التشاركي', desc: 'مشاركة وتشغيل مقاطع اليوتيوب بالدردشة العامة', icon: Video, enabled: true, color: 'text-red-600 bg-red-50 border-red-200' },
-    { id: 'radio', name: 'محطات الراديو الإخبارية والقرآن', desc: 'بث إذاعات القرآن الكريم ومحطات الراديو العربية', icon: Radio, enabled: true, color: 'text-cyan-600 bg-cyan-50 border-cyan-200' },
-  ]);
+  const { siteSettings, updateSiteSettings } = useChat();
+
+  const [modules, setModules] = useState<ModuleConfig[]>(() => {
+    const savedStates: Record<string, boolean> = (siteSettings as any)?.modulesState || {};
+    return DEFAULT_MODULES.map(m => ({
+      ...m,
+      enabled: savedStates[m.id] !== undefined ? savedStates[m.id] : m.enabled
+    }));
+  });
+
+  useEffect(() => {
+    if ((siteSettings as any)?.modulesState) {
+      const savedStates: Record<string, boolean> = (siteSettings as any).modulesState;
+      setModules(prev => prev.map(m => ({
+        ...m,
+        enabled: savedStates[m.id] !== undefined ? savedStates[m.id] : m.enabled
+      })));
+    }
+  }, [siteSettings]);
 
   const toggleModule = (id: string) => {
-    setModules(prev => prev.map(m => m.id === id ? { ...m, enabled: !m.enabled } : m));
+    setModules(prev => {
+      const next = prev.map(m => m.id === id ? { ...m, enabled: !m.enabled } : m);
+      const modulesState: Record<string, boolean> = {};
+      next.forEach(m => { modulesState[m.id] = m.enabled; });
+      updateSiteSettings({ modulesState } as any);
+      return next;
+    });
   };
 
   const handleSave = () => {
-    showToast('تم حفظ إعدادات الوحدات وتفعيلها في كامل النظام 💾');
+    const modulesState: Record<string, boolean> = {};
+    modules.forEach(m => { modulesState[m.id] = m.enabled; });
+    updateSiteSettings({ modulesState } as any);
+    showToast('تم حفظ إعدادات الوحدات في قاعدة البيانات وتفعيلها بنجاح 💾');
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-4">
+    <div className="max-w-4xl mx-auto space-y-4 font-sans text-right" dir="rtl">
       {/* Header */}
       <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs flex items-center justify-between">
         <div>
@@ -48,13 +77,14 @@ export const ModulesView: React.FC<{ showToast: (msg: string) => void }> = ({ sh
             <span>إدارة الوحدات والميزات (Module Management)</span>
           </h3>
           <p className="text-[11px] text-slate-500 mt-0.5">
-            تفعيل أو إيقاف أي ميزة في الموقع بضغطة زر دون الحاجة لإعادة تشغيل السيرفر
+            تفعيل أو إيقاف أي ميزة في الموقع مع الحفظ الفوري في قاعدة البيانات والسيرفر
           </p>
         </div>
 
         <button
+          type="button"
           onClick={handleSave}
-          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg cursor-pointer shadow-xs flex items-center gap-1.5"
+          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg cursor-pointer shadow-xs flex items-center gap-1.5 transition-colors"
         >
           <Save className="w-3.5 h-3.5" />
           <span>حفظ التعديلات 💾</span>
@@ -95,16 +125,17 @@ export const ModulesView: React.FC<{ showToast: (msg: string) => void }> = ({ sh
 
               {/* Toggle Switch */}
               <button
+                type="button"
                 onClick={() => {
                   toggleModule(mod.id);
                   showToast(`تم ${mod.enabled ? 'إيقاف' : 'تفعيل'} ${mod.name}`);
                 }}
-                className={`w-11 h-6 rounded-full transition-colors relative shrink-0 cursor-pointer ${
-                  mod.enabled ? 'bg-emerald-600' : 'bg-slate-300'
+                className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer shrink-0 mt-1 ${
+                  mod.enabled ? 'bg-emerald-500' : 'bg-slate-300'
                 }`}
               >
                 <div
-                  className={`w-5 h-5 rounded-full bg-white absolute top-0.5 transition-transform ${
+                  className={`w-5 h-5 rounded-full bg-white shadow-xs absolute top-0.5 transition-transform ${
                     mod.enabled ? 'right-0.5' : 'left-0.5'
                   }`}
                 />

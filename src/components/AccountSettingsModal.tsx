@@ -1,9 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useChat } from '../context/ChatContext';
 import { Gender, PrivatePrivacySetting } from '../types';
 import { UserAvatar } from './UserAvatar';
 import { DEFAULT_AVATARS, NEON_COLORS, USERNAME_FONT_SIZES } from './ProfileEditorModal';
 import { playChatSound } from '../utils/audio';
+import { COUNTRIES_LIST, getCountryFlagByName, getArabicCountryName, getEnglishCountryName } from '../utils/geoip';
 import {
   X, User, Shield, Volume2, Globe, Lock, Trash2, Check,
   Palette, Edit3, VolumeX, Camera, Upload, Link, RefreshCw, Volume1,
@@ -371,9 +372,15 @@ export const AccountSettingsModal: React.FC = () => {
 
   // Sub-tabs & Popups for Language / Location sub-menu
   const [selectedLang, setSelectedLang] = useState<string>(() => localStorage.getItem('selectedLang') || 'Arabic');
-  const [selectedCountryLoc, setSelectedCountryLoc] = useState<string>(() => currentUser?.country || 'Palestinian Territories');
+  const [selectedCountryLoc, setSelectedCountryLoc] = useState<string>(() => currentUser?.country || 'اليمن');
   const [selectedTimezoneLoc, setSelectedTimezoneLoc] = useState<string>(() => localStorage.getItem('selectedTimezone') || 'Asia/Aden');
   const [openLocPickerModal, setOpenLocPickerModal] = useState<'lang' | 'country' | 'timezone' | null>(null);
+
+  useEffect(() => {
+    if (currentUser?.country) {
+      setSelectedCountryLoc(currentUser.country);
+    }
+  }, [currentUser?.country]);
 
   // Avatar Selection State
   const [avatarCategory, setAvatarCategory] = useState<'men' | 'women' | 'royal' | 'cute'>('men');
@@ -1559,9 +1566,14 @@ export const AccountSettingsModal: React.FC = () => {
                   onClick={() => setOpenLocPickerModal('country')}
                   className="w-full bg-[#f2f2f2] hover:bg-[#e8e8e8] border border-slate-200 rounded-lg p-3 flex items-center justify-between cursor-pointer transition-colors text-right"
                 >
-                  <span className="text-slate-800 font-semibold text-xs sm:text-sm">
-                    {selectedCountryLoc}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {selectedCountryLoc !== 'عدم إظهار' && (
+                      <span className="text-base">{getCountryFlagByName(selectedCountryLoc)}</span>
+                    )}
+                    <span className="text-slate-800 font-semibold text-xs sm:text-sm">
+                      {selectedCountryLoc}
+                    </span>
+                  </div>
                   <span className="text-slate-600 text-[10px] text-[#0b333e] font-bold">▼</span>
                 </button>
               </div>
@@ -1597,7 +1609,22 @@ export const AccountSettingsModal: React.FC = () => {
                   onClick={() => {
                     localStorage.setItem('selectedLang', selectedLang);
                     localStorage.setItem('selectedTimezone', selectedTimezoneLoc);
-                    updateUserProfile({ country: selectedCountryLoc });
+                    if (selectedCountryLoc === 'عدم إظهار') {
+                      updateUserProfile({
+                        country: 'عدم إظهار',
+                        countryFlag: '',
+                        hideCountry: true,
+                        showCountryFlag: false
+                      });
+                    } else {
+                      const flag = getCountryFlagByName(selectedCountryLoc);
+                      updateUserProfile({
+                        country: selectedCountryLoc,
+                        countryFlag: flag,
+                        hideCountry: false,
+                        showCountryFlag: true
+                      });
+                    }
                     setSaveSuccess('تم حفظ إعدادات اللغة والموقع بنجاح!');
                     setTimeout(() => {
                       setSaveSuccess('');
@@ -1670,34 +1697,60 @@ export const AccountSettingsModal: React.FC = () => {
                         );
                       })}
 
-                      {openLocPickerModal === 'country' && POPUP_COUNTRIES.map((countryItem) => {
-                        const isSelected = selectedCountryLoc === countryItem;
-                        return (
+                      {openLocPickerModal === 'country' && (
+                        <>
                           <button
-                            key={countryItem}
                             type="button"
                             onClick={() => {
-                              setSelectedCountryLoc(countryItem);
+                              setSelectedCountryLoc('عدم إظهار');
                               setOpenLocPickerModal(null);
                             }}
                             className="w-full flex items-center justify-between py-2.5 px-4 hover:bg-slate-50 cursor-pointer transition-colors text-right"
                           >
-                            {/* Selected Radio Indicator on Left */}
-                            {isSelected ? (
+                            {selectedCountryLoc === 'عدم إظهار' ? (
                               <div className="w-5 h-5 rounded-full border-2 border-indigo-900 flex items-center justify-center shrink-0">
                                 <div className="w-2.5 h-2.5 rounded-full bg-indigo-900" />
                               </div>
                             ) : (
                               <div className="w-5 h-5 rounded-full border-2 border-slate-300 shrink-0" />
                             )}
-
-                            {/* Text on Right */}
-                            <span className={`text-xs sm:text-sm font-medium ${isSelected ? 'text-indigo-950 font-bold' : 'text-slate-800'}`}>
-                              {countryItem}
+                            <span className={`text-xs sm:text-sm font-medium ${selectedCountryLoc === 'عدم إظهار' ? 'text-indigo-950 font-bold' : 'text-slate-800'}`}>
+                              عدم إظهار
                             </span>
                           </button>
-                        );
-                      })}
+
+                          {COUNTRIES_LIST.map((countryItem) => {
+                            const isSelected = selectedCountryLoc === countryItem.name || selectedCountryLoc === countryItem.englishName;
+                            return (
+                              <button
+                                key={countryItem.code}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedCountryLoc(countryItem.name);
+                                  setOpenLocPickerModal(null);
+                                }}
+                                className="w-full flex items-center justify-between py-2.5 px-4 hover:bg-slate-50 cursor-pointer transition-colors text-right"
+                              >
+                                {isSelected ? (
+                                  <div className="w-5 h-5 rounded-full border-2 border-indigo-900 flex items-center justify-center shrink-0">
+                                    <div className="w-2.5 h-2.5 rounded-full bg-indigo-900" />
+                                  </div>
+                                ) : (
+                                  <div className="w-5 h-5 rounded-full border-2 border-slate-300 shrink-0" />
+                                )}
+
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[11px] text-slate-400 font-mono">({countryItem.englishName})</span>
+                                  <span className={`text-xs sm:text-sm font-medium ${isSelected ? 'text-indigo-950 font-bold' : 'text-slate-800'}`}>
+                                    {countryItem.name}
+                                  </span>
+                                  <span className="text-base">{countryItem.flag}</span>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </>
+                      )}
 
                       {openLocPickerModal === 'timezone' && POPUP_TIMEZONES.map((tzItem) => {
                         const isSelected = selectedTimezoneLoc === tzItem;

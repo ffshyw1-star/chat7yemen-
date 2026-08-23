@@ -477,28 +477,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [customEmojis]);
 
-  const addCustomEmoji = useCallback((emojiData: Omit<CustomEmojiItem, 'id' | 'createdAt'>): CustomEmojiItem => {
-    const rawTag = emojiData.tag.trim().replace(/^:+|:+$/g, '');
-    const cleanTag = `:${rawTag || 'custom'}:`;
-    const newEmoji: CustomEmojiItem = {
-      ...emojiData,
-      id: `emoji-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      tag: cleanTag,
-      createdAt: new Date().toLocaleDateString('ar-EG'),
-      createdBy: currentUser?.username || 'الإدارة',
-    };
-    setCustomEmojis(prev => [newEmoji, ...prev]);
-    return newEmoji;
-  }, [currentUser]);
-
-  const deleteCustomEmoji = useCallback((emojiId: string) => {
-    setCustomEmojis(prev => prev.filter(e => e.id !== emojiId));
-  }, []);
-
-  const clearAllCustomEmojis = useCallback(() => {
-    setCustomEmojis([]);
-  }, []);
-  
   const [audioSettings, setAudioSettings] = useState<AudioSettings>(() => {
     try {
       const saved = localStorage.getItem('araby_audio_settings');
@@ -559,6 +537,52 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       socketRef.current.send(JSON.stringify({ type, payload }));
     }
   }, []);
+
+  const addCustomEmoji = useCallback((emojiData: Omit<CustomEmojiItem, 'id' | 'createdAt'>): CustomEmojiItem => {
+    const rawTag = emojiData.tag.trim().replace(/^:+|:+$/g, '');
+    const cleanTag = `:${rawTag || 'custom'}:`;
+    const newEmoji: CustomEmojiItem = {
+      ...emojiData,
+      id: `emoji-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      tag: cleanTag,
+      createdAt: new Date().toLocaleDateString('ar-EG'),
+      createdBy: currentUser?.username || 'الإدارة',
+    };
+    setCustomEmojis(prev => {
+      const updated = [newEmoji, ...prev];
+      sendSocketEvent('ADD_CUSTOM_EMOJI', newEmoji);
+      fetch('/api/emojis/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emoji: newEmoji })
+      }).catch(err => console.warn('Failed to persist custom emoji:', err));
+      return updated;
+    });
+    return newEmoji;
+  }, [currentUser, sendSocketEvent]);
+
+  const deleteCustomEmoji = useCallback((emojiId: string) => {
+    setCustomEmojis(prev => {
+      const updated = prev.filter(e => e.id !== emojiId);
+      sendSocketEvent('DELETE_CUSTOM_EMOJI', { id: emojiId });
+      fetch('/api/emojis/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: emojiId })
+      }).catch(err => console.warn('Failed to delete custom emoji:', err));
+      return updated;
+    });
+  }, [sendSocketEvent]);
+
+  const clearAllCustomEmojis = useCallback(() => {
+    setCustomEmojis([]);
+    sendSocketEvent('CLEAR_CUSTOM_EMOJIS', {});
+    fetch('/api/emojis/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ emojis: [] })
+    }).catch(err => console.warn('Failed to clear custom emojis:', err));
+  }, [sendSocketEvent]);
 
   const hidePrivateConversation = useCallback((targetUserId: string) => {
     setHiddenPrivateUserIds(prev => prev.includes(targetUserId) ? prev : [...prev, targetUserId]);
@@ -856,8 +880,27 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (payload.notifications && Array.isArray(payload.notifications)) {
                   setNotifications(payload.notifications);
                 }
+                if (payload.customEmojis && Array.isArray(payload.customEmojis)) {
+                  setCustomEmojis(payload.customEmojis);
+                }
                 if (payload.siteSettings && typeof payload.siteSettings === 'object') {
                   setSiteSettings(prev => ({ ...prev, ...payload.siteSettings }));
+                }
+                break;
+              }
+
+              case "SYNC_CUSTOM_EMOJIS": {
+                if (Array.isArray(payload)) {
+                  setCustomEmojis(payload);
+                }
+                break;
+              }
+
+              case "USER_ROOM_CHANGED": {
+                const { userId, fromRoomId, toRoomId } = payload || {};
+                if (userId && toRoomId) {
+                  setUsers(prev => prev.map(u => u.id === userId ? { ...u, currentRoomId: toRoomId } : u));
+                  setCurrentUser(prev => prev && prev.id === userId ? { ...prev, currentRoomId: toRoomId } : prev);
                 }
                 break;
               }
@@ -1681,6 +1724,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ip: clientIp,
       currentRoomId: currentRoom.id,
       joinedDate: new Date().toLocaleDateString('ar-EG'),
+      joinedTimestamp: Date.now(),
       lastSeen: 'الآن',
       privatePrivacy: 'everyone',
       onlineStatus: 'online',
@@ -1812,6 +1856,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ip: clientIp,
       currentRoomId: currentRoom.id,
       joinedDate: new Date().toLocaleDateString('ar-EG'),
+      joinedTimestamp: Date.now(),
       lastSeen: 'الآن',
       privatePrivacy: 'everyone',
       onlineStatus: 'online',
@@ -2041,12 +2086,24 @@ ${modsText}
       showTopBanner(`👑 دخول بصلاحيات الإدارة والمالك لغرفة (${room.name})`);
     }
 
+    const previousRoomId = currentUser?.currentRoomId || currentRoom.id;
     setCurrentRoom(room);
     if (currentUser) {
       const updatedCurUser: User = { ...currentUser, currentRoomId: room.id };
       setCurrentUser(updatedCurUser);
       setUsers(prev => prev.map(u => u.id === currentUser.id ? updatedCurUser : u));
+      sendSocketEvent('CHANGE_ROOM', {
+        userId: currentUser.id,
+        fromRoomId: previousRoomId,
+        toRoomId: room.id
+      });
       sendSocketEvent('UPDATE_USER', updatedCurUser);
+      fetch('/api/users/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: updatedCurUser })
+      }).catch(err => console.warn('Failed to persist user room change to D1:', err));
+
       // Log join activity
       addRoomActivityLog(
         room.id,

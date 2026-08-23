@@ -1,4 +1,4 @@
-import { Room, User, Message, PrivateMessage, Report, NewsPost, WallPost, Notification, StoreItem, ModLogEntry, RoomActivityLog, SiteSettings } from '../types';
+import { Room, User, Message, PrivateMessage, Report, NewsPost, WallPost, Notification, StoreItem, ModLogEntry, RoomActivityLog, SiteSettings, CustomEmojiItem } from '../types';
 
 export const INITIAL_ROOMS: Room[] = [
   {
@@ -281,4 +281,6 @@ export const INITIAL_SITE_SETTINGS: SiteSettings = {
   requireEmailVerification: false,
   enableCookieBan: true
 };
+
+export const INITIAL_CUSTOM_EMOJIS: CustomEmojiItem[] = [];
 

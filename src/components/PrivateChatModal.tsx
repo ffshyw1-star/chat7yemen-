@@ -11,7 +11,7 @@ import { ReportMessageModal } from './ReportMessageModal';
 import { PrivateMessage, User } from '../types';
 import { getRankTitle, canBeIgnored } from '../utils/permissions';
 import { toEnglishDigits } from '../utils/dateUtils';
-import { CUSTOM_EMOJIS_LIST, CUSTOM_EMOJI_CATEGORIES, renderTextWithCustomEmojis, getAllCustomEmojis } from './CustomEmojis';
+import { renderTextWithCustomEmojis, getAllCustomEmojis } from './CustomEmojis';
 
 export const PrivateChatModal: React.FC = () => {
   const {

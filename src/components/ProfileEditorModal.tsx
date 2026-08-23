@@ -714,7 +714,7 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
                 >
                   {COUNTRIES_LIST.map((c) => (
                     <option key={c.name} value={c.name}>
-                      {c.flag} {c.name} ({c.nameEn})
+                      {c.flag} {c.name} ({c.englishName})
                     </option>
                   ))}
                 </select>
