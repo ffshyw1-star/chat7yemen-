@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useChat } from '../context/ChatContext';
 import { UserAvatar } from './UserAvatar';
-import { LogOut, Settings, User as UserIcon, LogIn, Sparkles, Home, Gauge, Globe, Users, Shield, Lock } from 'lucide-react';
+import { LogOut, Settings, User as UserIcon, LogIn, Sparkles, Home, Gauge, Globe, Users, Shield, Lock, Gem, Star } from 'lucide-react';
 import { RoomSettingsModal } from './RoomSettingsModal';
 import { LogoutConfirmModal } from './LogoutConfirmModal';
 import { OwnerDashboardModal } from './OwnerDashboardModal';
@@ -178,6 +178,8 @@ export const RoomsPage: React.FC = () => {
           }).length;
           const totalUsersCount = onlineInRoom;
           const isLocked = Boolean(room.password && room.password.trim() !== '');
+          const isDiamond = room.roomType === 'diamond' || room.customIcon === 'diamond';
+          const isAdminRoom = room.roomType === 'admin' || room.customIcon === 'admin_star';
 
           return (
             <div
@@ -185,11 +187,22 @@ export const RoomsPage: React.FC = () => {
               onClick={() => switchRoom(room.id)}
               className="bg-white rounded-xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all p-6 flex flex-col items-center justify-center text-center cursor-pointer active:scale-[0.99] group relative"
             >
-              {/* Top Center: Circular Globe Icon in Blue Badge (or Amber/Red if locked) */}
+              {/* Top Center: Circular Icon */}
               <div className="relative mb-3">
-                <div className={`w-16 h-16 rounded-full ${isLocked ? 'bg-amber-600' : 'bg-[#1e88e5]'} text-white flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform`}>
-                  <Globe className="w-9 h-9 text-white stroke-[2]" />
-                </div>
+                {isDiamond ? (
+                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 text-white flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform">
+                    <Gem className="w-9 h-9 text-white stroke-[2]" />
+                  </div>
+                ) : isAdminRoom ? (
+                  <div className="w-16 h-16 rounded-full bg-rose-50 border-2 border-rose-500 flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform">
+                    <Star className="w-9 h-9 text-rose-600 fill-white stroke-[2.5]" />
+                  </div>
+                ) : (
+                  <div className={`w-16 h-16 rounded-full ${isLocked ? 'bg-amber-600' : 'bg-[#1e88e5]'} text-white flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform`}>
+                    <Globe className="w-9 h-9 text-white stroke-[2]" />
+                  </div>
+                )}
+
                 {isLocked && (
                   <span className="absolute -top-1 -right-1 bg-red-600 text-white rounded-full p-1 border-2 border-white shadow-xs" title="غرفة مقفلة بكلمة مرور">
                     <Lock className="w-3.5 h-3.5" />
@@ -197,18 +210,30 @@ export const RoomsPage: React.FC = () => {
                 )}
               </div>
 
-              {/* Center: Room Name */}
-              <h3 className="text-xl font-bold text-slate-800 mb-1 flex items-center justify-center gap-2">
+              {/* Center: Room Name & Badges */}
+              <h3 className="text-xl font-bold text-slate-800 mb-1 flex items-center justify-center gap-2 flex-wrap">
                 <span>{room.name}</span>
                 {room.isDefault && (
                   <span className="text-[10px] bg-sky-100 text-[#0284c7] border border-sky-200 px-2 py-0.5 rounded-full font-bold">
                     الرئيسية
                   </span>
                 )}
+                {isDiamond && (
+                  <span className="text-[10px] bg-cyan-50 text-cyan-700 border border-cyan-200 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                    <Gem className="w-3 h-3 text-cyan-600" />
+                    <span>غرفة ماسية</span>
+                  </span>
+                )}
+                {isAdminRoom && (
+                  <span className="text-[10px] bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                    <Star className="w-3 h-3 text-rose-600 fill-white stroke-[2]" />
+                    <span>غرفة إدارة</span>
+                  </span>
+                )}
                 {isLocked && (
                   <span className="inline-flex items-center gap-1 bg-red-50 text-red-700 border border-red-200 text-xs font-black px-2 py-0.5 rounded-md">
                     <Lock className="w-3 h-3 text-red-600" />
-                    <span>مقفلة بكلمة مرور</span>
+                    <span>مقفلة</span>
                   </span>
                 )}
               </h3>

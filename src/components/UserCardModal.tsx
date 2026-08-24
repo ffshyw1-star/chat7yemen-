@@ -51,16 +51,34 @@ export const UserCardModal: React.FC = () => {
     ? canPerformModActions(currentUser, target)
     : false;
 
-  // Check if target is currently muted (checking active duration)
-  const isTargetMuted = Boolean(
-    (target.isMuted && (!target.muteUntil || new Date(target.muteUntil).getTime() > Date.now())) ||
-    (currentRoom.mutedUsers || []).includes(target.id)
+  // Check if target is currently muted globally (checking active duration)
+  const isGloballyMuted = Boolean(
+    target && !isSystemTarget && (
+      target.isMuted ||
+      (target.muteUntil && new Date(target.muteUntil).getTime() > Date.now())
+    )
   );
 
-  // Check if target is currently kicked (checking active duration)
-  const isTargetKicked = Boolean(
-    (target.isKicked && (!target.kickUntil || new Date(target.kickUntil).getTime() > Date.now())) ||
-    (currentRoom.kickedUsers || []).includes(target.id)
+  // Check if target is currently kicked globally (checking active duration)
+  const isGloballyKicked = Boolean(
+    target && !isSystemTarget && (
+      target.isKicked ||
+      (target.kickUntil && new Date(target.kickUntil).getTime() > Date.now())
+    )
+  );
+
+  // Check if target is currently muted in this specific room
+  const isRoomMuted = Boolean(
+    target && !isSystemTarget && (
+      (currentRoom.mutedUsers || []).includes(target.id)
+    )
+  );
+
+  // Check if target is currently kicked from this specific room
+  const isRoomKicked = Boolean(
+    target && !isSystemTarget && (
+      (currentRoom.kickedUsers || []).includes(target.id)
+    )
   );
 
   // Check if target is currently banned
@@ -89,9 +107,8 @@ export const UserCardModal: React.FC = () => {
     setSelectedUserForCard(null);
   };
 
-  // Execute Mute with selected duration (2-10 minutes)
-  const handleExecuteMute = (duration: number = muteDuration) => {
-    muteUserInRoom(currentRoom.id, target.id);
+  // Execute Global Mute from Basic Tab (shows System announcement in general chat)
+  const handleExecuteBasicMute = (duration: number = muteDuration) => {
     moderatorAction(target.id, 'mute', duration, 'كتم من الإدارة');
     setActionSuccessMsg('تم تنفيذ الأمر');
     showTopBanner('تم كتم المستخدم بنجاح');
@@ -101,21 +118,9 @@ export const UserCardModal: React.FC = () => {
     }, 1200);
   };
 
-  // Direct instant mute (for Room Options tab)
-  const handleDirectRoomMute = () => {
-    muteUserInRoom(currentRoom.id, target.id);
-    moderatorAction(target.id, 'mute', 10, 'كتم من الغرفة');
-    setActionSuccessMsg('تم تنفيذ الأمر');
-    showTopBanner('تم كتم المستخدم من الغرفة');
-    setTimeout(() => {
-      setActionSuccessMsg(null);
-      setSelectedUserForCard(null);
-    }, 1200);
-  };
-
-  // Execute Unmute (فك الكتم)
-  const handleExecuteUnmute = () => {
-    unmuteUserInRoom(currentRoom.id, target.id);
+  // Execute Global Unmute from Basic Tab
+  const handleExecuteBasicUnmute = () => {
+    moderatorAction(target.id, 'unmute', 0, 'فك كتم من الإدارة');
     setActionSuccessMsg('تم تنفيذ الأمر');
     showTopBanner('تم فك الكتم بنجاح');
     setTimeout(() => {
@@ -124,22 +129,62 @@ export const UserCardModal: React.FC = () => {
     }, 1200);
   };
 
-  // Direct instant kick from Room (طرد مباشر من الروم بدون كتابة سبب أو وقت)
-  const handleDirectRoomKick = () => {
-    kickUserFromRoom(currentRoom.id, target.id);
+  // Execute Global Kick from Basic Tab (shows System announcement in general chat)
+  const handleExecuteBasicKick = () => {
+    moderatorAction(target.id, 'kick', 1440, 'طرد من الشات');
     setActionSuccessMsg('تم تنفيذ الأمر');
-    showTopBanner('تم طرد المستخدم من الغرفة');
+    showTopBanner('تم طرد المستخدم بنجاح');
     setTimeout(() => {
       setActionSuccessMsg(null);
       setSelectedUserForCard(null);
     }, 1200);
   };
 
-  // Execute Unkick (فك الطرد)
-  const handleExecuteUnkick = () => {
-    unkickUserFromRoom(currentRoom.id, target.id);
+  // Execute Global Unkick from Basic Tab
+  const handleExecuteBasicUnkick = () => {
+    moderatorAction(target.id, 'unkick', 0, 'فك طرد من الإدارة');
     setActionSuccessMsg('تم تنفيذ الأمر');
     showTopBanner('تم فك الطرد بنجاح');
+    setTimeout(() => {
+      setActionSuccessMsg(null);
+      setSelectedUserForCard(null);
+    }, 1200);
+  };
+
+  // Direct Room Mute (Only in this room, NO System message in general)
+  const handleDirectRoomMute = () => {
+    muteUserInRoom(currentRoom.id, target.id);
+    setActionSuccessMsg('تم تنفيذ الأمر');
+    setTimeout(() => {
+      setActionSuccessMsg(null);
+      setSelectedUserForCard(null);
+    }, 1200);
+  };
+
+  // Direct Room Unmute
+  const handleDirectRoomUnmute = () => {
+    unmuteUserInRoom(currentRoom.id, target.id);
+    setActionSuccessMsg('تم تنفيذ الأمر');
+    setTimeout(() => {
+      setActionSuccessMsg(null);
+      setSelectedUserForCard(null);
+    }, 1200);
+  };
+
+  // Direct instant kick from Room (Ejects from room, NO System message in general)
+  const handleDirectRoomKick = () => {
+    kickUserFromRoom(currentRoom.id, target.id);
+    setActionSuccessMsg('تم تنفيذ الأمر');
+    setTimeout(() => {
+      setActionSuccessMsg(null);
+      setSelectedUserForCard(null);
+    }, 1200);
+  };
+
+  // Direct Room Unkick
+  const handleDirectRoomUnkick = () => {
+    unkickUserFromRoom(currentRoom.id, target.id);
+    setActionSuccessMsg('تم تنفيذ الأمر');
     setTimeout(() => {
       setActionSuccessMsg(null);
       setSelectedUserForCard(null);
@@ -343,11 +388,11 @@ export const UserCardModal: React.FC = () => {
                     <div className="space-y-3">
                       {canPerformModCommands ? (
                         <>
-                          {/* Button 1: كتم (أو فك الكتم إذا كان مكتوماً) */}
+                          {/* Button 1: كتم (أو فك الكتم إذا كان مكتوماً عاماً) */}
                           <button
                             onClick={() => {
-                              if (isTargetMuted) {
-                                handleExecuteUnmute();
+                              if (isGloballyMuted) {
+                                handleExecuteBasicUnmute();
                               } else {
                                 setActiveModAction('mute');
                               }
@@ -355,24 +400,24 @@ export const UserCardModal: React.FC = () => {
                             className="w-full bg-[#f4f5f7] hover:bg-[#e9ebef] active:bg-[#dde1e7] border border-slate-200/60 rounded-xl p-3.5 flex items-center justify-between text-right transition-all cursor-pointer group shadow-xs"
                           >
                             <span className="font-extrabold text-sm text-slate-800">
-                              {isTargetMuted ? 'فك الكتم' : 'كتم'}
+                              {isGloballyMuted ? 'فك الكتم' : 'كتم'}
                             </span>
                             <MicOff className="w-5 h-5 text-amber-500 group-hover:scale-110 transition-transform shrink-0" />
                           </button>
 
-                          {/* Button 2: طرد (أو فك الطرد إذا كان مطروداً) */}
+                          {/* Button 2: طرد (أو فك الطرد إذا كان مطروداً عاماً) */}
                           <button
                             onClick={() => {
-                              if (isTargetKicked) {
-                                handleExecuteUnkick();
+                              if (isGloballyKicked) {
+                                handleExecuteBasicUnkick();
                               } else {
-                                handleDirectRoomKick();
+                                handleExecuteBasicKick();
                               }
                             }}
                             className="w-full bg-[#f4f5f7] hover:bg-[#e9ebef] active:bg-[#dde1e7] border border-slate-200/60 rounded-xl p-3.5 flex items-center justify-between text-right transition-all cursor-pointer group shadow-xs"
                           >
                             <span className="font-extrabold text-sm text-slate-800">
-                              {isTargetKicked ? 'فك الطرد' : 'طرد'}
+                              {isGloballyKicked ? 'فك الطرد' : 'طرد'}
                             </span>
                             <Zap className="w-5 h-5 text-slate-800 fill-slate-800 group-hover:scale-110 transition-transform shrink-0" />
                           </button>
@@ -459,7 +504,7 @@ export const UserCardModal: React.FC = () => {
                       <div className="grid grid-cols-2 gap-2 pt-2">
                         <button
                           type="button"
-                          onClick={() => handleExecuteMute()}
+                          onClick={() => handleExecuteBasicMute()}
                           className="bg-[#cc0000] hover:bg-[#b30000] active:scale-95 text-white font-extrabold text-xs py-2.5 rounded-xl transition-all cursor-pointer shadow-md"
                         >
                           كتم ({muteDuration} د)
@@ -485,8 +530,8 @@ export const UserCardModal: React.FC = () => {
                       {/* زر الكتم المباشر */}
                       <button
                         onClick={() => {
-                          if (isTargetMuted) {
-                            handleExecuteUnmute();
+                          if (isRoomMuted) {
+                            handleDirectRoomUnmute();
                           } else {
                             handleDirectRoomMute();
                           }
@@ -495,10 +540,10 @@ export const UserCardModal: React.FC = () => {
                       >
                         <div className="flex flex-col text-right">
                           <span className="font-extrabold text-sm text-slate-800">
-                            {isTargetMuted ? 'فك الكتم' : 'كتم مباشر'}
+                            {isRoomMuted ? 'فك الكتم' : 'كتم مباشر'}
                           </span>
                           <span className="text-[10px] text-slate-500 font-medium">
-                            {isTargetMuted ? 'إلغاء الكتم عن العضو فوراً' : 'كتم فوري للعضو في هذه الغرفة'}
+                            {isRoomMuted ? 'إلغاء الكتم عن العضو في هذه الغرفة' : 'كتم فوري للعضو في هذه الغرفة'}
                           </span>
                         </div>
                         <MicOff className="w-5 h-5 text-amber-500 group-hover:scale-110 transition-transform shrink-0" />
@@ -507,8 +552,8 @@ export const UserCardModal: React.FC = () => {
                       {/* زر الطرد المباشر */}
                       <button
                         onClick={() => {
-                          if (isTargetKicked) {
-                            handleExecuteUnkick();
+                          if (isRoomKicked) {
+                            handleDirectRoomUnkick();
                           } else {
                             handleDirectRoomKick();
                           }
@@ -517,10 +562,10 @@ export const UserCardModal: React.FC = () => {
                       >
                         <div className="flex flex-col text-right">
                           <span className="font-extrabold text-sm text-slate-800">
-                            {isTargetKicked ? 'فك الطرد' : 'طرد مباشر من الغرفة'}
+                            {isRoomKicked ? 'فك الطرد' : 'طرد مباشر من الغرفة'}
                           </span>
                           <span className="text-[10px] text-slate-500 font-medium">
-                            {isTargetKicked ? 'السماح للعضو بدخول الغرفة' : 'طرد فوري ومباشر بدون إدخال وقت أو سبب'}
+                            {isRoomKicked ? 'السماح للعضو بدخول الغرفة' : 'طرد فوري ومباشر بدون إدخال وقت أو سبب'}
                           </span>
                         </div>
                         <Zap className="w-5 h-5 text-red-600 fill-red-600 group-hover:scale-110 transition-transform shrink-0" />

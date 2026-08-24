@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useChat } from '../context/ChatContext';
 import { UserAvatar } from './UserAvatar';
 import { VoiceRecorder, playChatSound } from '../utils/audio';
@@ -20,8 +20,32 @@ export const PrivateChatModal: React.FC = () => {
     isUserBlocked, setSelectedUserForProfile, toggleIgnore, updateUserProfile,
     requestBlockConfirm,
     hiddenPrivateUserIds, hidePrivateConversation, clearAllPrivateConversations,
-    audioSettings, updateAudioSettings, customEmojis
+    audioSettings, updateAudioSettings, customEmojis,
+    openTextContextMenu, openImageContextMenu
   } = useChat();
+
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const startLongPressText = (textMsg: string, title?: string) => {
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      openTextContextMenu(textMsg, title);
+    }, 450);
+  };
+
+  const startLongPressImage = (imgUrl: string, altText?: string) => {
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      openImageContextMenu(imgUrl, altText);
+    }, 450);
+  };
+
+  const cancelLongPress = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
 
   const [text, setText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
@@ -58,6 +82,19 @@ export const PrivateChatModal: React.FC = () => {
     .filter(u => u.id !== currentUser.id && !activeChatPartnerIds.includes(u.id) && !hiddenPrivateUserIds.includes(u.id));
 
   const displayUserIds = activeChatPartnerIds;
+
+  // Listen to sticker clicks to insert tag into private chat input
+  useEffect(() => {
+    const handleStickerInsert = (e: Event) => {
+      const customEvent = e as CustomEvent<{ tag: string }>;
+      const tag = customEvent.detail?.tag;
+      if (tag && activePrivateUserId) {
+        setText((prev) => (prev ? `${prev} ${tag} ` : `${tag} `));
+      }
+    };
+    window.addEventListener('insert-chat-sticker', handleStickerInsert);
+    return () => window.removeEventListener('insert-chat-sticker', handleStickerInsert);
+  }, [activePrivateUserId]);
 
   const handleSend = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -366,7 +403,11 @@ export const PrivateChatModal: React.FC = () => {
                           }`}
                         >
                           {pm.type === 'text' && (
-                            <div className="leading-relaxed whitespace-pre-wrap break-words">{renderTextWithCustomEmojis(pm.text, 24, customEmojis)}</div>
+                            <div className="leading-relaxed whitespace-pre-wrap break-words">
+                              {renderTextWithCustomEmojis(pm.text, 24, customEmojis, (tag) => {
+                                setText(prev => (prev ? `${prev} ${tag} ` : `${tag} `));
+                              })}
+                            </div>
                           )}
 
                           {pm.type === 'image' && pm.mediaUrl && pm.mediaUrl.trim() !== '' && (

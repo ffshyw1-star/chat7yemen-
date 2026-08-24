@@ -21,6 +21,7 @@ import { KickedOverlayModal } from './KickedOverlayModal';
 import { OwnerDashboardModal } from './OwnerDashboardModal';
 import { LogoutConfirmModal } from './LogoutConfirmModal';
 import { RoomPasswordModal } from './RoomPasswordModal';
+import { TextContextMenuModal, ImageContextMenuModal } from './ContextMenuModals';
 
 export const ChatLayout: React.FC = () => {
   const {
@@ -28,7 +29,10 @@ export const ChatLayout: React.FC = () => {
     isOnlineListOpen, setIsOnlineListOpen, isRoomsListOpen, setIsRoomsListOpen, selectedUserForCard, selectedUserForProfile,
     isProfileSettingsOpen, isOwnerDashboardOpen, isStoreOpen, isSideMenuOpen, isPrivateChatOpen,
     isReportsOpen, isNotificationsOpen, isFriendRequestsOpen,
-    isRoomLogsOpen, isRoomSettingsOpen
+    isRoomLogsOpen, isRoomSettingsOpen,
+    textContextMenu, closeTextContextMenu,
+    imageContextMenu, closeImageContextMenu,
+    showTopBanner
   } = useChat();
 
   return (
@@ -85,6 +89,20 @@ export const ChatLayout: React.FC = () => {
       <KickedOverlayModal />
       <LogoutConfirmModal />
       <RoomPasswordModal />
+
+      {/* Global Long-Press Context Menus for Text and Images */}
+      <TextContextMenuModal
+        isOpen={!!textContextMenu?.isOpen}
+        options={textContextMenu}
+        onClose={closeTextContextMenu}
+        showToast={showTopBanner}
+      />
+      <ImageContextMenuModal
+        isOpen={!!imageContextMenu?.isOpen}
+        options={imageContextMenu}
+        onClose={closeImageContextMenu}
+        showToast={showTopBanner}
+      />
     </div>
   );
 };

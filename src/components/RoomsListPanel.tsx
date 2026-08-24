@@ -1,6 +1,6 @@
 import React from 'react';
 import { useChat } from '../context/ChatContext';
-import { X, Users, UserPlus, Home, Search, Globe, User, Lock, ShieldCheck } from 'lucide-react';
+import { X, Users, UserPlus, Home, Search, Globe, User, Lock, ShieldCheck, Gem, Star } from 'lucide-react';
 
 export const RoomsListPanel: React.FC = () => {
   const {
@@ -85,6 +85,8 @@ export const RoomsListPanel: React.FC = () => {
         {roomsWithCounts.map((room) => {
           const isActive = room.id === currentRoom.id;
           const isLocked = Boolean(room.password && room.password.trim() !== '');
+          const isDiamond = room.roomType === 'diamond' || room.customIcon === 'diamond';
+          const isAdminRoom = room.roomType === 'admin' || room.customIcon === 'admin_star';
 
           return (
             <div
@@ -101,12 +103,23 @@ export const RoomsListPanel: React.FC = () => {
                   : 'bg-white hover:bg-slate-50'
               }`}
             >
-              {/* Right Side in RTL: Blue Globe Icon & Room Name & Lock Badge */}
+              {/* Right Side in RTL: Room Icon & Room Name & Badges */}
               <div className="flex items-center gap-3 min-w-0 flex-1">
                 <div className="relative shrink-0">
-                  <div className={`w-8 h-8 rounded-full ${isLocked ? 'bg-amber-600' : 'bg-[#0284c7]'} text-white flex items-center justify-center shadow-xs`}>
-                    <Globe className="w-4.5 h-4.5 stroke-[2.2]" />
-                  </div>
+                  {isDiamond ? (
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 text-white flex items-center justify-center shadow-xs">
+                      <Gem className="w-4 h-4" />
+                    </div>
+                  ) : isAdminRoom ? (
+                    <div className="w-8 h-8 rounded-full bg-rose-50 border-2 border-rose-500 flex items-center justify-center shadow-xs">
+                      <Star className="w-4 h-4 text-rose-600 fill-white stroke-[2.2]" />
+                    </div>
+                  ) : (
+                    <div className={`w-8 h-8 rounded-full ${isLocked ? 'bg-amber-600' : 'bg-[#0284c7]'} text-white flex items-center justify-center shadow-xs`}>
+                      <Globe className="w-4.5 h-4.5 stroke-[2.2]" />
+                    </div>
+                  )}
+
                   {isLocked && (
                     <span className="absolute -top-1 -right-1 bg-red-600 text-white rounded-full p-0.5 border-2 border-white shadow-xs" title="غرفة مقفلة بكلمة مرور">
                       <Lock className="w-2.5 h-2.5" />
@@ -114,10 +127,22 @@ export const RoomsListPanel: React.FC = () => {
                   )}
                 </div>
 
-                <div className="flex items-center gap-1.5 min-w-0 truncate">
+                <div className="flex items-center gap-1.5 min-w-0 truncate flex-wrap">
                   <span className="text-slate-800 font-bold text-sm sm:text-base truncate">
                     {room.name}
                   </span>
+
+                  {isDiamond && (
+                    <span className="text-[10px] bg-cyan-50 text-cyan-700 border border-cyan-200 px-1 py-0.2 rounded font-bold shrink-0">
+                      💎 ماسية
+                    </span>
+                  )}
+
+                  {isAdminRoom && (
+                    <span className="text-[10px] bg-rose-50 text-rose-700 border border-rose-200 px-1 py-0.2 rounded font-bold shrink-0">
+                      ⭐ إدارة
+                    </span>
+                  )}
 
                   {isLocked && (
                     <span className="inline-flex items-center gap-1 bg-red-50 text-red-700 border border-red-200 text-[10px] font-black px-1.5 py-0.5 rounded-md shrink-0">

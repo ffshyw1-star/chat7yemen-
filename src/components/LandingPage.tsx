@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useChat } from '../context/ChatContext';
 import { Gender } from '../types';
+import { formatEnglishTime } from '../utils/dateUtils';
 import {
   Send, User, Lock, UserPlus, X, Crown, Globe, Sparkles,
   MessageCircle, Mail, Users, Heart, Mic, Shield, Smartphone,
@@ -76,7 +77,7 @@ export const LandingPage: React.FC = () => {
       return;
     }
     if (ipCheck.isKicked) {
-      const exp = ipCheck.kickedRecord?.expiresAt ? new Date(ipCheck.kickedRecord.expiresAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : 'انتهاء المدة';
+      const exp = ipCheck.kickedRecord?.expiresAt ? formatEnglishTime(new Date(ipCheck.kickedRecord.expiresAt)) : 'انتهاء المدة';
       setVisitorError(`🚫 تم طرد هذا الآي بي كزائر حتى ${exp}. لا يمكنك الدخول كزائر، لكن يمكنك الدخول بعضوية مسجلة مسبقاً.`);
       return;
     }

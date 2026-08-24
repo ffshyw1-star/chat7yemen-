@@ -335,10 +335,6 @@ export const OnlineList: React.FC = () => {
                                 مخفي 🕵️‍♂️
                               </span>
                             )}
-                            <span className="text-[10px] bg-slate-100 text-slate-600 border border-slate-200 px-1.5 py-0.2 rounded font-medium flex items-center gap-0.5">
-                              <MapPin className="w-2.5 h-2.5 text-sky-600" />
-                              {userRoom.name}
-                            </span>
                           </div>
 
                           <p className="text-[11px] text-slate-500 truncate mt-0.5">
@@ -347,7 +343,7 @@ export const OnlineList: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Left side in RTL: Rank Icon (Crown 👑, Android 🤖, Shield 🛡️, Diamond 💎) */}
+                      {/* Left side in RTL: Rank Icon (Trophy 🏆, Android 🤖, Shield 🛡️, Diamond 💎) */}
                       <div className="shrink-0 pl-1">
                         {!isSystemUser(user) && (
                           <span className={`text-lg sm:text-xl shrink-0 ${getRankEmojiClass(user.role, user.username)}`}>
@@ -428,20 +424,23 @@ export const OnlineList: React.FC = () => {
                       className="py-2.5 px-2 hover:bg-sky-50/60 transition-colors cursor-pointer flex items-center justify-between gap-2.5 group"
                     >
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        {sortMode === 'new_members' && (
-                          <span className="text-base shrink-0 animate-bounce text-sky-500" title="عضو جديد">
-                            🖐️
-                          </span>
-                        )}
-
-                        {!isSystemUser(user) && (
-                          <span className={`text-base shrink-0 ${getRankEmojiClass(user.role, user.username)}`}>
-                            {getRankEmoji(user.role, user.username)}
-                          </span>
-                        )}
+                        <div className="relative shrink-0">
+                          <UserAvatar
+                            avatarUrl={user.avatar}
+                            gender={user.gender}
+                            role={user.role}
+                            username={user.username}
+                            size="sm"
+                          />
+                        </div>
 
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5 flex-wrap">
+                            {sortMode === 'new_members' && (
+                              <span className="text-base shrink-0 animate-bounce text-sky-500" title="عضو جديد">
+                                🖐️
+                              </span>
+                            )}
                             <span
                               style={{
                                 color: user.usernameColor || undefined,
@@ -451,10 +450,6 @@ export const OnlineList: React.FC = () => {
                             >
                               {user.username}
                             </span>
-                            <span className="text-[9px] bg-slate-100 text-slate-600 px-1 py-0.2 rounded flex items-center gap-0.5">
-                              <MapPin className="w-2 h-2 text-sky-600" />
-                              {userRoom.name}
-                            </span>
                           </div>
                           
                           <p className="text-[10px] text-slate-400 truncate mt-0.5">
@@ -463,14 +458,13 @@ export const OnlineList: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="relative shrink-0">
-                        <UserAvatar
-                          avatarUrl={user.avatar}
-                          gender={user.gender}
-                          role={user.role}
-                          username={user.username}
-                          size="sm"
-                        />
+                      {/* Left side in RTL: Rank Icon */}
+                      <div className="shrink-0 pl-1">
+                        {!isSystemUser(user) && (
+                          <span className={`text-base shrink-0 ${getRankEmojiClass(user.role, user.username)}`}>
+                            {getRankEmoji(user.role, user.username)}
+                          </span>
+                        )}
                       </div>
                     </div>
                   );

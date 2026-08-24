@@ -99,13 +99,26 @@ export const ChatInput: React.FC = () => {
     setText((prev) => (prev ? `${prev} ${emojiTag} ` : `${emojiTag} `));
   };
 
-  // If username was clicked in main chat, append it to input field
+  // If username or sticker tag was clicked in main chat, append it to input field
   useEffect(() => {
     if (inputInsertedUsername) {
       setText((prev) => (prev ? `${prev} ${inputInsertedUsername} ` : `${inputInsertedUsername} `));
       setInputInsertedUsername(null);
     }
   }, [inputInsertedUsername, setInputInsertedUsername]);
+
+  // Listen to sticker clicks from chat messages
+  useEffect(() => {
+    const handleStickerInsert = (e: Event) => {
+      const customEvent = e as CustomEvent<{ tag: string }>;
+      const tag = customEvent.detail?.tag;
+      if (tag) {
+        setText((prev) => (prev ? `${prev} ${tag} ` : `${tag} `));
+      }
+    };
+    window.addEventListener('insert-chat-sticker', handleStickerInsert);
+    return () => window.removeEventListener('insert-chat-sticker', handleStickerInsert);
+  }, []);
 
   // Handle File Upload (Image or Audio)
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

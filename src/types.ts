@@ -106,6 +106,9 @@ export interface Room {
   isDefault?: boolean;
   password?: string;
   isLocked?: boolean;
+  roomType?: 'standard' | 'diamond' | 'admin';
+  allowedRoles?: UserRole[]; // If set, only these user roles can enter
+  customIcon?: 'globe' | 'diamond' | 'admin_star' | string;
   welcomeMessage?: string; // Custom automatic welcome greeting for this room
   autoWelcomeEnabled?: boolean; // Whether auto-welcome bot message is enabled
   mutedUsers?: string[]; // Array of muted user IDs in this room

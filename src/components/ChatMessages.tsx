@@ -40,7 +40,8 @@ const renderTextWithMentionsAndRanks = (
   users: any[],
   currentUser: any | null,
   onUserClick?: (username: string) => void,
-  customEmojis?: any[]
+  customEmojis?: any[],
+  onStickerClick?: (tag: string) => void
 ) => {
   if (!rawText) return null;
 
@@ -141,7 +142,7 @@ const renderTextWithMentionsAndRanks = (
       );
     }
 
-    return <span key={`text-${idx}`}>{renderTextWithCustomEmojis(token, 28, customEmojis)}</span>;
+    return <span key={`text-${idx}`}>{renderTextWithCustomEmojis(token, 28, customEmojis, onStickerClick)}</span>;
   });
 };
 
@@ -150,8 +151,32 @@ export const ChatMessages: React.FC = () => {
     messages, currentRoom, currentUser, users,
     setSelectedUserForCard, setSelectedUserForProfile, deleteMessage,
     setInputInsertedUsername, reactToMessage, setIsProfileSettingsOpen,
-    typingUsers, customEmojis
+    typingUsers, customEmojis,
+    openTextContextMenu, openImageContextMenu
   } = useChat();
+
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const startLongPressText = (text: string, title?: string) => {
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      openTextContextMenu(text, title);
+    }, 450);
+  };
+
+  const startLongPressImage = (imageUrl: string, altText?: string) => {
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      openImageContextMenu(imageUrl, altText);
+    }, 450);
+  };
+
+  const cancelLongPress = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
 
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const [activeMenuMsgId, setActiveMenuMsgId] = useState<string | null>(null);
@@ -458,13 +483,7 @@ export const ChatMessages: React.FC = () => {
       {/* Main Messages List: Starts from bottom with mt-auto */}
       <div className="flex-1 flex flex-col justify-end mt-auto min-h-0 divide-y divide-slate-100/90">
         {displayedMessages.length === 0 ? (
-          <>
-            {renderTopicBanner()}
-            <div className="flex flex-col items-center justify-center text-slate-400 py-16">
-              <p className="text-sm font-bold">لا توجد رسائل في {currentRoom.name} بعد.</p>
-              <p className="text-xs mt-1 text-slate-400">كن أول من يبدأ المحادثة الآن! 💬</p>
-            </div>
-          </>
+          renderTopicBanner()
         ) : (
           displayedMessages.map((msg, msgIndex) => {
             const isAnchoredHere = isTopicBannerOpen && (
@@ -647,6 +666,13 @@ export const ChatMessages: React.FC = () => {
                     {/* Line 1: Username matching Screenshot */}
                     <button
                       onClick={() => handleUsernameClick(msg.senderName)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        openTextContextMenu(msg.senderName, `اسم المستخدم: ${msg.senderName}`);
+                      }}
+                      onTouchStart={() => startLongPressText(msg.senderName, `اسم المستخدم: ${msg.senderName}`)}
+                      onTouchEnd={cancelLongPress}
+                      onTouchCancel={cancelLongPress}
                       style={{
                         color: userColor,
                         fontSize: msg.senderUsernameFontSize || undefined,
@@ -654,8 +680,8 @@ export const ChatMessages: React.FC = () => {
                           ? `0 0 7px ${userColor}, 0 0 2px #000`
                           : 'none'
                       }}
-                      className="font-extrabold text-sm sm:text-[15px] hover:underline cursor-pointer tracking-tight text-right w-fit leading-tight"
-                      title="اضغط لإدراج الاسم في خانة الكتابة"
+                      className="font-extrabold text-sm sm:text-[15px] hover:underline cursor-pointer tracking-tight text-right w-fit leading-tight select-text"
+                      title="اضغط لإدراج الاسم (أو اضغط مطولاً للنسخ والخيارات)"
                     >
                       {msg.senderName}
                     </button>
@@ -664,7 +690,16 @@ export const ChatMessages: React.FC = () => {
                     <div className="mt-1">
                       {isJoinMessage ? (
                         /* System User Join Pill/Badge matching Screenshot */
-                        <div className="bg-[#e0f2fe] border border-sky-200 text-[#0369a1] text-xs sm:text-sm font-extrabold px-3 py-1 rounded-full shadow-2xs my-0.5 inline-flex items-center gap-1 dir-rtl">
+                        <div
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            openTextContextMenu(msg.text, 'رسالة النظام');
+                          }}
+                          onTouchStart={() => startLongPressText(msg.text, 'رسالة النظام')}
+                          onTouchEnd={cancelLongPress}
+                          onTouchCancel={cancelLongPress}
+                          className="bg-[#e0f2fe] border border-sky-200 text-[#0369a1] text-xs sm:text-sm font-extrabold px-3 py-1 rounded-full shadow-2xs my-0.5 inline-flex items-center gap-1 dir-rtl cursor-pointer"
+                        >
                           <span>هذا المستخدم انضم للغرفة</span>
                           {msg.text.includes('[') && (
                             <span className="text-red-600 font-black">
@@ -676,6 +711,13 @@ export const ChatMessages: React.FC = () => {
                         /* Regular Message Text */
                         msg.type === 'text' && (
                           <div
+                            onContextMenu={(e) => {
+                              e.preventDefault();
+                              openTextContextMenu(msg.text, `رسالة من ${msg.senderName}`);
+                            }}
+                            onTouchStart={() => startLongPressText(msg.text, `رسالة من ${msg.senderName}`)}
+                            onTouchEnd={cancelLongPress}
+                            onTouchCancel={cancelLongPress}
                             style={{
                               color: msg.textColor || undefined,
                               fontSize: msg.textFontSize || undefined,
@@ -684,11 +726,11 @@ export const ChatMessages: React.FC = () => {
                                 ? `0 0 8px ${msg.textColor}, 0 0 3px #000`
                                 : undefined
                             }}
-                            className={`text-sm sm:text-base text-slate-800 leading-relaxed break-words dir-rtl ${
+                            className={`text-sm sm:text-base text-slate-800 leading-relaxed break-words dir-rtl cursor-pointer select-text ${
                               msg.text.includes('وعليكم السلام') ? 'text-red-600 font-black text-lg' : 'font-medium'
                             }`}
                           >
-                            {renderTextWithMentionsAndRanks(msg.text, users, currentUser, handleMentionClick, customEmojis)}
+                            {renderTextWithMentionsAndRanks(msg.text, users, currentUser, handleMentionClick, customEmojis, (tag) => setInputInsertedUsername(tag))}
                           </div>
                         )
                       )}
@@ -721,6 +763,13 @@ export const ChatMessages: React.FC = () => {
                             ) : (
                               <div
                                 onClick={() => setActivePlayingYtId(msg.id)}
+                                onContextMenu={(e) => {
+                                  e.preventDefault();
+                                  openImageContextMenu(`https://img.youtube.com/vi/${ytId}/hqdefault.jpg`, msg.text || 'YouTube Video');
+                                }}
+                                onTouchStart={() => startLongPressImage(`https://img.youtube.com/vi/${ytId}/hqdefault.jpg`, msg.text || 'YouTube Video')}
+                                onTouchEnd={cancelLongPress}
+                                onTouchCancel={cancelLongPress}
                                 className="relative aspect-video w-full bg-slate-950 group cursor-pointer overflow-hidden"
                                 title="اضغط لتشغيل الفيديو في الشات ▶️"
                               >
@@ -760,7 +809,16 @@ export const ChatMessages: React.FC = () => {
                       {msg.type === 'image' && msg.mediaUrl && (
                         <div className="mt-1">
                           {msg.mediaUrl.includes('notoemoji') || msg.mediaUrl.endsWith('.webp') || msg.mediaUrl.endsWith('.gif') ? (
-                            <div className="inline-block p-1">
+                            <div
+                              className="inline-block p-1 cursor-pointer"
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                openImageContextMenu(msg.mediaUrl!, 'ملصق متحرك');
+                              }}
+                              onTouchStart={() => startLongPressImage(msg.mediaUrl!, 'ملصق متحرك')}
+                              onTouchEnd={cancelLongPress}
+                              onTouchCancel={cancelLongPress}
+                            >
                               <img
                                 src={msg.mediaUrl}
                                 alt="ملصق متحرك"
@@ -772,7 +830,14 @@ export const ChatMessages: React.FC = () => {
                             <img
                               src={msg.mediaUrl}
                               alt="مرفق صورة"
-                              className="max-h-60 rounded-xl object-contain bg-slate-100 border border-slate-200 shadow-2xs"
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                openImageContextMenu(msg.mediaUrl!, `صورة من ${msg.senderName}`);
+                              }}
+                              onTouchStart={() => startLongPressImage(msg.mediaUrl!, `صورة من ${msg.senderName}`)}
+                              onTouchEnd={cancelLongPress}
+                              onTouchCancel={cancelLongPress}
+                              className="max-h-60 rounded-xl object-contain bg-slate-100 border border-slate-200 shadow-2xs cursor-pointer hover:opacity-95 transition-opacity"
                               referrerPolicy="no-referrer"
                             />
                           )}

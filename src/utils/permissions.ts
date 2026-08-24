@@ -11,7 +11,7 @@ export const ROLE_LEVELS: Record<UserRole, number> = {
 };
 
 export const RANK_EMOJIS: Record<UserRole, string> = {
-  owner: '👑',
+  owner: '🏆',
   admin: '⭐',
   management: '⭐',
   moderator: '🛡️',
@@ -84,6 +84,7 @@ export const getRankEmoji = (role?: UserRole | string | null, username?: string)
  */
 export const getRankEmojiClass = (role?: UserRole | string | null, username?: string): string => {
   if (username === 'System' || role === 'system') return 'hidden';
+  if (role === 'owner') return 'inline-block text-amber-500 select-none';
   if (role === 'management') return 'inline-block filter grayscale contrast-150 brightness-150';
   if (role === 'member') return 'inline-block filter brightness-200 grayscale contrast-150';
   if (role === 'visitor') return 'inline-block text-sky-500 [filter:sepia(100%)_hue-rotate(180deg)_saturate(600%)_brightness(95%)]';

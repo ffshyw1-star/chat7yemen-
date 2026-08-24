@@ -118,14 +118,15 @@ export const getAllCustomEmojis = (customItems?: CustomEmojiItem[]): CustomEmoji
 export const renderTextWithCustomEmojis = (
   text: string,
   size: number = 32,
-  extraEmojis?: CustomEmojiItem[]
+  extraEmojis?: CustomEmojiItem[],
+  onStickerClick?: (tag: string) => void
 ): React.ReactNode => {
   if (!text || typeof text !== 'string') return text;
 
   const customList = getAllCustomEmojis(extraEmojis);
   if (customList.length === 0) return text;
 
-  // Regex matches any :short_tag: (supporting Arabic, English, digits, underscores)
+  // Regex matches any :short_tag: (supporting Arabic, English, digits, underscores, dashes)
   const regex = /(:[^\s:]+:)/g;
   const parts = text.split(regex);
   if (parts.length === 1) return text;
@@ -133,17 +134,34 @@ export const renderTextWithCustomEmojis = (
   return parts.map((part, idx) => {
     if (part.startsWith(':') && part.endsWith(':')) {
       const cleanTag = part.trim();
+      const rawTag = cleanTag.replace(/^:+|:+$/g, '');
       const match = customList.find(
-        e => e.tag === cleanTag || e.tag === `:${cleanTag.replace(/^:+|:+$/g, '')}:` || `:${e.id}:` === cleanTag
+        e =>
+          e.tag === cleanTag ||
+          e.tag === `:${rawTag}:` ||
+          e.id === rawTag ||
+          `:${e.id}:` === cleanTag ||
+          e.name.toLowerCase() === rawTag.toLowerCase()
       );
 
       if (match) {
         const Comp = match.component;
+        const tagToInsert = match.tag.startsWith(':') ? match.tag : `:${match.tag}:`;
         return (
           <span
             key={`sticker-${idx}-${match.id}`}
-            className="inline-flex items-center align-middle mx-1"
-            title={`${match.name} (${match.tag})`}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onStickerClick) {
+                onStickerClick(tagToInsert);
+              }
+              // Dispatch global event for active input in chat or private
+              window.dispatchEvent(
+                new CustomEvent('insert-chat-sticker', { detail: { tag: tagToInsert } })
+              );
+            }}
+            className="inline-flex items-center align-middle mx-1 cursor-pointer transition-transform hover:scale-110 active:scale-95 select-none"
+            title={`${match.name} (${tagToInsert}) - اضغط لإدراج الرمز`}
           >
             <Comp size={match.isBanner ? size : Math.max(30, size)} animated={true} />
           </span>

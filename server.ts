@@ -16,7 +16,31 @@ app.use(express.json({ limit: "20mb" }));
 
 // SQLite D1 Database File Path
 const DB_FILE = path.join(process.cwd(), "d1_chat_database.sqlite");
+const EMOJI_BACKUP_FILE = path.join(process.cwd(), "custom_emojis_store.json");
 let db: Database;
+
+// Helper to safely load emojis from disk backup file
+function loadEmojisFromDiskBackup(): CustomEmojiItem[] {
+  try {
+    if (fs.existsSync(EMOJI_BACKUP_FILE)) {
+      const content = fs.readFileSync(EMOJI_BACKUP_FILE, "utf-8");
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.error("Error reading emoji backup file:", e);
+  }
+  return [];
+}
+
+// Helper to safely write emojis to disk backup file
+function saveEmojisToDiskBackup(emojis: CustomEmojiItem[]) {
+  try {
+    fs.writeFileSync(EMOJI_BACKUP_FILE, JSON.stringify(emojis, null, 2), "utf-8");
+  } catch (e) {
+    console.error("Error writing emoji backup file:", e);
+  }
+}
 
 // Save D1 SQLite database state to disk atomically
 function saveD1ToDisk() {
@@ -67,6 +91,25 @@ function getClientIp(req: express.Request): string {
 function resetD1Database() {
   if (!db) return;
   try {
+    // Preserve custom emojis so owner's stickers/emojis are never wiped on reset or rebuild
+    const existingBackupEmojis = loadEmojisFromDiskBackup();
+    let preservedEmojis: CustomEmojiItem[] = existingBackupEmojis.length > 0 ? existingBackupEmojis : [...serverCustomEmojis];
+    try {
+      const emojiRows = db.exec("SELECT data FROM custom_emojis");
+      if (emojiRows.length > 0 && emojiRows[0].values.length > 0) {
+        const fromDb: CustomEmojiItem[] = emojiRows[0].values.map((v) => JSON.parse(v[0] as string));
+        if (fromDb.length > 0) {
+          const map = new Map<string, CustomEmojiItem>();
+          preservedEmojis.forEach(e => map.set(e.id, e));
+          fromDb.forEach(e => map.set(e.id, e));
+          preservedEmojis = Array.from(map.values());
+        }
+      }
+    } catch (e) {}
+
+    serverCustomEmojis = preservedEmojis.length > 0 ? preservedEmojis : [...INITIAL_CUSTOM_EMOJIS];
+    saveEmojisToDiskBackup(serverCustomEmojis);
+
     db.run(`
       DROP TABLE IF EXISTS users;
       DROP TABLE IF EXISTS messages;
@@ -141,7 +184,6 @@ function resetD1Database() {
     serverUsers = [...INITIAL_USERS];
     serverRooms = [...INITIAL_ROOMS];
     serverMessages = [...INITIAL_MESSAGES];
-    serverCustomEmojis = [...INITIAL_CUSTOM_EMOJIS];
     serverPrivateMessages = [];
     serverFriendRequests = [];
     serverIPModerations = [];
@@ -178,7 +220,7 @@ function resetD1Database() {
     eStmt.free();
 
     saveD1ToDisk();
-    console.log("🔄 Successfully reset and re-seeded SQLite D1 database with clean Owner account (المالك).");
+    console.log("🔄 Successfully reset and re-seeded SQLite D1 database with clean Owner account (المالك) while preserving custom emojis.");
   } catch (err) {
     console.error("Error resetting D1 database:", err);
   }
@@ -390,18 +432,28 @@ async function initD1Database() {
     stmt.free();
   }
 
-  // 9. Custom Emojis & Stickers
+  // 9. Custom Emojis & Stickers (load from DB and merge with disk backup)
+  const backupEmojis = loadEmojisFromDiskBackup();
+  let dbEmojis: CustomEmojiItem[] = [];
   const emojiRows = db.exec("SELECT data FROM custom_emojis");
   if (emojiRows.length > 0 && emojiRows[0].values.length > 0) {
-    serverCustomEmojis = emojiRows[0].values.map((v) => JSON.parse(v[0] as string));
-  } else {
-    serverCustomEmojis = [...INITIAL_CUSTOM_EMOJIS];
-    const stmt = db.prepare("INSERT OR REPLACE INTO custom_emojis (id, tag, name, category, data) VALUES (?, ?, ?, ?, ?)");
-    serverCustomEmojis.forEach((e) => {
-      stmt.run([e.id, e.tag, e.name, e.category || 'custom', JSON.stringify(e)]);
-    });
-    stmt.free();
+    dbEmojis = emojiRows[0].values.map((v) => JSON.parse(v[0] as string));
   }
+
+  // Merge SQLite emojis, disk backup emojis, and initial emojis
+  const emojiMap = new Map<string, CustomEmojiItem>();
+  INITIAL_CUSTOM_EMOJIS.forEach(e => emojiMap.set(e.id, e));
+  dbEmojis.forEach(e => emojiMap.set(e.id, e));
+  backupEmojis.forEach(e => emojiMap.set(e.id, e));
+
+  serverCustomEmojis = Array.from(emojiMap.values());
+  saveEmojisToDiskBackup(serverCustomEmojis);
+
+  const stmt = db.prepare("INSERT OR REPLACE INTO custom_emojis (id, tag, name, category, data) VALUES (?, ?, ?, ?, ?)");
+  serverCustomEmojis.forEach((e) => {
+    stmt.run([e.id, e.tag, e.name, e.category || 'custom', JSON.stringify(e)]);
+  });
+  stmt.free();
 
   saveD1ToDisk();
 }
@@ -409,6 +461,7 @@ async function initD1Database() {
 // Helper SQL Persistence functions
 function saveCustomEmojisToD1(emojis: CustomEmojiItem[]) {
   try {
+    saveEmojisToDiskBackup(emojis);
     db.run("DELETE FROM custom_emojis");
     const stmt = db.prepare("INSERT INTO custom_emojis (id, tag, name, category, data) VALUES (?, ?, ?, ?, ?)");
     emojis.forEach((e) => {
@@ -423,6 +476,7 @@ function saveCustomEmojisToD1(emojis: CustomEmojiItem[]) {
 
 function saveSingleCustomEmojiToD1(item: CustomEmojiItem) {
   try {
+    saveEmojisToDiskBackup(serverCustomEmojis);
     const stmt = db.prepare("INSERT OR REPLACE INTO custom_emojis (id, tag, name, category, data) VALUES (?, ?, ?, ?, ?)");
     stmt.run([item.id, item.tag, item.name, item.category || 'custom', JSON.stringify(item)]);
     stmt.free();
@@ -434,6 +488,7 @@ function saveSingleCustomEmojiToD1(item: CustomEmojiItem) {
 
 function deleteCustomEmojiFromD1(id: string) {
   try {
+    saveEmojisToDiskBackup(serverCustomEmojis);
     db.run("DELETE FROM custom_emojis WHERE id = ?", [id]);
     saveD1ToDisk();
   } catch (e) {
@@ -610,8 +665,56 @@ app.get("/api/d1/messages", (req, res) => {
   res.json({ messages: serverMessages });
 });
 
+app.post("/api/messages/send", (req, res) => {
+  const { message } = req.body || {};
+  if (message && message.id) {
+    if (!serverMessages.some((m) => m.id === message.id)) {
+      serverMessages.push(message);
+      saveMessageToD1(message);
+      broadcast({ type: "NEW_MESSAGE", payload: message });
+    }
+    return res.json({ success: true, message });
+  }
+  res.status(400).json({ success: false, error: "Invalid message" });
+});
+
+app.post("/api/messages/delete", (req, res) => {
+  const { messageId } = req.body || {};
+  if (messageId) {
+    serverMessages = serverMessages.filter((m) => m.id !== messageId);
+    deleteMessageFromD1(messageId);
+    broadcast({ type: "MESSAGE_DELETED", payload: { messageId } });
+    return res.json({ success: true });
+  }
+  res.status(400).json({ success: false, error: "Missing messageId" });
+});
+
+app.post("/api/messages/clear", (req, res) => {
+  const { roomId } = req.body || {};
+  if (roomId) {
+    serverMessages = serverMessages.filter((m) => m.roomId !== roomId);
+    clearRoomFromD1(roomId);
+    broadcast({ type: "CHAT_CLEARED", payload: { roomId } });
+    return res.json({ success: true });
+  }
+  res.status(400).json({ success: false, error: "Missing roomId" });
+});
+
 app.get("/api/d1/private-messages", (req, res) => {
   res.json({ privateMessages: serverPrivateMessages });
+});
+
+app.post("/api/private-messages/send", (req, res) => {
+  const { privateMessage } = req.body || {};
+  if (privateMessage && privateMessage.id) {
+    if (!serverPrivateMessages.some((pm) => pm.id === privateMessage.id)) {
+      serverPrivateMessages.push(privateMessage);
+      savePrivateMessageToD1(privateMessage);
+      broadcast({ type: "NEW_PRIVATE_MESSAGE", payload: privateMessage });
+    }
+    return res.json({ success: true, privateMessage });
+  }
+  res.status(400).json({ success: false, error: "Invalid private message" });
 });
 
 app.get("/api/d1/notifications", (req, res) => {

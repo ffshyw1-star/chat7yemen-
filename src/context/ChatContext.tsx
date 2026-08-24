@@ -86,6 +86,13 @@ interface ChatContextType {
   selectedUserForCard: User | null;
   selectedUserForProfile: User | null;
   
+  // Context Menu State (Long press on text & images)
+  textContextMenu: { isOpen: boolean; text: string; title?: string } | null;
+  openTextContextMenu: (text: string, title?: string) => void;
+  closeTextContextMenu: () => void;
+  imageContextMenu: { isOpen: boolean; imageUrl: string; altText?: string } | null;
+  openImageContextMenu: (imageUrl: string, altText?: string) => void;
+  closeImageContextMenu: () => void;
   // Modals visibility toggles
   isProfileSettingsOpen: boolean;
   isOwnerDashboardOpen: boolean;
@@ -182,7 +189,7 @@ interface ChatContextType {
   buyRank: (role: 'vip' | 'moderator') => { success: boolean; message: string };
   
   // Mod & Owner actions
-  addRoom: (name: string, flag: string, description: string) => void;
+  addRoom: (roomInput: Partial<Room> | string, flag?: string, description?: string) => void;
   deleteRoom: (roomId: string) => void;
   updateUserRole: (userId: string, newRole: UserRole) => void;
   addCoins: (userId: string, amount: number) => void;
@@ -394,7 +401,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const newToast: ToastNotification = {
       ...toastData,
       id: `toast-${Date.now()}-${Math.random()}`,
-      timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: false })
+      timestamp: formatEnglishTime(new Date())
     };
     setToasts(prev => [newToast, ...prev].slice(0, 5));
 
@@ -545,7 +552,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ...emojiData,
       id: `emoji-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       tag: cleanTag,
-      createdAt: new Date().toLocaleDateString('ar-EG'),
+      createdAt: formatEnglishDate(new Date()),
       createdBy: currentUser?.username || 'الإدارة',
     };
     setCustomEmojis(prev => {
@@ -661,6 +668,28 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return updated;
     });
   }, [sendSocketEvent]);
+  // Context Menu State (Long press on text & images)
+  const [textContextMenu, setTextContextMenu] = useState<{ isOpen: boolean; text: string; title?: string } | null>(null);
+  const [imageContextMenu, setImageContextMenu] = useState<{ isOpen: boolean; imageUrl: string; altText?: string } | null>(null);
+
+  const openTextContextMenu = useCallback((text: string, title?: string) => {
+    if (!text || !text.trim()) return;
+    setTextContextMenu({ isOpen: true, text: text.trim(), title });
+  }, []);
+
+  const closeTextContextMenu = useCallback(() => {
+    setTextContextMenu(null);
+  }, []);
+
+  const openImageContextMenu = useCallback((imageUrl: string, altText?: string) => {
+    if (!imageUrl || !imageUrl.trim()) return;
+    setImageContextMenu({ isOpen: true, imageUrl: imageUrl.trim(), altText });
+  }, []);
+
+  const closeImageContextMenu = useCallback(() => {
+    setImageContextMenu(null);
+  }, []);
+
   const [isSideMenuOpen, setIsSideMenuOpen] = useState<boolean>(false);
   const [isReportsOpen, setIsReportsOpen] = useState<boolean>(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
@@ -881,7 +910,20 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   setNotifications(payload.notifications);
                 }
                 if (payload.customEmojis && Array.isArray(payload.customEmojis)) {
-                  setCustomEmojis(payload.customEmojis);
+                  setCustomEmojis(prev => {
+                    const map = new Map<string, CustomEmojiItem>();
+                    prev.forEach(e => map.set(e.id, e));
+                    payload.customEmojis.forEach((e: CustomEmojiItem) => map.set(e.id, e));
+                    const merged = Array.from(map.values());
+                    if (merged.length > payload.customEmojis.length) {
+                      fetch('/api/emojis/sync', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ emojis: merged })
+                      }).catch(() => {});
+                    }
+                    return merged;
+                  });
                 }
                 if (payload.siteSettings && typeof payload.siteSettings === 'object') {
                   setSiteSettings(prev => ({ ...prev, ...payload.siteSettings }));
@@ -953,7 +995,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                       senderId: newMsg.senderId,
                       senderName: newMsg.senderName,
                       senderAvatar: newMsg.senderAvatar,
-                      timestamp: newMsg.timestamp || new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: false }),
+                      timestamp: newMsg.timestamp || formatEnglishTime(new Date()),
                       isRead: false
                     };
                     setNotifications(prev => [mentionNotif, ...prev]);
@@ -1018,7 +1060,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     senderId: newPMsg.senderId,
                     senderName: newPMsg.senderName,
                     senderAvatar: newPMsg.senderAvatar,
-                    timestamp: newPMsg.timestamp || new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: false }),
+                    timestamp: newPMsg.timestamp || formatEnglishTime(new Date()),
                     isRead: false
                   };
                   setNotifications(prev => [privateNotif, ...prev]);
@@ -1088,7 +1130,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     senderId: newReq.senderId,
                     senderName: newReq.senderName,
                     senderAvatar: newReq.senderAvatar,
-                    timestamp: newReq.timestamp || new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: false }),
+                    timestamp: newReq.timestamp || formatEnglishTime(new Date()),
                     isRead: false
                   };
                   setNotifications(prev => [frNotif, ...prev]);
@@ -1197,8 +1239,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const { title, message, soundType, senderName } = payload || {};
                 playChatSound('general_broadcast');
                 const now = new Date();
-                const timeString = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: false });
-                const dateString = now.toLocaleDateString('ar-EG');
+                const timeString = formatEnglishTime(now);
+                const dateString = formatEnglishDate(now);
                 const notif: Notification = {
                   id: `notif-broadcast-${Date.now()}`,
                   userId: 'all',
@@ -1454,8 +1496,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, isMuted: false, muteUntil: undefined } : u));
 
           const nowObj = new Date();
-          const timeString = nowObj.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: false });
-          const dateString = nowObj.toLocaleDateString('ar-EG');
+          const timeString = formatEnglishTime(nowObj);
+          const dateString = formatEnglishDate(nowObj);
 
           const notif: Notification = {
             id: `notif-unmute-${Date.now()}`,
@@ -1483,8 +1525,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           })));
 
           const nowObj = new Date();
-          const timeString = nowObj.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: false });
-          const dateString = nowObj.toLocaleDateString('ar-EG');
+          const timeString = formatEnglishTime(nowObj);
+          const dateString = formatEnglishDate(nowObj);
 
           const notif: Notification = {
             id: `notif-unkick-${Date.now()}`,
@@ -1592,8 +1634,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       targetName,
       actionType,
       details,
-      timestamp: now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
-      date: now.toLocaleDateString('ar-EG')
+      timestamp: formatEnglishSecondsTime(now),
+      date: formatEnglishDate(now)
     };
     setRoomActivityLogs(prev => [newLog, ...prev]);
   };
@@ -1610,8 +1652,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const now = new Date();
-    const timeStr = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: false });
-    const dateStr = now.toLocaleDateString('ar-EG');
+    const timeStr = formatEnglishTime(now);
+    const dateStr = formatEnglishDate(now);
     
     let roleTitle = 'زائر';
     if (user.role === 'member') roleTitle = 'عضو';
@@ -1680,7 +1722,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // 2. IP Kick check (User cannot enter as visitor while kick is active)
     if (ipCheck.isKicked) {
-      const expTime = ipCheck.kickedRecord?.expiresAt ? new Date(ipCheck.kickedRecord.expiresAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: false }) : 'انتهاء المدة';
+      const expTime = ipCheck.kickedRecord?.expiresAt ? formatEnglishTime(new Date(ipCheck.kickedRecord.expiresAt)) : 'انتهاء المدة';
       alert(`🚫 هذا الآي بي مطرود مؤقتاً كزائر حتى ${expTime}. يمكنك تسجيل الدخول إذا كنت تمتلك عضوية مسجلة مسبقاً.`);
       return { success: false, error: `🚫 هذا الآي بي مطرود مؤقتاً كزائر حتى ${expTime}` };
     }
@@ -1723,7 +1765,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       countryFlag: '🇾🇪',
       ip: clientIp,
       currentRoomId: currentRoom.id,
-      joinedDate: new Date().toLocaleDateString('ar-EG'),
+      joinedDate: formatEnglishDate(new Date()),
       joinedTimestamp: Date.now(),
       lastSeen: 'الآن',
       privatePrivacy: 'everyone',
@@ -1855,7 +1897,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       countryFlag: '🇾🇪',
       ip: clientIp,
       currentRoomId: currentRoom.id,
-      joinedDate: new Date().toLocaleDateString('ar-EG'),
+      joinedDate: formatEnglishDate(new Date()),
       joinedTimestamp: Date.now(),
       lastSeen: 'الآن',
       privatePrivacy: 'everyone',
@@ -1869,6 +1911,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCurrentUser(newMember);
     setCurrentView('rooms');
     sendSocketEvent('JOIN_USER', { user: newMember });
+    fetch('/api/users/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: newMember })
+    }).catch(err => console.warn('Failed to persist new registered member to D1:', err));
 
     // Fetch IP and update country/flag automatically
     updateGeoLocationForUser(newMember.id);
@@ -1990,8 +2037,8 @@ ${modsText}
 
     const welcomeText = customText || defaultWelcomeText;
     const now = new Date();
-    const timeStr = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: false });
-    const dateStr = now.toLocaleDateString('ar-EG');
+    const timeStr = formatEnglishTime(now);
+    const dateStr = formatEnglishDate(now);
 
     const welcomeMsg: Message = {
       id: `sys-welcome-${targetRoom.id}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -2043,10 +2090,41 @@ ${modsText}
     }
   }, [currentView, currentRoom.id]);
 
-  // Switch active room (with lock/password protection & admin bypass)
+  // Switch active room (with lock/password protection & role-based restrictions)
   const switchRoom = (roomId: string, passwordAttempt?: string): boolean => {
     const room = rooms.find(r => r.id === roomId) || rooms[0];
     const isMgmt = ['management', 'admin', 'owner'].includes(currentUser?.role || '');
+    const userRole = currentUser?.role || 'visitor';
+    const isOwner = userRole === 'owner';
+
+    // 1. Role-based restrictions check (Diamond Room & Admin Room)
+    if (room.roomType === 'admin') {
+      const allowed = room.allowedRoles && room.allowedRoles.length > 0
+        ? room.allowedRoles.includes(userRole) || isOwner
+        : ['owner', 'management', 'admin', 'moderator'].includes(userRole);
+
+      if (!allowed) {
+        showTopBanner('🚫 هذه الغرفة مخصصة للإدارة فقط ولا تملك الصلاحية لدخولها');
+        return false;
+      }
+    }
+
+    if (room.roomType === 'diamond' || (room.allowedRoles && room.allowedRoles.length > 0)) {
+      if (!isOwner && room.allowedRoles && room.allowedRoles.length > 0 && !room.allowedRoles.includes(userRole)) {
+        const roleLabels: Record<string, string> = {
+          owner: 'المالك',
+          management: 'إدارة',
+          admin: 'أدمن',
+          moderator: 'مشرف',
+          vip: 'مميز',
+          member: 'عضو',
+          visitor: 'زائر'
+        };
+        const allowedLabels = room.allowedRoles.map(r => roleLabels[r] || r).join('، ');
+        showTopBanner(`🚫 هذه الغرفة الماسية مخصصة لرتب محددة فقط (${allowedLabels})`);
+        return false;
+      }
+    }
 
     // Check if user is kicked from room (checking duration expiry)
     const isKickExpired = currentUser?.kickUntil && new Date(currentUser.kickUntil).getTime() <= Date.now();
@@ -2150,8 +2228,8 @@ ${modsText}
       }
 
       const nowObj = new Date();
-      const timeString = nowObj.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: false });
-      const dateString = nowObj.toLocaleDateString('ar-EG');
+      const timeString = formatEnglishTime(nowObj);
+      const dateString = formatEnglishDate(nowObj);
 
       // Only show public room announcement if the penalized user is NOT management/staff
       const systemAvatar = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=300&q=80';
@@ -2180,7 +2258,7 @@ ${modsText}
         actionType: 'mute',
         reason: `كلمة مسيئة | الرسالة كاملة: "${rawText}"`,
         durationMinutes: 1,
-        timestamp: new Date().toLocaleString('ar-EG')
+        timestamp: formatEnglishDateTime(new Date())
       };
       setModLogs(prev => [sysLog, ...prev]);
 
@@ -2417,8 +2495,8 @@ ${modsText}
     }
 
     const now = new Date();
-    const timeStr = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: false });
-    const dateStr = now.toLocaleDateString('ar-EG');
+    const timeStr = formatEnglishTime(now);
+    const dateStr = formatEnglishDate(now);
 
     const newMsg: Message = {
       id: `msg-${Date.now()}`,
@@ -2443,6 +2521,11 @@ ${modsText}
 
     setMessages(prev => [...prev, newMsg]);
     sendSocketEvent('SEND_MESSAGE', newMsg);
+    fetch('/api/messages/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: newMsg })
+    }).catch(err => console.warn('Failed to persist message to D1:', err));
 
     // Give activity coins reward
     const coinReward = 1;
@@ -2619,7 +2702,7 @@ ${modsText}
     }
 
     const now = new Date();
-    const timeStr = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: false });
+    const timeStr = formatEnglishTime(now);
 
     const newPm: PrivateMessage = {
       id: `pm-${Date.now()}`,
@@ -2637,6 +2720,11 @@ ${modsText}
 
     setPrivateMessages(prev => [...prev, newPm]);
     sendSocketEvent('SEND_PRIVATE_MESSAGE', newPm);
+    fetch('/api/private-messages/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ privateMessage: newPm })
+    }).catch(err => console.warn('Failed to persist private message to D1:', err));
     unhidePrivateConversation(receiverId);
 
     // Create notification for receiver
@@ -3439,6 +3527,11 @@ ${modsText}
     }
     setMessages(prev => prev.filter(m => m.id !== messageId));
     sendSocketEvent('DELETE_MESSAGE', { messageId });
+    fetch('/api/messages/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messageId })
+    }).catch(err => console.warn('Failed to persist delete message to D1:', err));
   };
 
   // Clear Room Public Messages (Command /Clear or Admin/Staff action)
@@ -3454,6 +3547,11 @@ ${modsText}
       // Clear for everyone in room & database & WebSocket
       setMessages(prev => prev.filter(m => m.roomId !== targetRoomId));
       sendSocketEvent('CLEAR_CHAT', { roomId: targetRoomId });
+      fetch('/api/messages/clear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId: targetRoomId })
+      }).catch(err => console.warn('Failed to persist clear chat to D1:', err));
 
       addRoomActivityLog(
         targetRoomId,
@@ -3468,8 +3566,8 @@ ${modsText}
 
       // Post system announcement message to room
       const now = new Date();
-      const timeStr = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', hour12: false });
-      const dateStr = now.toLocaleDateString('ar-EG');
+      const timeStr = formatEnglishTime(now);
+      const dateStr = formatEnglishDate(now);
       const sysMsg: Message = {
         id: `sys-clear-${Date.now()}`,
         roomId: targetRoomId,
@@ -3551,6 +3649,11 @@ ${modsText}
       } catch (e) {}
     }
     sendSocketEvent('UPDATE_USER', updatedUser);
+    fetch('/api/users/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: updatedUser })
+    }).catch(err => console.warn('Failed to persist owner user update to D1:', err));
   };
 
   // Owner update store prices
@@ -3633,7 +3736,8 @@ ${modsText}
       showTopBanner('🚫 لا يمكن كتم المالك الرئيسي!');
       return;
     }
-    setRooms(prev => prev.map(r => {
+    const targetRoomObj = rooms.find(r => r.id === roomId) || currentRoom;
+    const updatedRooms = rooms.map(r => {
       if (r.id === roomId) {
         const currentMuted = r.mutedUsers || [];
         if (!currentMuted.includes(userId)) {
@@ -3643,12 +3747,19 @@ ${modsText}
         }
       }
       return r;
-    }));
-    moderatorAction(userId, 'mute', 60, 'كتم عام في إعدادات الغرفة');
+    });
+    setRooms(updatedRooms);
+    try {
+      localStorage.setItem('araby_custom_rooms', JSON.stringify(updatedRooms));
+    } catch (e) {}
+    sendSocketEvent('UPDATE_ROOMS', updatedRooms);
+    showTopBanner(`🔇 تم كتم العضو (${target?.username || 'المستخدم'}) في غرفة (${targetRoomObj.name})`);
   };
 
   const unmuteUserInRoom = (roomId: string, userId: string) => {
-    setRooms(prev => prev.map(r => {
+    const target = users.find(u => u.id === userId);
+    const targetRoomObj = rooms.find(r => r.id === roomId) || currentRoom;
+    const updatedRooms = rooms.map(r => {
       if (r.id === roomId) {
         const currentMuted = r.mutedUsers || [];
         const updated = { ...r, mutedUsers: currentMuted.filter(id => id !== userId) };
@@ -3656,8 +3767,13 @@ ${modsText}
         return updated;
       }
       return r;
-    }));
-    moderatorAction(userId, 'unmute', 0, 'إلغاء الكتم من إعدادات الغرفة');
+    });
+    setRooms(updatedRooms);
+    try {
+      localStorage.setItem('araby_custom_rooms', JSON.stringify(updatedRooms));
+    } catch (e) {}
+    sendSocketEvent('UPDATE_ROOMS', updatedRooms);
+    showTopBanner(`🔊 تم إلغاء كتم (${target?.username || 'المستخدم'}) في غرفة (${targetRoomObj.name})`);
   };
 
   const kickUserFromRoom = (roomId: string, userId: string) => {
@@ -3666,7 +3782,10 @@ ${modsText}
       showTopBanner('🚫 لا يمكن طرد المالك الرئيسي!');
       return;
     }
-    setRooms(prev => prev.map(r => {
+    const targetRoomObj = rooms.find(r => r.id === roomId) || currentRoom;
+    const generalRoom = rooms.find(r => r.id === 'room-general') || rooms[0];
+
+    const updatedRooms = rooms.map(r => {
       if (r.id === roomId) {
         const currentKicked = r.kickedUsers || [];
         if (!currentKicked.includes(userId)) {
@@ -3676,12 +3795,37 @@ ${modsText}
         }
       }
       return r;
+    });
+    setRooms(updatedRooms);
+    try {
+      localStorage.setItem('araby_custom_rooms', JSON.stringify(updatedRooms));
+    } catch (e) {}
+    sendSocketEvent('UPDATE_ROOMS', updatedRooms);
+
+    // Eject target user from this room if they are currently inside it
+    setUsers(prev => prev.map(u => {
+      if (u.id === userId && u.currentRoomId === roomId) {
+        return { ...u, currentRoomId: generalRoom?.id || 'room-general' };
+      }
+      return u;
     }));
-    moderatorAction(userId, 'kick', 1440, 'طرد من إعدادات الغرفة');
+
+    // If current logged-in user is the one kicked from active room, redirect to general room
+    if (currentUser?.id === userId && currentRoom.id === roomId) {
+      if (generalRoom) {
+        setCurrentRoom(generalRoom);
+        setCurrentUser(prev => prev ? { ...prev, currentRoomId: generalRoom.id } : null);
+      }
+      showTopBanner(`🚫 تم طردك من غرفة (${targetRoomObj.name})`);
+    } else {
+      showTopBanner(`🚪 تم طرد العضو (${target?.username || 'المستخدم'}) من غرفة (${targetRoomObj.name})`);
+    }
   };
 
   const unkickUserFromRoom = (roomId: string, userId: string) => {
-    setRooms(prev => prev.map(r => {
+    const target = users.find(u => u.id === userId);
+    const targetRoomObj = rooms.find(r => r.id === roomId) || currentRoom;
+    const updatedRooms = rooms.map(r => {
       if (r.id === roomId) {
         const currentKicked = r.kickedUsers || [];
         const updated = { ...r, kickedUsers: currentKicked.filter(id => id !== userId) };
@@ -3689,8 +3833,13 @@ ${modsText}
         return updated;
       }
       return r;
-    }));
-    moderatorAction(userId, 'unkick', 0, 'إلغاء الطرد من إعدادات الغرفة');
+    });
+    setRooms(updatedRooms);
+    try {
+      localStorage.setItem('araby_custom_rooms', JSON.stringify(updatedRooms));
+    } catch (e) {}
+    sendSocketEvent('UPDATE_ROOMS', updatedRooms);
+    showTopBanner(`🔓 تم فك طرد (${target?.username || 'المستخدم'}) من غرفة (${targetRoomObj.name})`);
   };
 
   // Assign Room Honorary Role (مشرف غرفة / مدير غرفة / مالك غرفة)
@@ -3762,17 +3911,40 @@ ${modsText}
   };
 
   // Add room
-  const addRoom = (name: string, flag: string, description: string) => {
-    const newRoom: Room = {
-      id: `room-${Date.now()}`,
-      name: name.trim(),
-      flag: flag.trim() || '🇾🇪',
-      description: description.trim() || 'غرفة جديدة',
-      isDefault: false
-    };
+  const addRoom = (roomInput: Partial<Room> | string, flag?: string, description?: string) => {
+    let newRoom: Room;
+    if (typeof roomInput === 'string') {
+      newRoom = {
+        id: `room-${Date.now()}`,
+        name: roomInput.trim(),
+        flag: flag?.trim() || '🇾🇪',
+        description: description?.trim() || 'غرفة جديدة',
+        isDefault: false,
+        roomType: 'standard',
+        customIcon: 'globe'
+      };
+    } else {
+      newRoom = {
+        id: `room-${Date.now()}`,
+        name: roomInput.name?.trim() || 'غرفة جديدة',
+        flag: roomInput.flag?.trim() || (roomInput.roomType === 'diamond' ? '💎' : roomInput.roomType === 'admin' ? '⭐' : '🇾🇪'),
+        description: roomInput.description?.trim() || '',
+        password: roomInput.password?.trim() || undefined,
+        isLocked: Boolean(roomInput.isLocked || (roomInput.password && roomInput.password.trim())),
+        roomType: roomInput.roomType || 'standard',
+        allowedRoles: roomInput.allowedRoles,
+        customIcon: roomInput.customIcon || (roomInput.roomType === 'diamond' ? 'diamond' : roomInput.roomType === 'admin' ? 'admin_star' : 'globe'),
+        isDefault: Boolean(roomInput.isDefault)
+      };
+    }
     setRooms(prev => {
       const updatedRooms = [...prev, newRoom];
       sendSocketEvent('UPDATE_ROOMS', updatedRooms);
+      fetch('/api/rooms/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rooms: updatedRooms })
+      }).catch(err => console.warn('Failed to persist rooms update to D1:', err));
       return updatedRooms;
     });
   };
@@ -3785,6 +3957,11 @@ ${modsText}
         setCurrentRoom(filtered[0]);
       }
       sendSocketEvent('UPDATE_ROOMS', filtered);
+      fetch('/api/rooms/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rooms: filtered })
+      }).catch(err => console.warn('Failed to persist rooms update to D1:', err));
       return filtered;
     });
   };
@@ -3913,7 +4090,7 @@ ${modsText}
       title,
       content,
       imageUrl,
-      timestamp: `${new Date().toLocaleDateString('ar-EG')} - ${new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}`,
+      timestamp: formatEnglishDateTime(new Date()),
       reactions: {},
       comments: []
     };
@@ -3946,7 +4123,7 @@ ${modsText}
           id: `nc-${Date.now()}`,
           authorName: currentUser.username,
           content,
-          timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
+          timestamp: formatEnglishTime(new Date())
         }]
       };
     }));
@@ -4015,7 +4192,7 @@ ${modsText}
           id: `wc-${Date.now()}`,
           authorName: currentUser.username,
           content,
-          timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
+          timestamp: formatEnglishTime(new Date())
         }]
       };
     }));
@@ -4183,6 +4360,13 @@ ${modsText}
         clearAllPrivateConversations,
         selectedUserForCard,
         selectedUserForProfile,
+
+        textContextMenu,
+        openTextContextMenu,
+        closeTextContextMenu,
+        imageContextMenu,
+        openImageContextMenu,
+        closeImageContextMenu,
 
         isProfileSettingsOpen,
         isOwnerDashboardOpen,

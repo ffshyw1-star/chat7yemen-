@@ -2,6 +2,7 @@ import React from 'react';
 import { UserRole, Gender } from '../types';
 import { User, UserCheck, Shield, Sparkles, Crown, Star } from 'lucide-react';
 import { resolveUserAvatar } from '../utils/avatarUtils';
+import { useChat } from '../context/ChatContext';
 
 interface UserAvatarProps {
   avatarUrl?: string;
@@ -11,6 +12,7 @@ interface UserAvatarProps {
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   showRankBadge?: boolean;
   className?: string;
+  enableImageMenu?: boolean;
 }
 
 export const UserAvatar: React.FC<UserAvatarProps> = ({
@@ -20,8 +22,12 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
   username = '',
   size = 'md',
   showRankBadge = false,
-  className = ''
+  className = '',
+  enableImageMenu = true
 }) => {
+  const { openImageContextMenu } = useChat();
+  const touchTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+
   // Determine ring border class according to gender rule
   const ringClass =
     gender === 'male'
@@ -51,7 +57,14 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
   const getRankBadgeInfo = () => {
     switch (role) {
       case 'owner':
-        return { icon: <span className="text-[12px] leading-none select-none">👑</span>, bg: 'bg-amber-950 border-amber-500' };
+        return {
+          icon: (
+            <span className="text-[12px] leading-none select-none">
+              🏆
+            </span>
+          ),
+          bg: 'bg-amber-500 border-amber-300',
+        };
       case 'admin':
         return { icon: <Star className="w-full h-full text-red-500 fill-red-500" />, bg: 'bg-red-950 border-red-500' };
       case 'management':
@@ -73,8 +86,36 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
 
   const effectiveAvatar = resolveUserAvatar(avatarUrl, gender, role);
 
+  const handleAvatarContextMenu = (e: React.MouseEvent) => {
+    if (!enableImageMenu) return;
+    e.preventDefault();
+    e.stopPropagation();
+    openImageContextMenu(effectiveAvatar, username ? `صورة ${username}` : 'الصورة الشخصية');
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!enableImageMenu) return;
+    if (touchTimerRef.current) clearTimeout(touchTimerRef.current);
+    touchTimerRef.current = setTimeout(() => {
+      openImageContextMenu(effectiveAvatar, username ? `صورة ${username}` : 'الصورة الشخصية');
+    }, 450);
+  };
+
+  const handleTouchEnd = () => {
+    if (touchTimerRef.current) {
+      clearTimeout(touchTimerRef.current);
+      touchTimerRef.current = null;
+    }
+  };
+
   return (
-    <div className={`relative inline-block shrink-0 ${className}`}>
+    <div
+      className={`relative inline-block shrink-0 ${className}`}
+      onContextMenu={handleAvatarContextMenu}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
+    >
       <div
         className={`${sizeClasses} rounded-full overflow-hidden flex items-center justify-center bg-slate-200 ${ringClass} transition-transform duration-200`}
       >

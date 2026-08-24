@@ -14,7 +14,8 @@ export const ReportsModal: React.FC = () => {
     reports, setIsReportsOpen, currentUser, users,
     deleteReport, moderatorAction, deleteMessage,
     setSelectedUserForCard, setSelectedUserForProfile,
-    showTopBanner, audioSettings, updateAudioSettings
+    showTopBanner, audioSettings, updateAudioSettings,
+    setIsOnlineListOpen, setIsFriendRequestsOpen, setIsRoomsListOpen
   } = useChat();
 
   // Selected report for detail popup (Matching Image 2 / Detail view)
@@ -139,10 +140,34 @@ export const ReportsModal: React.FC = () => {
 
           {/* Top Right (RTL start): Action Icons (👥 👤+ 🏠 🔍) */}
           <div className="flex items-center gap-4 text-slate-800">
-            <Users className="w-5 h-5 stroke-[2.2] hover:text-sky-600 transition-colors cursor-pointer" title="المتواجدون" />
-            <UserPlus className="w-5 h-5 stroke-[2.2] hover:text-sky-600 transition-colors cursor-pointer" title="إضافة صديق" />
-            <Home className="w-5 h-5 stroke-[2.2] hover:text-sky-600 transition-colors cursor-pointer" title="الغرف" />
-            <Search className="w-5 h-5 stroke-[2.2] hover:text-sky-600 transition-colors cursor-pointer" title="بحث" />
+            <button
+              onClick={() => { setIsReportsOpen(false); setIsOnlineListOpen(true); }}
+              className="p-1 text-slate-700 hover:text-sky-600 transition-colors cursor-pointer"
+              title="المتواجدون"
+            >
+              <Users className="w-5 h-5 stroke-[2.2]" />
+            </button>
+            <button
+              onClick={() => { setIsReportsOpen(false); setIsFriendRequestsOpen(true); }}
+              className="p-1 text-slate-700 hover:text-sky-600 transition-colors cursor-pointer"
+              title="إضافة صديق"
+            >
+              <UserPlus className="w-5 h-5 stroke-[2.2]" />
+            </button>
+            <button
+              onClick={() => { setIsReportsOpen(false); setIsRoomsListOpen(true); }}
+              className="p-1 text-slate-700 hover:text-sky-600 transition-colors cursor-pointer"
+              title="الغرف"
+            >
+              <Home className="w-5 h-5 stroke-[2.2]" />
+            </button>
+            <button
+              onClick={() => { setIsReportsOpen(false); setIsOnlineListOpen(true); }}
+              className="p-1 text-slate-700 hover:text-sky-600 transition-colors cursor-pointer"
+              title="بحث"
+            >
+              <Search className="w-5 h-5 stroke-[2.2]" />
+            </button>
           </div>
         </div>
 
@@ -153,8 +178,8 @@ export const ReportsModal: React.FC = () => {
               <div className="w-12 h-12 rounded-full bg-slate-100 text-emerald-600 flex items-center justify-center mx-auto border border-slate-200">
                 <CheckCircle className="w-6 h-6" />
               </div>
-              <p className="text-sm font-bold text-slate-600">
-                لا توجد بلاغات حالياً في العلم الأبيض! الغرفة آمنة 🕊️
+              <p className="text-sm font-bold text-slate-700">
+                لا توجد بلاغات حاليًا
               </p>
             </div>
           ) : (
