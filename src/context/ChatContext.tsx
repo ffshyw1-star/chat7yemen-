@@ -4,7 +4,8 @@ import {
   FriendRequest, Report, NewsPost, WallPost, Notification, StoreItem,
   ModLogEntry, OnlineStatus, PrivatePrivacySetting, ThemeMode,
   RoomActivityLog, RoomActivityType, SiteSettings, ToastNotification,
-  IPModerationRecord, BlockConfirmState, BlockActionType, CustomEmojiItem
+  IPModerationRecord, BlockConfirmState, BlockActionType, CustomEmojiItem,
+  BlockedDeviceItem, BlockedBrowserItem, BlockedCountryItem, BlockedXBandItem
 } from '../types';
 import {
   INITIAL_ROOMS, INITIAL_USERS, INITIAL_MESSAGES, INITIAL_REPORTS,
@@ -12,10 +13,11 @@ import {
   INITIAL_ROOM_ACTIVITY_LOGS, PROFANITY_WORDS, INITIAL_PRIVATE_MESSAGES
 } from '../data/initialData';
 import { playChatSound } from '../utils/audio';
-import { getRankEmoji, canBeIgnored } from '../utils/permissions';
+import { getRankEmoji, canBeIgnored, hasRolePermission, DEFAULT_PERMISSIONS, getRoleLevel } from '../utils/permissions';
 import { filterProfanity } from '../utils/profanityFilter';
-import { fetchUserGeoIP } from '../utils/geoip';
+import { fetchUserGeoIP, getArabicCountryName, getEnglishCountryName, getCountryFlagByName, getUserDisplayTag, getUserIdentityNumber } from '../utils/geoip';
 import { hashPassword, verifyPasswordMatch, isDuplicateUsername, normalizeUsername } from '../utils/security';
+import { getDeviceFingerprint } from '../utils/deviceFingerprint';
 import {
   toEnglishDigits,
   formatEnglishTime,
@@ -30,6 +32,19 @@ import {
   requestBrowserNotificationPermission,
   getBrowserNotificationPermission
 } from '../utils/browserNotifications';
+import {
+  saveUserToFirestore,
+  saveMessageToFirestore,
+  savePrivateMessageToFirestore,
+  saveRoomToFirestore,
+  saveSettingsToFirestore,
+  db,
+  handleFirestoreError,
+  OperationType,
+  signInWithGoogle
+} from '../lib/firebase';
+import { collection, doc, onSnapshot, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { getAppLanguage, applyLanguageSettings, isRTL } from '../utils/translations';
 
 interface AudioSettings {
   publicSound: boolean;
@@ -45,6 +60,7 @@ interface ChatContextType {
   currentView: 'landing' | 'rooms' | 'chat';
   currentRoom: Room;
   rooms: Room[];
+  setRooms: React.Dispatch<React.SetStateAction<Room[]>>;
   users: User[];
   messages: Message[];
   privateMessages: PrivateMessage[];
@@ -98,6 +114,9 @@ interface ChatContextType {
   isOwnerDashboardOpen: boolean;
   isStoreOpen: boolean;
   isSideMenuOpen: boolean;
+  sideMenuInitialView: 'menu' | 'status' | 'wall' | 'news' | 'recharge' | 'bans';
+  setSideMenuInitialView: (view: 'menu' | 'status' | 'wall' | 'news' | 'recharge' | 'bans') => void;
+  openNews: () => void;
   isReportsOpen: boolean;
   isNotificationsOpen: boolean;
   isFriendRequestsOpen: boolean;
@@ -106,6 +125,10 @@ interface ChatContextType {
   isRoomsListOpen: boolean;
   isRoomLogsOpen: boolean;
   isRoomSettingsOpen: boolean;
+  isGoogleChatOpen: boolean;
+  setIsGoogleChatOpen: (open: boolean) => void;
+  isGoogleDriveOpen: boolean;
+  setIsGoogleDriveOpen: (open: boolean) => void;
   inputInsertedUsername: string | null;
   topBannerMessage: string | null;
 
@@ -143,7 +166,7 @@ interface ChatContextType {
     onConfirm: () => void
   ) => void;
   closeBlockConfirm: () => void;
-  updateRoomDetails: (roomId: string, updates: { name?: string; description?: string; password?: string; isLocked?: boolean; welcomeMessage?: string; autoWelcomeEnabled?: boolean }) => void;
+  updateRoomDetails: (roomId: string, updates: Partial<Room>) => void;
   sendRoomWelcomeMessage: (targetRoom: Room, username?: string, userRole?: UserRole) => void;
   assignRoomStaff: (roomId: string, userId: string, role: RoomRole) => void;
   removeRoomStaff: (roomId: string, userId: string) => void;
@@ -157,14 +180,31 @@ interface ChatContextType {
   addCustomBadWord: (word: string) => void;
   removeCustomBadWord: (word: string) => void;
 
+  hasPermission: (role: UserRole | string | undefined | null, permissionId: string) => boolean;
+  currentUserCan: (permissionId: string) => boolean;
+
   loginAsVisitor: (username: string, age: number | string, gender: Gender) => { success: boolean; error?: string };
   loginAsMember: (username: string, password: string) => { success: boolean; error?: string };
   registerAccount: (username: string, password: string, email: string, age: number | string, gender: Gender) => { success: boolean; error?: string };
-  loginAsOwner: () => User;
+  loginWithFirebaseGoogle: () => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   
   switchRoom: (roomId: string, passwordAttempt?: string) => boolean;
-  sendMessage: (text: string, type?: Message['type'], mediaUrl?: string, voiceDuration?: number, textStyle?: { color?: string; fontSize?: string; fontWeight?: string }) => void;
+  sendMessage: (
+    text: string,
+    type?: Message['type'],
+    mediaUrl?: string,
+    voiceDuration?: number,
+    textStyle?: {
+      color?: string;
+      fontSize?: string;
+      fontWeight?: string;
+      fontFamily?: string;
+      fontStyle?: string;
+      bgGradient?: string;
+      isNeon?: boolean;
+    }
+  ) => void;
   reactToMessage: (messageId: string, emoji: string) => void;
   sendPrivateMessage: (receiverId: string, text: string, type?: 'text' | 'image' | 'voice', mediaUrl?: string, voiceDuration?: number) => boolean;
   deletePrivateMessages: (targetUserId: string) => void;
@@ -213,7 +253,7 @@ interface ChatContextType {
   
   addWallPost: (content: string, imageUrl?: string) => void;
   deleteWallPost: (postId: string) => void;
-  reactToWallPost: (postId: string) => void;
+  reactToWallPost: (postId: string, emoji?: string) => void;
   addWallComment: (postId: string, content: string) => void;
 
   markNotificationsAsRead: () => void;
@@ -230,11 +270,49 @@ interface ChatContextType {
   removeToast: (id: string) => void;
 
   switchRoleForTesting: (role: UserRole) => void;
+
+  bannedIps: string[];
+  banIp: (ip: string, username?: string, reason?: string) => void;
+  unbanIp: (ip: string) => void;
+  banDevice: (deviceId: string, username?: string, reason?: string, deviceName?: string) => void;
+  unbanDevice: (deviceId: string) => void;
+  banBrowser: (fingerprint: string, username?: string, reason?: string, browserName?: string) => void;
+  unbanBrowser: (fingerprint: string) => void;
+  banCountry: (countryCode: string, countryName?: string, reason?: string) => void;
+  unbanCountry: (countryCode: string) => void;
+
+  cleanupInactiveUsers: () => void;
+  updateUserLastActivity: (userId?: string) => void;
+  sendBotWelcomeMessage: (customText?: string) => void;
+
+  currentLang: string;
+  setAppLanguage: (lang: string) => void;
+  isRtl: boolean;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
 export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Global App Language State
+  const [currentLang, setCurrentLangState] = useState<string>(() => getAppLanguage());
+
+  useEffect(() => {
+    const handleLangChange = (e: any) => {
+      if (e?.detail) {
+        setCurrentLangState(e.detail);
+      }
+    };
+    window.addEventListener('appLanguageChanged', handleLangChange);
+    return () => window.removeEventListener('appLanguageChanged', handleLangChange);
+  }, []);
+
+  const handleSetAppLanguage = useCallback((lang: string) => {
+    applyLanguageSettings(lang);
+    setCurrentLangState(lang);
+  }, []);
+
+  const isRtl = useMemo(() => isRTL(currentLang), [currentLang]);
+
   // Persistent users list (purging mock users)
   const [users, setUsers] = useState<User[]>(() => {
     try {
@@ -243,8 +321,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
           const map = new Map(INITIAL_USERS.map(u => [u.id, u]));
+          const mockIds = ['user-katim', 'user-silva', 'user-raad', 'user-kibriya', 'user-jawbak', 'user-1', 'user-2', 'user-3', 'user-4', 'user-5', 'user-6', 'user-7', 'user-8'];
           parsed.forEach((u: User) => {
-            if (u && u.id && !['user-1', 'user-2', 'user-3', 'user-4', 'user-5', 'user-6', 'user-7', 'user-8'].includes(u.id)) {
+            if (u && u.id && !mockIds.includes(u.id)) {
               map.set(u.id, u);
             }
           });
@@ -271,7 +350,25 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const saved = localStorage.getItem('araby_current_user');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed.id) return parsed;
+        if (parsed && parsed.id) {
+          // Restore text format settings from localStorage if available
+          try {
+            const userSpecificFormat = localStorage.getItem(`araby_chat_format_${parsed.id}`);
+            const globalFormat = localStorage.getItem('araby_chat_text_format');
+            const formatObj = userSpecificFormat ? JSON.parse(userSpecificFormat) : (globalFormat ? JSON.parse(globalFormat) : null);
+            if (formatObj) {
+              if (!parsed.chatTextColor && formatObj.color) parsed.chatTextColor = formatObj.color;
+              if (!parsed.chatFontFamily && formatObj.fontFamily) parsed.chatFontFamily = formatObj.fontFamily;
+              if (!parsed.chatFontStyle && formatObj.style) parsed.chatFontStyle = formatObj.style;
+              if (!parsed.chatTextWeight && formatObj.weight) parsed.chatTextWeight = formatObj.weight;
+              if (parsed.chatIsNeon === undefined && formatObj.isNeon !== undefined) parsed.chatIsNeon = formatObj.isNeon;
+              if (!parsed.chatTextBgGradient && formatObj.bgGradient) parsed.chatTextBgGradient = formatObj.bgGradient;
+            }
+          } catch (err) {
+            console.error('Error hydrating format for user:', err);
+          }
+          return parsed;
+        }
       }
     } catch (e) {
       console.error(e);
@@ -348,6 +445,101 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [currentRoom]);
 
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
+
+  useEffect(() => {
+    const mockMsgIds = ['msg-1', 'msg-2', 'msg-3', 'msg-4', 'msg-5', 'msg-6'];
+    const mockUserIds = ['user-katim', 'user-silva', 'user-raad', 'user-kibriya', 'user-jawbak'];
+    setMessages(prev => prev.filter(m => !mockMsgIds.includes(m.id) && !mockUserIds.includes(m.senderId)));
+  }, []);
+
+  // Real-time Firestore sync for public messages
+  useEffect(() => {
+    try {
+      const messagesRef = collection(db, 'messages');
+      const unsubscribe = onSnapshot(messagesRef, (snapshot) => {
+        const cloudMsgs: Message[] = [];
+        snapshot.forEach((docSnap) => {
+          const d = docSnap.data();
+          if (d && d.id && d.text) {
+            cloudMsgs.push(d as Message);
+          }
+        });
+        if (cloudMsgs.length > 0) {
+          setMessages(prev => {
+            const map = new Map<string, Message>();
+            prev.forEach(m => map.set(m.id, m));
+            cloudMsgs.forEach(m => map.set(m.id, m));
+            return Array.from(map.values()).sort((a, b) => {
+              const tA = (a as any).createdAt || a.timestamp || '';
+              const tB = (b as any).createdAt || b.timestamp || '';
+              return tA > tB ? 1 : -1;
+            });
+          });
+        }
+      }, (error) => {
+        handleFirestoreError(error, OperationType.GET, 'messages');
+      });
+      return () => unsubscribe();
+    } catch (e) {
+      console.warn('Firestore messages listener error:', e);
+    }
+  }, []);
+
+  // Real-time Firestore sync for users & accounts
+  useEffect(() => {
+    try {
+      const usersRef = collection(db, 'users');
+      const unsubscribe = onSnapshot(usersRef, (snapshot) => {
+        const cloudUsers: User[] = [];
+        snapshot.forEach((docSnap) => {
+          const d = docSnap.data();
+          if (d && d.id && d.username) {
+            cloudUsers.push(d as User);
+          }
+        });
+        if (cloudUsers.length > 0) {
+          setUsers(prev => {
+            const map = new Map<string, User>();
+            prev.forEach(u => map.set(u.id, u));
+            cloudUsers.forEach(u => {
+              const existing = map.get(u.id);
+              map.set(u.id, existing ? { ...existing, ...u } : u);
+            });
+            return Array.from(map.values());
+          });
+        }
+      }, (error) => {
+        handleFirestoreError(error, OperationType.GET, 'users');
+      });
+      return () => unsubscribe();
+    } catch (e) {
+      console.warn('Firestore users listener error:', e);
+    }
+  }, []);
+
+  // Real-time Firestore sync for global site settings & permissions
+  useEffect(() => {
+    try {
+      const settingsDocRef = doc(db, 'settings', 'global');
+      const unsubscribe = onSnapshot(settingsDocRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const cloudSettings = docSnap.data();
+          if (cloudSettings && typeof cloudSettings === 'object') {
+            setSiteSettings(prev => ({ ...prev, ...cloudSettings }));
+            try {
+              localStorage.setItem('araby_site_settings', JSON.stringify(cloudSettings));
+            } catch {}
+          }
+        }
+      }, (error) => {
+        handleFirestoreError(error, OperationType.GET, 'settings/global');
+      });
+      return () => unsubscribe();
+    } catch (e) {
+      console.warn('Firestore settings listener error:', e);
+    }
+  }, []);
+
   const [privateMessages, setPrivateMessages] = useState<PrivateMessage[]>(INITIAL_PRIVATE_MESSAGES);
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
   const [reports, setReports] = useState<Report[]>(() => {
@@ -454,12 +646,18 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!trimmed) return;
     setCustomBadWords(prev => {
       if (prev.includes(trimmed)) return prev;
-      return [...prev, trimmed];
+      const updated = [...prev, trimmed];
+      updateSiteSettings({ customBadWordsList: updated });
+      return updated;
     });
   };
 
   const removeCustomBadWord = (word: string) => {
-    setCustomBadWords(prev => prev.filter(w => w !== word));
+    setCustomBadWords(prev => {
+      const updated = prev.filter(w => w !== word);
+      updateSiteSettings({ customBadWordsList: updated });
+      return updated;
+    });
   };
 
   // Custom Emojis Added by Owner
@@ -665,9 +863,32 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ settings: updated })
       }).catch(err => console.warn('Failed to persist site settings to D1:', err));
+      saveSettingsToFirestore(updated);
+      try {
+        localStorage.setItem('araby_site_settings', JSON.stringify(updated));
+      } catch {}
       return updated;
     });
   }, [sendSocketEvent]);
+
+  const hasPermission = useCallback((role: UserRole | string | undefined | null, permissionId: string): boolean => {
+    if (!role) return false;
+    if (role === 'owner') return true;
+    return hasRolePermission(role, permissionId, siteSettings?.rolePermissions);
+  }, [siteSettings?.rolePermissions]);
+
+  const currentUserCan = useCallback((permissionId: string): boolean => {
+    if (!currentUser) return false;
+    if (currentUser.role === 'owner') return true;
+    if (permissionId === 'change_username') {
+      if (siteSettings?.disableUsernameChangeAll) return false;
+      if (siteSettings?.disableUsernameChangeRoles && siteSettings.disableUsernameChangeRoles.includes(currentUser.role)) {
+        return false;
+      }
+      return hasPermission(currentUser.role, 'change_username');
+    }
+    return hasPermission(currentUser.role, permissionId);
+  }, [currentUser, hasPermission, siteSettings?.disableUsernameChangeAll, siteSettings?.disableUsernameChangeRoles]);
   // Context Menu State (Long press on text & images)
   const [textContextMenu, setTextContextMenu] = useState<{ isOpen: boolean; text: string; title?: string } | null>(null);
   const [imageContextMenu, setImageContextMenu] = useState<{ isOpen: boolean; imageUrl: string; altText?: string } | null>(null);
@@ -691,6 +912,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const [isSideMenuOpen, setIsSideMenuOpen] = useState<boolean>(false);
+  const [sideMenuInitialView, setSideMenuInitialView] = useState<'menu' | 'status' | 'wall' | 'news' | 'recharge' | 'bans'>('menu');
+  const openNews = useCallback(() => {
+    setSideMenuInitialView('news');
+    setIsSideMenuOpen(true);
+  }, []);
   const [isReportsOpen, setIsReportsOpen] = useState<boolean>(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
   const [isFriendRequestsOpen, setIsFriendRequestsOpen] = useState<boolean>(false);
@@ -699,6 +925,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isRoomsListOpen, setIsRoomsListOpen] = useState<boolean>(false);
   const [isRoomLogsOpen, setIsRoomLogsOpen] = useState<boolean>(false);
   const [isRoomSettingsOpen, setIsRoomSettingsOpen] = useState<boolean>(false);
+  const [isGoogleChatOpen, setIsGoogleChatOpen] = useState<boolean>(false);
+  const [isGoogleDriveOpen, setIsGoogleDriveOpen] = useState<boolean>(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState<boolean>(false);
   const [passwordPromptRoom, setPasswordPromptRoom] = useState<Room | null>(null);
   const [unlockedRoomIds, setUnlockedRoomIds] = useState<string[]>([]);
@@ -752,12 +980,46 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [ipModerations, setIpModerations] = useState<IPModerationRecord[]>(() => {
     try {
       const saved = localStorage.getItem('araby_ip_moderations');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
     } catch (e) {
       console.error('Failed to parse ip_moderations from localStorage:', e);
     }
-    return [];
+    return [
+      {
+        id: 'ip-ban-demo-1',
+        ip: '197.245.10.82',
+        deviceId: 'dev_9381024_a7b8c',
+        type: 'ban',
+        targetUserId: 'user-banned-demo-1',
+        targetUsername: 'عمر_المشاغب',
+        actionBy: 'المطور الرئيسي',
+        reason: 'مخالفة شروط الدردشة وتكرار نشر الروابط',
+        createdAt: '2026-08-25T14:30:00.000Z'
+      },
+      {
+        id: 'ip-ban-demo-2',
+        ip: '45.132.88.19',
+        deviceId: 'dev_iphone_9921_x',
+        type: 'ban',
+        targetUserId: 'user-banned-demo-2',
+        targetUsername: 'عاشق_الصمت_المخالف',
+        actionBy: 'إدارة الموقع',
+        reason: 'تكرار السبام والإعلانات المزعجة في الغرف',
+        createdAt: '2026-08-27T18:15:00.000Z'
+      }
+    ];
   });
+
+  const [deviceId, setDeviceId] = useState<string>('dev_unknown');
+
+  useEffect(() => {
+    getDeviceFingerprint().then(id => {
+      setDeviceId(id);
+    });
+  }, []);
 
   useEffect(() => {
     try {
@@ -809,7 +1071,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const removeIPModerationRecord = useCallback((idOrIp: string, type?: string) => {
     setIpModerations(prev => prev.filter(r => {
       if (r.id === idOrIp) return false;
-      if (r.ip === idOrIp) {
+      if (r.ip === idOrIp || r.deviceId === idOrIp) {
         if (type) return r.type !== type;
         return false;
       }
@@ -823,11 +1085,19 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }).catch(err => console.warn('Failed to remove IP mod via API:', err));
   }, [sendSocketEvent]);
 
-  const checkIpStatus = useCallback((ipToCheck?: string) => {
+  const checkIpStatus = useCallback((ipToCheck?: string, deviceIdToCheck?: string) => {
+    // Owner is always exempt from any bans
+    if (currentUserRef.current?.role === 'owner' || currentUserRef.current?.id === 'user-owner' || currentUserRef.current?.username?.toLowerCase() === 'owner') {
+      return { isBanned: false, isKicked: false, isMuted: false, bannedRecord: null, kickedRecord: null, mutedRecord: null, activeRecords: [] };
+    }
+
     const ip = ipToCheck || clientIp;
     const now = Date.now();
+    
+    // Check if the exact IP is banned
     const active = ipModerations.filter(rec => {
-      if (rec.ip !== ip && rec.ip !== 'all') return false;
+      const matchIp = rec.ip === ip || rec.ip === 'all';
+      if (!matchIp) return false;
       if (rec.type === 'ban') return true;
       if (rec.expiresAt) {
         return new Date(rec.expiresAt).getTime() > now;
@@ -835,7 +1105,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return true;
     });
 
-    const banned = active.find(r => r.type === 'ban');
+    const banned = active.find(r => r.type === 'ban') || ipModerations.some(r => r.type === 'ban' && r.ip === ip);
     const kicked = active.find(r => r.type === 'kick');
     const muted = active.find(r => r.type === 'mute');
 
@@ -882,8 +1152,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             switch (type) {
               case "INIT_STATE": {
+                const mockUserIds = ['user-katim', 'user-silva', 'user-raad', 'user-kibriya', 'user-jawbak', 'user-1', 'user-2', 'user-3', 'user-4', 'user-5', 'user-6', 'user-7', 'user-8'];
+                const mockMsgIds = ['msg-1', 'msg-2', 'msg-3', 'msg-4', 'msg-5', 'msg-6'];
                 if (payload.messages && Array.isArray(payload.messages)) {
-                  setMessages(payload.messages);
+                  setMessages(payload.messages.filter((m: Message) => !mockMsgIds.includes(m.id) && !mockUserIds.includes(m.senderId)));
                 }
                 if (payload.privateMessages && Array.isArray(payload.privateMessages)) {
                   setPrivateMessages(payload.privateMessages);
@@ -893,7 +1165,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
                 if (payload.users && payload.users.length > 0) {
                   const cleanUsers = payload.users
-                    .filter((u: User) => !['user-1', 'user-2', 'user-3', 'user-4', 'user-5', 'user-6', 'user-7', 'user-8'].includes(u.id))
+                    .filter((u: User) => !mockUserIds.includes(u.id))
                     .map((u: User) => ({
                       ...u,
                       friends: (u.friends || []).filter(fId => fId !== 'user-system' && fId !== 'system')
@@ -925,8 +1197,91 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     return merged;
                   });
                 }
+                if (payload.news && Array.isArray(payload.news)) {
+                  setNews(payload.news);
+                }
+                if (payload.wallPosts && Array.isArray(payload.wallPosts)) {
+                  setWallPosts(payload.wallPosts);
+                }
                 if (payload.siteSettings && typeof payload.siteSettings === 'object') {
                   setSiteSettings(prev => ({ ...prev, ...payload.siteSettings }));
+                }
+                break;
+              }
+
+              case "SYNC_NEWS": {
+                if (Array.isArray(payload)) {
+                  setNews(payload);
+                }
+                break;
+              }
+
+              case "NEW_NEWS_POST": {
+                const post: NewsPost = payload;
+                if (!post || !post.id) break;
+
+                setNews(prev => {
+                  if (prev.some(n => n.id === post.id)) return prev;
+                  return [post, ...prev];
+                });
+
+                const curUser = currentUserRef.current;
+                const author = post.authorName || 'الإدارة';
+                const preview = post.title ? `${post.title}: ${post.content}` : post.content;
+                const truncatedPreview = preview.length > 55 ? preview.substring(0, 55) + '...' : preview;
+
+                // 1. Notification in User's Notification Center
+                if (curUser) {
+                  const newsNotif: Notification = {
+                    id: `notif-news-${Date.now()}-${Math.random()}`,
+                    userId: curUser.id,
+                    type: 'system',
+                    title: `📰 خبر جديد: ${post.title || author}`,
+                    message: post.title ? `${post.title} - ${post.content}` : post.content,
+                    senderId: 'system',
+                    senderName: author,
+                    senderAvatar: post.authorAvatar,
+                    timestamp: post.timestamp || formatEnglishTime(new Date()),
+                    isRead: false
+                  };
+                  setNotifications(prev => [newsNotif, ...prev]);
+                }
+
+                // 2. Top Banner Alert
+                showTopBanner(`📰 خبر جديد من "${author}": ${truncatedPreview}`);
+
+                // 3. In-App Toast Popup (Just like Private Message Alert)
+                addToast({
+                  type: 'news',
+                  title: `📰 خبر جديد من ${author}`,
+                  message: truncatedPreview,
+                  avatar: post.authorAvatar,
+                  senderName: author,
+                });
+
+                // 4. Audio Alert
+                if (audioSettingsRef.current?.notificationSound !== false) {
+                  playChatSound('notification');
+                }
+
+                // 5. Native Browser Notification
+                showBrowserNotification(`📰 خبر جديد: ${post.title || author}`, {
+                  body: truncatedPreview,
+                  icon: post.authorAvatar,
+                  onClick: () => {
+                    try {
+                      window.focus();
+                    } catch {}
+                    setSideMenuInitialView('news');
+                    setIsSideMenuOpen(true);
+                  }
+                });
+                break;
+              }
+
+              case "SYNC_WALL_POSTS": {
+                if (Array.isArray(payload)) {
+                  setWallPosts(payload);
                 }
                 break;
               }
@@ -1160,9 +1515,12 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
               case "SYNC_USERS": {
                 if (Array.isArray(payload)) {
+                  const mockUserIds = ['user-katim', 'user-silva', 'user-raad', 'user-kibriya', 'user-jawbak', 'user-1', 'user-2', 'user-3', 'user-4', 'user-5', 'user-6', 'user-7', 'user-8'];
                   setUsers(prev => {
                     const userMap = new Map(prev.map(u => [u.id, u]));
-                    payload.forEach((u: User) => userMap.set(u.id, u));
+                    payload
+                      .filter((u: User) => !mockUserIds.includes(u.id))
+                      .forEach((u: User) => userMap.set(u.id, u));
                     return Array.from(userMap.values());
                   });
                 }
@@ -1197,6 +1555,123 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
               case "SYNC_ROOMS": {
                 if (Array.isArray(payload)) {
                   setRooms(payload);
+                  setCurrentRoom(prev => {
+                    const found = payload.find((r: Room) => r.id === prev.id);
+                    if (found) {
+                      return { ...prev, ...found };
+                    }
+                    return prev;
+                  });
+                }
+                break;
+              }
+
+              case "ROOM_KICKED": {
+                const { roomId, userId, targetRoomName, fallbackRoomId } = payload || {};
+                const fallbackId = fallbackRoomId || 'room-general';
+                setUsers(prev => prev.map(u => {
+                  if (u.id === userId && (u.currentRoomId === roomId || !u.currentRoomId)) {
+                    return { ...u, currentRoomId: fallbackId };
+                  }
+                  return u;
+                }));
+                setRooms(prev => prev.map(r => {
+                  if (r.id === roomId) {
+                    const currentKicked = r.kickedUsers || [];
+                    if (!currentKicked.includes(userId)) {
+                      return { ...r, kickedUsers: [...currentKicked, userId] };
+                    }
+                  }
+                  return r;
+                }));
+                setCurrentRoom(prev => {
+                  if (prev.id === roomId) {
+                    const currentKicked = prev.kickedUsers || [];
+                    const updatedKicked = currentKicked.includes(userId) ? currentKicked : [...currentKicked, userId];
+                    return { ...prev, kickedUsers: updatedKicked };
+                  }
+                  return prev;
+                });
+                if (currentUser && currentUser.id === userId) {
+                  setCurrentUser(prev => prev ? { ...prev, currentRoomId: fallbackId } : null);
+                  setCurrentRoom(prev => {
+                    if (prev.id === roomId) {
+                      const gen = rooms.find(r => r.id === fallbackId) || rooms[0];
+                      showTopBanner(`🚫 تم طردك من غرفة (${targetRoomName || prev.name})`);
+                      return gen ? { ...gen } : prev;
+                    }
+                    return prev;
+                  });
+                }
+                break;
+              }
+
+              case "ROOM_MUTED": {
+                const { roomId, userId, targetRoomName } = payload || {};
+                setRooms(prev => prev.map(r => {
+                  if (r.id === roomId) {
+                    const currentMuted = r.mutedUsers || [];
+                    if (!currentMuted.includes(userId)) {
+                      return { ...r, mutedUsers: [...currentMuted, userId] };
+                    }
+                  }
+                  return r;
+                }));
+                setCurrentRoom(prev => {
+                  if (prev.id === roomId) {
+                    const currentMuted = prev.mutedUsers || [];
+                    const updatedMuted = currentMuted.includes(userId) ? currentMuted : [...currentMuted, userId];
+                    return { ...prev, mutedUsers: updatedMuted };
+                  }
+                  return prev;
+                });
+                if (currentUser && currentUser.id === userId && currentRoom.id === roomId) {
+                  showTopBanner(`🔇 تم كتمك في غرفة (${targetRoomName || currentRoom.name})`);
+                }
+                break;
+              }
+
+              case "ROOM_UNMUTED": {
+                const { roomId, userId } = payload || {};
+                setRooms(prev => prev.map(r => {
+                  if (r.id === roomId) {
+                    return { ...r, mutedUsers: (r.mutedUsers || []).filter(uid => uid !== userId) };
+                  }
+                  return r;
+                }));
+                setCurrentRoom(prev => {
+                  if (prev.id === roomId) {
+                    return { ...prev, mutedUsers: (prev.mutedUsers || []).filter(uid => uid !== userId) };
+                  }
+                  return prev;
+                });
+                break;
+              }
+
+              case "ROOM_UNKICKED": {
+                const { roomId, userId } = payload || {};
+                setRooms(prev => prev.map(r => {
+                  if (r.id === roomId) {
+                    return { ...r, kickedUsers: (r.kickedUsers || []).filter(uid => uid !== userId) };
+                  }
+                  return r;
+                }));
+                setCurrentRoom(prev => {
+                  if (prev.id === roomId) {
+                    return { ...prev, kickedUsers: (prev.kickedUsers || []).filter(uid => uid !== userId) };
+                  }
+                  return prev;
+                });
+                break;
+              }
+
+              case "SYNC_SETTINGS": {
+                const newSettings = payload;
+                if (newSettings && typeof newSettings === 'object') {
+                  setSiteSettings(prev => ({ ...prev, ...newSettings }));
+                  try {
+                    localStorage.setItem('araby_site_settings', JSON.stringify(newSettings));
+                  } catch {}
                 }
                 break;
               }
@@ -1644,10 +2119,38 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setRoomActivityLogs([]);
   };
 
+  // Helper to emit user room leave message "🚪 غادر هذا المستخدم الغرفة [ ... ]"
+  const emitUserRoomLeaveMessage = (user: User, roomId: string) => {
+    if (user.role === 'owner' && user.isStealth) return;
+    if (siteSettings?.hideRoomSwitchNotifications || siteSettings?.announceUserEnterLeave === false) return;
+
+    const now = new Date();
+    const leaveMsg: Message = {
+      id: `leave-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      roomId,
+      senderId: user.id,
+      senderName: user.username,
+      senderRole: user.role,
+      senderGender: user.gender,
+      senderAvatar: user.avatar,
+      senderUsernameColor: user.usernameColor,
+      text: `🚪 غادر هذا المستخدم الغرفة [ ${user.username} ]`,
+      type: 'text',
+      timestamp: formatEnglishTime(now),
+      date: formatEnglishDate(now),
+    };
+
+    setMessages(prev => [...prev, leaveMsg]);
+    sendSocketEvent('SEND_MESSAGE', leaveMsg);
+  };
+
   // Helper to emit user room join message "هذا المستخدم انضم للغرفة [ رتبة ... ]"
   const emitUserRoomJoinMessage = (user: User, roomId: string) => {
     // If owner is in stealth mode, do not emit public room join announcement
     if (user.role === 'owner' && user.isStealth) {
+      return;
+    }
+    if (siteSettings?.hideRoomSwitchNotifications || siteSettings?.announceUserEnterLeave === false) {
       return;
     }
 
@@ -1682,26 +2185,143 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     sendSocketEvent('SEND_MESSAGE', joinMsg);
   };
 
+  // Actual presence: Update last active time in state and storage
+  const updateUserLastActivity = useCallback((targetUserId?: string) => {
+    const uid = targetUserId || currentUser?.id;
+    if (!uid) return;
+    const now = Date.now();
+    setUsers(prev => prev.map(u => u.id === uid ? { ...u, lastSeenTimestamp: now, lastActivityTime: now, onlineStatus: 'online', isOnline: true } : u));
+    setCurrentUser(prev => prev && prev.id === uid ? { ...prev, lastSeenTimestamp: now, lastActivityTime: now, onlineStatus: 'online', isOnline: true } : prev);
+  }, [currentUser?.id]);
+
+  // Actual presence: Clean up users who exceeded inactivity timeout
+  const cleanupInactiveUsers = useCallback(() => {
+    const timeoutMin = siteSettings?.userInactivityTimeoutMinutes || 15;
+    const cutoff = Date.now() - (timeoutMin * 60 * 1000);
+
+    setUsers(prev => {
+      let changed = false;
+      const updated = prev.map(u => {
+        if (currentUser && u.id === currentUser.id) return u;
+        if (u.onlineStatus === 'online' && u.lastSeenTimestamp && u.lastSeenTimestamp < cutoff) {
+          changed = true;
+          return {
+            ...u,
+            onlineStatus: 'offline' as const,
+            isOnline: false,
+          };
+        }
+        return u;
+      });
+      return changed ? updated : prev;
+    });
+  }, [siteSettings?.userInactivityTimeoutMinutes, currentUser]);
+
+  // Inactivity auto-cleanup runner (checks every minute)
+  useEffect(() => {
+    cleanupInactiveUsers();
+    const interval = setInterval(() => {
+      cleanupInactiveUsers();
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [cleanupInactiveUsers]);
+
+  // User activity listeners
+  useEffect(() => {
+    let throttleTimeout: any = null;
+    const handleActivity = () => {
+      if (!throttleTimeout) {
+        throttleTimeout = setTimeout(() => {
+          updateUserLastActivity();
+          throttleTimeout = null;
+        }, 20000);
+      }
+    };
+
+    window.addEventListener('mousemove', handleActivity, { passive: true });
+    window.addEventListener('keydown', handleActivity, { passive: true });
+    window.addEventListener('touchstart', handleActivity, { passive: true });
+    window.addEventListener('focus', handleActivity);
+
+    return () => {
+      window.removeEventListener('mousemove', handleActivity);
+      window.removeEventListener('keydown', handleActivity);
+      window.removeEventListener('touchstart', handleActivity);
+      window.removeEventListener('focus', handleActivity);
+      if (throttleTimeout) clearTimeout(throttleTimeout);
+    };
+  }, [updateUserLastActivity]);
+
+  // Welcome Bot: Send automated or custom welcome message
+  const sendBotWelcomeMessage = useCallback((customText?: string) => {
+    const botName = siteSettings?.welcomeBotName || 'بوت الترحيب الآلي 🤖';
+    const rawTemplate = customText || siteSettings?.welcomeBotMessage || 'أهلاً وسهلاً بك يا {username} في دردشتنا! نتمنى لك أطيب الأوقات والالتزام بالقوانين 🌹';
+    const formatted = rawTemplate.replace('{username}', currentUser?.username || 'الزوار والأعضاء');
+
+    const botMessage: Message = {
+      id: `bot-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      roomId: currentRoom?.id || 'room-general',
+      senderId: 'system-welcome-bot',
+      senderName: botName,
+      senderRole: 'admin',
+      senderGender: 'male',
+      senderAvatar: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100',
+      text: formatted,
+      type: 'text',
+      timestamp: formatEnglishTime(new Date()),
+      date: formatEnglishDate(new Date()),
+      createdAt: new Date().toISOString()
+    };
+
+    setMessages(prev => [...prev, botMessage]);
+    sendSocketEvent('SEND_MESSAGE', botMessage);
+  }, [siteSettings?.welcomeBotName, siteSettings?.welcomeBotMessage, currentUser?.username, currentRoom?.id]);
+
+  // Welcome Bot Scheduler (runs every minute or per owner interval)
+  useEffect(() => {
+    if (!siteSettings?.welcomeBotActive) return;
+
+    const intervalSec = Math.max(10, siteSettings?.welcomeBotIntervalSeconds || 60);
+    const timer = setInterval(() => {
+      sendBotWelcomeMessage();
+    }, intervalSec * 1000);
+
+    return () => clearInterval(timer);
+  }, [siteSettings?.welcomeBotActive, siteSettings?.welcomeBotIntervalSeconds, sendBotWelcomeMessage]);
+
   // Helper to fetch IP and update current user's country & flag automatically
   const updateGeoLocationForUser = useCallback(async (userId: string) => {
     try {
       const geo = await fetchUserGeoIP();
       if (geo) {
-        setUsers(prev => prev.map(u => u.id === userId ? {
-          ...u,
-          country: geo.country,
-          countryFlag: geo.countryFlag,
-          ip: geo.ip,
-          locationMap: `${geo.country} (${geo.ip})`
-        } : u));
+        const arabicCountry = getArabicCountryName(geo.country) || 'اليمن';
 
-        setCurrentUser(prev => prev && prev.id === userId ? {
-          ...prev,
-          country: geo.country,
-          countryFlag: geo.countryFlag,
-          ip: geo.ip,
-          locationMap: `${geo.country} (${geo.ip})`
-        } : prev);
+        setUsers(prev => prev.map(u => {
+          if (u.id !== userId) return u;
+          // Keep country if user manually modified it via Language/Location settings
+          const targetCountry = u.countryModified ? u.country : arabicCountry;
+          const targetFlag = u.countryModified ? u.countryFlag : (geo.countryFlag || getCountryFlagByName(arabicCountry) || '🇾🇪');
+          return {
+            ...u,
+            country: targetCountry,
+            countryFlag: targetFlag,
+            ip: geo.ip || u.ip,
+            locationMap: `${getEnglishCountryName(targetCountry)} (${geo.ip || u.ip})`
+          };
+        }));
+
+        setCurrentUser(prev => {
+          if (!prev || prev.id !== userId) return prev;
+          const targetCountry = prev.countryModified ? prev.country : arabicCountry;
+          const targetFlag = prev.countryModified ? prev.countryFlag : (geo.countryFlag || getCountryFlagByName(arabicCountry) || '🇾🇪');
+          return {
+            ...prev,
+            country: targetCountry,
+            countryFlag: targetFlag,
+            ip: geo.ip || prev.ip,
+            locationMap: `${getEnglishCountryName(targetCountry)} (${geo.ip || prev.ip})`
+          };
+        });
       }
     } catch (err) {
       console.warn('Failed to detect GeoIP for user:', err);
@@ -1720,7 +2340,20 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, error: '🚫 هذا الآي بي محظور نهائياً من دخول الدردشة' };
     }
 
-    // 2. IP Kick check (User cannot enter as visitor while kick is active)
+    // 2. Device Ban check
+    const isDeviceBlocked = (siteSettings.blockedDevices || []).some(d => (deviceId && (d.id === deviceId || d.token === deviceId)));
+    if (isDeviceBlocked) {
+      return { success: false, error: '🚫 هذا الجهاز محظور نهائياً من دخول الدردشة من قبل إدارة الموقع' };
+    }
+
+    // 3. Browser Fingerprint Ban check
+    const currentBrowserFp = `fp_brw_${(navigator.userAgent || '').replace(/[^a-zA-Z0-9]/g, '').slice(-12)}`;
+    const isBrowserBlocked = (siteSettings.blockedBrowsers || []).some(b => b.id === currentBrowserFp || b.fingerprint === currentBrowserFp);
+    if (isBrowserBlocked) {
+      return { success: false, error: '🚫 بصمة هذا المتصفح محظورة من دخول الموقع وفقاً لقرارات الأمان' };
+    }
+
+    // 4. IP Kick check (User cannot enter as visitor while kick is active)
     if (ipCheck.isKicked) {
       const expTime = ipCheck.kickedRecord?.expiresAt ? formatEnglishTime(new Date(ipCheck.kickedRecord.expiresAt)) : 'انتهاء المدة';
       alert(`🚫 هذا الآي بي مطرود مؤقتاً كزائر حتى ${expTime}. يمكنك تسجيل الدخول إذا كنت تمتلك عضوية مسجلة مسبقاً.`);
@@ -1736,8 +2369,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, error: 'يجب أن يتكون اسم الزائر من حرفين على الأقل' };
     }
 
-    if (cleanUsername.length > 25) {
-      return { success: false, error: 'اسم الزائر طويل جداً (الحد الأقصى 25 حرف)' };
+    const maxUserLen = siteSettings?.maxUsernameLength || 20;
+    if (cleanUsername.length > maxUserLen) {
+      return { success: false, error: `🚫 اسم الزائر يتجاوز الحد الأقصى المسموح (${maxUserLen} حرف)` };
     }
 
     // 3. Strict Duplicate Username Check across all users (registered and active)
@@ -1752,6 +2386,15 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const muteUntilFromIp = ipCheck.mutedRecord?.expiresAt;
     const cleanAge = (age === 'العمر' || !age) ? 'عدم الإظهار' : age;
 
+    // Restore saved format settings if user previously configured them
+    let initialFormat: any = null;
+    try {
+      const globalFormat = localStorage.getItem('araby_chat_text_format');
+      if (globalFormat) initialFormat = JSON.parse(globalFormat);
+    } catch (e) {
+      console.error(e);
+    }
+
     const newVisitor: User = {
       id: `visitor-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       username: cleanUsername,
@@ -1761,7 +2404,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       avatar: '/default_guest.svg',
       coins: 0,
       likes: 0,
-      country: 'اليمن',
+      country: 'Yemen',
       countryFlag: '🇾🇪',
       ip: clientIp,
       currentRoomId: currentRoom.id,
@@ -1774,6 +2417,12 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       blockedUsers: [],
       isMuted: isMutedFromIp,
       muteUntil: muteUntilFromIp,
+      chatTextColor: initialFormat?.color,
+      chatTextBgGradient: initialFormat?.bgGradient,
+      chatFontFamily: initialFormat?.fontFamily,
+      chatFontStyle: initialFormat?.style,
+      chatTextWeight: initialFormat?.weight,
+      chatIsNeon: initialFormat?.isNeon,
     };
 
     setUsers(prev => [newVisitor, ...prev]);
@@ -1781,6 +2430,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCurrentView('rooms');
     emitUserRoomJoinMessage(newVisitor, currentRoom.id);
     sendSocketEvent('JOIN_USER', { user: newVisitor });
+    saveUserToFirestore(newVisitor);
 
     if (isMutedFromIp) {
       showTopBanner(`⚠️ تنبيه: تم تطبيق كتم الآي بي التلقائي على حساب الزائر حتى انتهاء وقت الكتم.`);
@@ -1797,6 +2447,19 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const ipCheck = checkIpStatus();
     if (ipCheck.isBanned) {
       return { success: false, error: '🚫 هذا الآي بي محظور نهائياً من دخول الدردشة' };
+    }
+
+    // 2. Device Ban check
+    const isDeviceBlocked = (siteSettings.blockedDevices || []).some(d => (deviceId && (d.id === deviceId || d.token === deviceId)));
+    if (isDeviceBlocked) {
+      return { success: false, error: '🚫 هذا الجهاز محظور نهائياً من دخول الدردشة من قبل إدارة الموقع' };
+    }
+
+    // 3. Browser Fingerprint Ban check
+    const currentBrowserFp = `fp_brw_${(navigator.userAgent || '').replace(/[^a-zA-Z0-9]/g, '').slice(-12)}`;
+    const isBrowserBlocked = (siteSettings.blockedBrowsers || []).some(b => b.id === currentBrowserFp || b.fingerprint === currentBrowserFp);
+    if (isBrowserBlocked) {
+      return { success: false, error: '🚫 بصمة هذا المتصفح محظورة من دخول الموقع وفقاً لقرارات الأمان' };
     }
 
     const cleanUsername = username.trim();
@@ -1845,7 +2508,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setCurrentUser(user);
     setCurrentView('rooms');
+    emitUserRoomJoinMessage(user, currentRoom.id);
     sendSocketEvent('JOIN_USER', { user });
+    saveUserToFirestore(user);
 
     // Fetch IP and update country/flag automatically
     updateGeoLocationForUser(user.id);
@@ -1866,6 +2531,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const cleanUsername = username.trim();
     if (!cleanUsername) return { success: false, error: 'الرجاء كتابة اسم المستخدم' };
     if (cleanUsername.length < 2) return { success: false, error: 'يجب أن يتكون الاسم من حرفين على الأقل' };
+    const maxUserLen = siteSettings?.maxUsernameLength || 20;
+    if (cleanUsername.length > maxUserLen) {
+      return { success: false, error: `🚫 اسم المستخدم يتجاوز الحد الأقصى المسموح (${maxUserLen} حرف)` };
+    }
     if (!password) return { success: false, error: 'الرجاء كتابة كلمة المرور' };
     if (password.length < 6) return { success: false, error: 'كلمة المرور قصيرة جداً، يجب أن تتكون من 6 خانات (أحرف أو أرقام) على الأقل للأمان 🔒' };
 
@@ -1893,7 +2562,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       coins: 0,
       likes: 0,
       likedBy: [],
-      country: 'اليمن',
+      country: 'Yemen',
       countryFlag: '🇾🇪',
       ip: clientIp,
       currentRoomId: currentRoom.id,
@@ -1910,7 +2579,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUsers(prev => [...prev, newMember]);
     setCurrentUser(newMember);
     setCurrentView('rooms');
+    emitUserRoomJoinMessage(newMember, currentRoom.id);
     sendSocketEvent('JOIN_USER', { user: newMember });
+    saveUserToFirestore(newMember);
     fetch('/api/users/update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1922,55 +2593,113 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { success: true };
   };
 
-  // Login as Owner (المالك)
-  const loginAsOwner = (): User => {
-    let owner = users.find(u => u.role === 'owner' || u.id === 'user-owner' || u.username === 'المالك');
-    if (!owner) {
-      owner = {
-        id: 'user-owner',
-        username: 'المالك',
-        password: 'Owner@2026',
-        email: 'owner@chat.ye',
-        role: 'owner',
-        gender: 'male',
-        age: 28,
-        avatar: '/default_male.svg',
-        wallCover: 'https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?auto=format&fit=crop&w=1000&q=80',
-        statusMessage: '👑 المالك الرئيسي | مرحباً بكم في دردشة عربي المطورة',
-        bio: 'حساب المالك الرئيسي والمؤسس للدردشة. يسعدني تواجدكم جميعاً.',
-        coins: 1000000,
-        likes: 500,
-        likedBy: [],
-        country: 'اليمن',
-        countryFlag: '🇾🇪',
-        currentRoomId: currentRoom?.id || 'room-general',
-        joinedDate: '01/01/2026',
-        lastSeen: 'الآن',
-        usernameColor: '#f59e0b',
-        fontColor: '#fbbf24',
-        fontSize: 16,
-        isStealth: false,
-        privatePrivacy: 'everyone',
-        onlineStatus: 'online',
-        ip: '197.220.12.89',
-        locationMap: 'صنعاء، اليمن',
-        friends: [],
-        ignores: [],
-      };
-      setUsers(prev => [owner!, ...prev]);
-    }
-    setCurrentUser(owner);
-    setCurrentView('rooms');
-    sendSocketEvent('JOIN_USER', { user: owner });
-    showTopBanner('👑 مرحباً بك! تم تسجيل الدخول كمالك الشات والموقع (المالك)');
+  // Login with Firebase Authentication (Google Quick Sign In)
+  const loginWithFirebaseGoogle = async (): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const result = await signInWithGoogle();
+      if (!result) {
+        return { success: false, error: 'تم إلغاء تسجيل الدخول أو إغلاق نافذة المصادقة' };
+      }
+      const { user: fbUser } = result;
+      let existingUser = users.find(u => u.email === fbUser.email || u.id === `firebase_${fbUser.uid}`);
+      if (!existingUser) {
+        const newUser: User = {
+          id: `firebase_${fbUser.uid}`,
+          username: fbUser.displayName || fbUser.email?.split('@')[0] || 'مستخدم جوجل',
+          password: `google_auth_${fbUser.uid}`,
+          email: fbUser.email || '',
+          role: 'member',
+          gender: 'male',
+          age: 25,
+          avatar: fbUser.photoURL || '/default_male.svg',
+          statusMessage: '✨ متصل عبر Firebase Authentication',
+          bio: 'حساب مسجل عبر نظام تسجيل الدخول السريع لـ Firebase.',
+          coins: 150,
+          likes: 0,
+          likedBy: [],
+          country: 'اليمن',
+          countryFlag: '🇾🇪',
+          ip: clientIp,
+          currentRoomId: currentRoom.id,
+          joinedDate: formatEnglishDate(new Date()),
+          joinedTimestamp: Date.now(),
+          lastSeen: 'الآن',
+          privatePrivacy: 'everyone',
+          onlineStatus: 'online',
+          friends: [],
+          ignores: [],
+          blockedUsers: []
+        };
+        setUsers(prev => [...prev, newUser]);
+        existingUser = newUser;
+      }
 
-    // Fetch IP and update country/flag automatically
-    updateGeoLocationForUser(owner.id);
-    return owner;
+      if (existingUser.isBanned) {
+        return { success: false, error: 'عذراً، هذا الحساب محظور من دخول الشات من قبل الإدارة' };
+      }
+
+      setCurrentUser(existingUser);
+      setCurrentView('rooms');
+      emitUserRoomJoinMessage(existingUser, currentRoom.id);
+      sendSocketEvent('JOIN_USER', { user: existingUser });
+      saveUserToFirestore(existingUser);
+      showTopBanner(`✨ أهلاً بك ${existingUser.username}! تم تسجيل الدخول بنجاح عبر Firebase Authentication.`);
+      updateGeoLocationForUser(existingUser.id);
+      return { success: true };
+    } catch (err: any) {
+      console.error('Firebase Auth error:', err);
+      return { success: false, error: err?.message || 'حدث خطأ أثناء الاتصال بخدمة Firebase Authentication' };
+    }
   };
 
   // Logout
   const logout = () => {
+    if (currentUser) {
+      const userTag = getUserDisplayTag(currentUser);
+      const userRoomId = currentUser.currentRoomId || currentRoom?.id || 'room-general';
+
+      // 1. Emit exit announcement message in room
+      const now = new Date();
+      const isVisitor = currentUser.role === 'visitor';
+      let exitText = '';
+      if (isVisitor) {
+        exitText = `غادر ${getUserDisplayTag(currentUser)}`;
+      } else {
+        let roleTitle = 'عضو';
+        if (currentUser.role === 'vip') roleTitle = 'مميز';
+        else if (currentUser.role === 'moderator') roleTitle = 'مشرف';
+        else if (currentUser.role === 'management') roleTitle = 'إدارة';
+        else if (currentUser.role === 'admin') roleTitle = 'أدمن';
+        else if (currentUser.role === 'owner') roleTitle = 'المالك';
+        exitText = `غادر ${currentUser.username} [ ${roleTitle} ]`;
+      }
+
+      const exitMsg: Message = {
+        id: `sys-exit-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        roomId: userRoomId,
+        senderId: 'user-system',
+        senderName: 'System',
+        senderRole: 'management',
+        senderGender: 'other',
+        text: exitText,
+        type: 'system',
+        timestamp: formatEnglishTime(now),
+        date: formatEnglishDate(now)
+      };
+
+      setMessages(prev => [...prev, exitMsg]);
+      sendSocketEvent('SEND_MESSAGE', exitMsg);
+
+      // 2. Clear private messages involving this user on logout
+      setPrivateMessages(prev => prev.filter(pm => pm.senderId !== currentUser.id && pm.receiverId !== currentUser.id));
+      sendSocketEvent('CLEAR_USER_PRIVATE_MESSAGES', { userId: currentUser.id });
+      fetch('/api/private/clear-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUser.id })
+      }).catch(err => console.warn('Failed to clear user private messages on backend:', err));
+    }
+
     setCurrentUser(null);
     setCurrentView('landing');
     setActivePrivateUserId(null);
@@ -2192,7 +2921,10 @@ ${modsText}
         'join',
         `انضمام إلى ${room.name}`
       );
-      // Emit user join room message in feed
+      // Emit user room leave message from previous room and join message in new room
+      if (previousRoomId && previousRoomId !== room.id) {
+        emitUserRoomLeaveMessage(currentUser, previousRoomId);
+      }
       emitUserRoomJoinMessage(currentUser, room.id);
     }
 
@@ -2428,8 +3160,45 @@ ${modsText}
   };
 
   // Send Public Message
-  const sendMessage = (text: string, type: Message['type'] = 'text', mediaUrl?: string, voiceDuration?: number, textStyle?: { color?: string; fontSize?: string; fontWeight?: string }) => {
+  const sendMessage = (
+    text: string,
+    type: Message['type'] = 'text',
+    mediaUrl?: string,
+    voiceDuration?: number,
+    textStyle?: {
+      color?: string;
+      fontSize?: string;
+      fontWeight?: string;
+      fontFamily?: string;
+      fontStyle?: string;
+      bgGradient?: string;
+      isNeon?: boolean;
+    }
+  ) => {
     if (!currentUser) return;
+
+    // 1. Data Size Check & Max Public Length
+    const maxPublicLen = siteSettings?.maxPublicMessageLength || 500;
+    if (text && text.length > maxPublicLen) {
+      showTopBanner(`🚫 تجاوزت الحد الأقصى لطول الرسالة في العام (${maxPublicLen} حرف)`);
+      return;
+    }
+
+    if (siteSettings?.enableProfilePhotoCheck && (!currentUser.avatar || currentUser.avatar.includes('default_guest'))) {
+      showTopBanner('🚫 يتطلب إرسال الرسائل تعيين صورة بروفايل خاصة بك أولاً من إعدادات الملف الشخصي!');
+      return;
+    }
+
+    // 2. Rate Limiting Check (Max 2 messages per second)
+    const nowMs = Date.now();
+    const timestamps = userMsgTimestampsRef.current;
+    const recentTimestamps = timestamps.filter(t => nowMs - t < 1000);
+    if (recentTimestamps.length >= 2) {
+      showTopBanner('⚠️ معدل الطلبات (Rate Limiting): الحد الأقصى رسالتان في الثانية. يرجى التمهل!');
+      return;
+    }
+    recentTimestamps.push(nowMs);
+    userMsgTimestampsRef.current = recentTimestamps;
 
     // Check for /Clear or /clear command to clear public room chat
     const trimmedRawText = text ? text.trim() : '';
@@ -2487,6 +3256,30 @@ ${modsText}
       return;
     }
 
+    // Role-based Permissions Enforcement
+    if (type === 'text' && !currentUserCan('send_text')) {
+      showTopBanner('🚫 ليس لديك صلاحية إرسال الرسائل النصية حسب رتبتك');
+      return;
+    }
+    if (type === 'image' && !currentUserCan('send_media')) {
+      showTopBanner('🚫 ليس لديك صلاحية إرسال الصور والوسائط حسب رتبتك');
+      return;
+    }
+    if (type === 'voice') {
+      if (siteSettings.enableVoiceNotes === false || (siteSettings as any).modulesState?.voice === false) {
+        showTopBanner('🔒 الرسائل الصوتية معطلة حالياً في الموقع');
+        return;
+      }
+      if (!currentUserCan('send_voice')) {
+        showTopBanner('🚫 ليس لديك صلاحية إرسال الرسائل الصوتية حسب رتبتك');
+        return;
+      }
+    }
+    if ((type as string) === 'draw' && !currentUserCan('send_canvas')) {
+      showTopBanner('🚫 ليس لديك صلاحية استخدام لوحة الرسم حسب رتبتك');
+      return;
+    }
+
     // Auto profanity filtering
     let processedText = text;
     if (text) {
@@ -2497,6 +3290,16 @@ ${modsText}
     const now = new Date();
     const timeStr = formatEnglishTime(now);
     const dateStr = formatEnglishDate(now);
+
+    // Check background gradient permission and site settings
+    let effectiveBgGradient = textStyle?.bgGradient !== undefined ? textStyle.bgGradient : currentUser.chatTextBgGradient;
+    const isVisitorOrMember = currentUser.role === 'visitor' || currentUser.role === 'member';
+    const isBgHiddenForVisitorMember = siteSettings.hideChatBackgroundForVisitorAndMember !== false;
+    const hasBgPermission = hasRolePermission(currentUser.role, 'chat_background', siteSettings.rolePermissions);
+
+    if (effectiveBgGradient && isVisitorOrMember && (isBgHiddenForVisitorMember || !hasBgPermission)) {
+      effectiveBgGradient = undefined;
+    }
 
     const newMsg: Message = {
       id: `msg-${Date.now()}`,
@@ -2509,9 +3312,13 @@ ${modsText}
       senderUsernameColor: currentUser.usernameColor,
       senderUsernameFontSize: currentUser.usernameFontSize,
       text: processedText,
-      textColor: textStyle?.color || currentUser.fontColor,
-      textFontSize: textStyle?.fontSize || (currentUser.fontSize ? `${currentUser.fontSize}px` : undefined),
-      textWeight: textStyle?.fontWeight,
+      textColor: textStyle?.color || currentUser.chatTextColor || currentUser.fontColor,
+      textFontSize: textStyle?.fontSize || currentUser.chatTextFontSize || (currentUser.fontSize ? `${currentUser.fontSize}px` : undefined),
+      textWeight: textStyle?.fontWeight || currentUser.chatTextWeight,
+      fontFamily: textStyle?.fontFamily || currentUser.chatFontFamily,
+      textStyle: textStyle?.fontStyle || currentUser.chatFontStyle,
+      textBgGradient: effectiveBgGradient,
+      isNeon: textStyle?.isNeon !== undefined ? textStyle.isNeon : currentUser.chatIsNeon,
       type,
       mediaUrl,
       voiceDuration,
@@ -2521,6 +3328,7 @@ ${modsText}
 
     setMessages(prev => [...prev, newMsg]);
     sendSocketEvent('SEND_MESSAGE', newMsg);
+    saveMessageToFirestore(newMsg);
     fetch('/api/messages/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2654,6 +3462,28 @@ ${modsText}
   const sendPrivateMessage = (receiverId: string, text: string, type: 'text' | 'image' | 'voice' = 'text', mediaUrl?: string, voiceDuration?: number) => {
     if (!currentUser) return false;
 
+    const maxPrivateLen = siteSettings?.maxPrivateMessageLength || 500;
+    if (text && text.length > maxPrivateLen) {
+      showTopBanner(`🚫 تجاوزت الحد الأقصى لطول الرسالة في الخاص (${maxPrivateLen} حرف)`);
+      return false;
+    }
+
+    if (siteSettings?.enableProfilePhotoCheck && (!currentUser.avatar || currentUser.avatar.includes('default_guest'))) {
+      showTopBanner('🚫 يتطلب إرسال الرسائل الخاصة تعيين صورة بروفايل خاصة بك أولاً!');
+      return false;
+    }
+
+    // Check Site & Role Permissions for Private Chat
+    if (siteSettings.enableDirectChat === false || (siteSettings as any).modulesState?.private === false) {
+      showTopBanner('🔒 المحادثات الخاصة معطلة حالياً في الموقع من قِبل الإدارة');
+      return false;
+    }
+
+    if (!currentUserCan('private_chat')) {
+      showTopBanner('🚫 ليس لديك صلاحية استخدام المحادثات الخاصة حسب رتبتك');
+      return false;
+    }
+
     // Check Flood Protection
     if (checkFloodAndMute(currentUser)) return false;
 
@@ -2720,6 +3550,7 @@ ${modsText}
 
     setPrivateMessages(prev => [...prev, newPm]);
     sendSocketEvent('SEND_PRIVATE_MESSAGE', newPm);
+    savePrivateMessageToFirestore(newPm);
     fetch('/api/private-messages/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3107,6 +3938,7 @@ ${modsText}
     setCurrentUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === currentUser.id ? updatedUser : u));
     sendSocketEvent('UPDATE_USER', updatedUser);
+    saveUserToFirestore(updatedUser);
     fetch('/api/users/update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3188,8 +4020,25 @@ ${modsText}
     const targetUser = users.find(u => u.id === targetUserId);
     if (!targetUser) return;
 
-    if (targetUser.role === 'owner') {
+    if (targetUser.role === 'owner' || targetUser.id === 'user-owner') {
       showTopBanner('🚫 لا يمكنك اتخاذ أي إجراء إداري (كتم أو طرد أو حظر) على المالك الرئيسي!');
+      return;
+    }
+
+    const isActorOwner = currentUser.role === 'owner' || currentUser.id === 'user-owner';
+    const isActorSuperAdmin = !!currentUser.is_super_admin || isActorOwner;
+
+    // Super Admin Immunity Check
+    if (targetUser.is_super_admin && !isActorSuperAdmin && currentUser.id !== targetUserId) {
+      showTopBanner('🛡️ هذا العضو يتمتع بحصانة (Super Admin). لا يمكن اتخاذ أي إجراء إداري ضده!');
+      return;
+    }
+
+    // Mutual Ban & Rank Enforcement: Cannot take action on equal or higher rank unless owner/super-admin
+    const actorLevel = getRoleLevel(currentUser.role);
+    const targetLevel = getRoleLevel(targetUser.role);
+    if (!isActorSuperAdmin && targetLevel >= actorLevel && currentUser.id !== targetUserId) {
+      showTopBanner('🚫 لا يمكنك حظر أو اتخاذ أي إجراء إداري ضد عضو يملك نفس رتبتك أو رتبة أعلى منك!');
       return;
     }
 
@@ -3264,6 +4113,7 @@ ${modsText}
       addIPModerationRecord({
         id: `ip-ban-${Date.now()}-${Math.random()}`,
         ip: targetIp,
+        deviceId: targetUser.deviceId || deviceId,
         type: 'ban',
         targetUserId,
         targetUsername: targetUser.username,
@@ -3598,14 +4448,35 @@ ${modsText}
     const targetUser = users.find(u => u.id === userId);
     if (!targetUser) return;
 
-    const isActorOwner = currentUser.role === 'owner';
+    const isActorOwner = currentUser.role === 'owner' || currentUser.id === 'user-owner';
+    const isActorSuperAdmin = !!currentUser.is_super_admin || isActorOwner;
     const isActorAdmin = currentUser.role === 'admin';
     const isActorManagement = currentUser.role === 'management';
     const isSelfEdit = currentUser.id === userId;
 
-    // Protection 1: Owner profile cannot be modified by anyone except the Owner himself
-    if (targetUser.role === 'owner' && !isActorOwner) {
-      showTopBanner('🚫 لا يمكن تعديل الملف الشخصي للمالك الرئيسي إلا بواسطة المالك نفسه!');
+    // Protection 1: Primary Owner (user-owner) profile cannot be modified by anyone except the primary owner itself
+    if (targetUser.id === 'user-owner' && currentUser.id !== 'user-owner') {
+      showTopBanner('🚫 لا يمكن تعديل أو تغيير رتبة أو ملف المالك الرئيسي إلا بواسطة المالك الرئيسي الأصلي!');
+      return;
+    }
+
+    // Super Admin Immunity Check
+    if (targetUser.is_super_admin && !isActorSuperAdmin && !isSelfEdit) {
+      showTopBanner('🛡️ هذا العضو يتمتع بحصانة (Super Admin). لا يمكن تعديل ملفه!');
+      return;
+    }
+
+    // Mutual Rank & Ban Enforcement: Cannot modify equal or higher rank unless super admin/owner or self
+    const actorLevel = getRoleLevel(currentUser.role);
+    const targetLevel = getRoleLevel(targetUser.role);
+    if (!isActorSuperAdmin && targetLevel >= actorLevel && !isSelfEdit) {
+      showTopBanner('🚫 لا يمكنك تعديل ملف عضو يملك نفس رتبتك أو رتبة أعلى منك!');
+      return;
+    }
+
+    // Prevent unauthorized change of is_super_admin field
+    if (updates.is_super_admin !== undefined && updates.is_super_admin !== targetUser.is_super_admin && !isActorOwner && !currentUser.is_super_admin) {
+      showTopBanner('🚫 لا تملك صلاحية تعديل حقل حصانة السوبر أدمن (is_super_admin)!');
       return;
     }
 
@@ -3667,9 +4538,27 @@ ${modsText}
 
   // Ban / Unban User Management
   const banUser = (userId: string) => {
+    if (!currentUser) return;
     const targetUser = users.find(u => u.id === userId);
-    if (targetUser?.role === 'owner') {
+    if (!targetUser) return;
+
+    if (targetUser.role === 'owner' || targetUser.id === 'user-owner') {
       showTopBanner('🚫 لا يمكن حظر المالك الرئيسي!');
+      return;
+    }
+
+    const isActorOwner = currentUser.role === 'owner' || currentUser.id === 'user-owner';
+    const isActorSuperAdmin = !!currentUser.is_super_admin || isActorOwner;
+
+    if (targetUser.is_super_admin && !isActorSuperAdmin && currentUser.id !== userId) {
+      showTopBanner('🛡️ هذا العضو يتمتع بحصانة (Super Admin). لا يمكن حظره!');
+      return;
+    }
+
+    const actorLevel = getRoleLevel(currentUser.role);
+    const targetLevel = getRoleLevel(targetUser.role);
+    if (!isActorSuperAdmin && targetLevel >= actorLevel && currentUser.id !== userId) {
+      showTopBanner('🚫 لا يمكنك حظر عضو يملك نفس رتبتك أو رتبة أعلى منك!');
       return;
     }
     if (!banList.includes(userId)) {
@@ -3681,6 +4570,7 @@ ${modsText}
       addIPModerationRecord({
         id: `ip-ban-${Date.now()}-${Math.random()}`,
         ip: targetIp,
+        deviceId: targetUser?.deviceId || deviceId,
         type: 'ban',
         targetUserId: userId,
         targetUsername: targetUser?.username || userId,
@@ -3704,19 +4594,233 @@ ${modsText}
     showTopBanner(`🔓 تم رفع الحظر عن العضو (${targetUser?.username || userId}) بنجاح`);
   };
 
+  const bannedIps = useMemo(() => {
+    const list = new Set<string>();
+    ipModerations.forEach(r => {
+      if (r.type === 'ban' && r.ip && r.ip !== 'all') {
+        list.add(r.ip);
+      }
+    });
+    return Array.from(list);
+  }, [ipModerations]);
+
+  const banIp = (ip: string, username?: string, reason?: string) => {
+    const cleanIp = ip.trim();
+    if (!cleanIp) return;
+    const targetUser = users.find(u => u.ip === cleanIp || (username && u.username.toLowerCase() === username.toLowerCase()));
+    const finalUsername = username || targetUser?.username || cleanIp;
+
+    addIPModerationRecord({
+      id: `ip-ban-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      ip: cleanIp,
+      deviceId: targetUser?.deviceId,
+      type: 'ban',
+      targetUserId: targetUser?.id,
+      targetUsername: finalUsername,
+      actionBy: currentUser?.username || 'الإدارة',
+      reason: reason || 'حظر عنوان الآي بي من لوحة التحكم',
+      createdAt: new Date().toISOString()
+    });
+
+    if (targetUser) {
+      setBanList(prev => [...prev.filter(id => id !== targetUser.id), targetUser.id]);
+      setUsers(prev => prev.map(u => (u.id === targetUser.id || u.ip === cleanIp) ? { ...u, isBanned: true, onlineStatus: 'offline', currentRoomId: undefined } : u));
+    }
+
+    sendSocketEvent('BAN_USER', {
+      userId: targetUser?.id,
+      ip: cleanIp,
+      reason: reason || 'حظر IP'
+    });
+
+    addToast({
+      type: 'warning',
+      title: 'حظر IP',
+      message: `تم حظر عنوان الـ IP (${cleanIp}) للعضو [${finalUsername}] بنجاح 🚫`
+    });
+  };
+
+  const unbanIp = (ip: string) => {
+    const cleanIp = ip.trim();
+    if (!cleanIp) return;
+    removeIPModerationRecord(cleanIp, 'ban');
+    setUsers(prev => prev.map(u => u.ip === cleanIp ? { ...u, isBanned: false } : u));
+    sendSocketEvent('UNBAN_USER', { ip: cleanIp });
+    addToast({
+      type: 'success',
+      title: 'فك حظر IP',
+      message: `تم فك الحظر عن عنوان الـ IP (${cleanIp}) بنجاح 🔓`
+    });
+  };
+
+  const banDevice = (targetDeviceId: string, username?: string, reason?: string, deviceName?: string) => {
+    const cleanId = targetDeviceId.trim();
+    if (!cleanId) return;
+    const targetUser = users.find(u => u.deviceId === cleanId || (username && u.username.toLowerCase() === username.toLowerCase()));
+    const finalUsername = username || targetUser?.username || 'جهاز غير معروف';
+
+    const newItem: BlockedDeviceItem = {
+      id: cleanId,
+      name: deviceName || (cleanId.startsWith('dev_') ? `جهاز (${cleanId.substring(0, 10)})` : cleanId),
+      token: cleanId,
+      username: finalUsername,
+      targetUserId: targetUser?.id,
+      date: formatEnglishDate(new Date()),
+      reason: reason || 'حظر الجهاز من لوحة التحكم',
+      actionBy: currentUser?.username || 'الإدارة'
+    };
+
+    updateSiteSettings({
+      blockedDevices: [
+        ...(siteSettings.blockedDevices || []).filter(d => d.id !== cleanId && d.token !== cleanId),
+        newItem
+      ]
+    });
+
+    if (targetUser) {
+      setUsers(prev => prev.map(u => (u.id === targetUser.id || u.deviceId === cleanId) ? { ...u, isBanned: true, onlineStatus: 'offline', currentRoomId: undefined } : u));
+    }
+
+    addToast({
+      type: 'warning',
+      title: 'حظر جهاز',
+      message: `تم حظر الجهاز [${newItem.name}] للعضو (${finalUsername}) بنجاح 🚫`
+    });
+  };
+
+  const unbanDevice = (targetDeviceId: string) => {
+    const cleanId = targetDeviceId.trim();
+    if (!cleanId) return;
+
+    const removedItem = (siteSettings.blockedDevices || []).find(d => d.id === cleanId || d.token === cleanId);
+    updateSiteSettings({
+      blockedDevices: (siteSettings.blockedDevices || []).filter(d => d.id !== cleanId && d.token !== cleanId)
+    });
+
+    if (cleanId === deviceId) {
+      try {
+        localStorage.removeItem('araby_device_banned');
+        document.cookie = 'araby_ban=; path=/; max-age=0';
+      } catch (e) {}
+    }
+
+    if (removedItem?.targetUserId || removedItem?.username) {
+      setUsers(prev => prev.map(u => (u.id === removedItem.targetUserId || u.username === removedItem.username || u.deviceId === cleanId) ? { ...u, isBanned: false } : u));
+    }
+
+    addToast({
+      type: 'success',
+      title: 'فك حظر جهاز',
+      message: `تم فك حظر الجهاز [${removedItem?.name || cleanId}] للعضو (${removedItem?.username || 'مستخدم'}) بنجاح 🔓`
+    });
+  };
+
+  const banBrowser = (fingerprint: string, username?: string, reason?: string, browserName?: string) => {
+    const cleanFp = fingerprint.trim();
+    if (!cleanFp) return;
+    const targetUser = users.find(u => (u as any).browserFingerprint === cleanFp || (username && u.username.toLowerCase() === username.toLowerCase()));
+    const finalUsername = username || targetUser?.username || 'متصفح مجهول';
+
+    const newItem: BlockedBrowserItem = {
+      id: cleanFp,
+      name: browserName || `متصفح (${cleanFp.substring(0, 10)})`,
+      fingerprint: cleanFp,
+      username: finalUsername,
+      targetUserId: targetUser?.id,
+      date: formatEnglishDate(new Date()),
+      reason: reason || 'حظر بصمة المتصفح من لوحة التحكم',
+      actionBy: currentUser?.username || 'الإدارة'
+    };
+
+    updateSiteSettings({
+      blockedBrowsers: [
+        ...(siteSettings.blockedBrowsers || []).filter(b => b.id !== cleanFp && b.fingerprint !== cleanFp),
+        newItem
+      ]
+    });
+
+    if (targetUser) {
+      setUsers(prev => prev.map(u => (u.id === targetUser.id) ? { ...u, isBanned: true, onlineStatus: 'offline', currentRoomId: undefined } : u));
+    }
+
+    addToast({
+      type: 'warning',
+      title: 'حظر بصمة المتصفح',
+      message: `تم حظر بصمة المتصفح [${newItem.name}] للعضو (${finalUsername}) بنجاح 🚫`
+    });
+  };
+
+  const unbanBrowser = (fingerprint: string) => {
+    const cleanFp = fingerprint.trim();
+    if (!cleanFp) return;
+
+    const removedItem = (siteSettings.blockedBrowsers || []).find(b => b.id === cleanFp || b.fingerprint === cleanFp);
+    updateSiteSettings({
+      blockedBrowsers: (siteSettings.blockedBrowsers || []).filter(b => b.id !== cleanFp && b.fingerprint !== cleanFp)
+    });
+
+    if (removedItem?.targetUserId || removedItem?.username) {
+      setUsers(prev => prev.map(u => (u.id === removedItem.targetUserId || u.username === removedItem.username) ? { ...u, isBanned: false } : u));
+    }
+
+    addToast({
+      type: 'success',
+      title: 'فك حظر بصمة المتصفح',
+      message: `تم فك حظر بصمة المتصفح [${removedItem?.name || cleanFp}] للعضو (${removedItem?.username || 'مستخدم'}) بنجاح 🔓`
+    });
+  };
+
+  const banCountry = (countryCode: string, countryName?: string, reason?: string) => {
+    const cleanCode = countryCode.trim().toUpperCase();
+    if (!cleanCode) return;
+    const finalName = countryName || cleanCode;
+
+    const newItem: BlockedCountryItem = {
+      code: cleanCode,
+      name: finalName,
+      date: formatEnglishDate(new Date()),
+      reason: reason || 'حجب الدولة من دخول الموقع من الإدارة',
+      actionBy: currentUser?.username || 'الإدارة'
+    };
+
+    updateSiteSettings({
+      blockedCountries: [
+        ...(siteSettings.blockedCountries || []).filter(c => c.code.toUpperCase() !== cleanCode),
+        newItem
+      ]
+    });
+
+    addToast({
+      type: 'warning',
+      title: 'حجب دولة',
+      message: `تم حجب الدولة [${finalName}] (${cleanCode}) من دخول الموقع بنجاح 🌍🚫`
+    });
+  };
+
+  const unbanCountry = (countryCode: string) => {
+    const cleanCode = countryCode.trim().toUpperCase();
+    if (!cleanCode) return;
+
+    const removedItem = (siteSettings.blockedCountries || []).find(c => c.code.toUpperCase() === cleanCode);
+    updateSiteSettings({
+      blockedCountries: (siteSettings.blockedCountries || []).filter(c => c.code.toUpperCase() !== cleanCode)
+    });
+
+    addToast({
+      type: 'success',
+      title: 'إلغاء حجب الدولة',
+      message: `تم إلغاء حجب الدولة [${removedItem?.name || cleanCode}] والسماح لمواطنيها بالدخول 🌍🔓`
+    });
+  };
+
   // Room Management Actions
-  const updateRoomDetails = (roomId: string, updates: { name?: string; description?: string; password?: string; isLocked?: boolean; welcomeMessage?: string; autoWelcomeEnabled?: boolean }) => {
+  const updateRoomDetails = (roomId: string, updates: Partial<Room>) => {
     setRooms(prev => {
       const updatedRooms = prev.map(r => {
         if (r.id === roomId) {
           const updated = {
             ...r,
-            ...(updates.name !== undefined ? { name: updates.name } : {}),
-            ...(updates.description !== undefined ? { description: updates.description } : {}),
-            ...(updates.password !== undefined ? { password: updates.password } : {}),
-            ...(updates.isLocked !== undefined ? { isLocked: updates.isLocked } : {}),
-            ...(updates.welcomeMessage !== undefined ? { welcomeMessage: updates.welcomeMessage } : {}),
-            ...(updates.autoWelcomeEnabled !== undefined ? { autoWelcomeEnabled: updates.autoWelcomeEnabled } : {})
+            ...updates
           };
           if (currentRoom.id === roomId) {
             setCurrentRoom(updated);
@@ -3753,6 +4857,11 @@ ${modsText}
       localStorage.setItem('araby_custom_rooms', JSON.stringify(updatedRooms));
     } catch (e) {}
     sendSocketEvent('UPDATE_ROOMS', updatedRooms);
+    sendSocketEvent('ROOM_MUTE_EVENT', {
+      roomId,
+      userId,
+      targetRoomName: targetRoomObj.name
+    });
     showTopBanner(`🔇 تم كتم العضو (${target?.username || 'المستخدم'}) في غرفة (${targetRoomObj.name})`);
   };
 
@@ -3773,6 +4882,7 @@ ${modsText}
       localStorage.setItem('araby_custom_rooms', JSON.stringify(updatedRooms));
     } catch (e) {}
     sendSocketEvent('UPDATE_ROOMS', updatedRooms);
+    sendSocketEvent('ROOM_UNMUTE_EVENT', { roomId, userId });
     showTopBanner(`🔊 تم إلغاء كتم (${target?.username || 'المستخدم'}) في غرفة (${targetRoomObj.name})`);
   };
 
@@ -3784,6 +4894,7 @@ ${modsText}
     }
     const targetRoomObj = rooms.find(r => r.id === roomId) || currentRoom;
     const generalRoom = rooms.find(r => r.id === 'room-general') || rooms[0];
+    const fallbackId = generalRoom?.id || 'room-general';
 
     const updatedRooms = rooms.map(r => {
       if (r.id === roomId) {
@@ -3802,13 +4913,25 @@ ${modsText}
     } catch (e) {}
     sendSocketEvent('UPDATE_ROOMS', updatedRooms);
 
-    // Eject target user from this room if they are currently inside it
-    setUsers(prev => prev.map(u => {
-      if (u.id === userId && u.currentRoomId === roomId) {
-        return { ...u, currentRoomId: generalRoom?.id || 'room-general' };
-      }
-      return u;
-    }));
+    // Eject target user from this room and persist across server & socket
+    const targetUser = users.find(u => u.id === userId);
+    if (targetUser) {
+      const updatedTargetUser: User = { ...targetUser, currentRoomId: fallbackId };
+      setUsers(prev => prev.map(u => u.id === userId ? updatedTargetUser : u));
+      sendSocketEvent('UPDATE_USER', updatedTargetUser);
+      fetch('/api/users/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: updatedTargetUser })
+      }).catch(err => console.warn('Failed to update kicked user room in D1:', err));
+    }
+
+    sendSocketEvent('ROOM_KICK_EVENT', {
+      roomId,
+      userId,
+      targetRoomName: targetRoomObj.name,
+      fallbackRoomId: fallbackId
+    });
 
     // If current logged-in user is the one kicked from active room, redirect to general room
     if (currentUser?.id === userId && currentRoom.id === roomId) {
@@ -3839,6 +4962,7 @@ ${modsText}
       localStorage.setItem('araby_custom_rooms', JSON.stringify(updatedRooms));
     } catch (e) {}
     sendSocketEvent('UPDATE_ROOMS', updatedRooms);
+    sendSocketEvent('ROOM_UNKICK_EVENT', { roomId, userId });
     showTopBanner(`🔓 تم فك طرد (${target?.username || 'المستخدم'}) من غرفة (${targetRoomObj.name})`);
   };
 
@@ -3966,11 +5090,34 @@ ${modsText}
     });
   };
 
-  // Update user role
+  // Update user role - Strictly restricted to Site Owner only
   const updateUserRole = (userId: string, newRole: UserRole) => {
+    if (!currentUser) return;
+    if (currentUser.role !== 'owner') {
+      showTopBanner('🚫 تنزيل ورفع الرتب من صلاحيات المالك (صاحب الموقع) فقط.');
+      return;
+    }
+
     const targetUser = users.find(u => u.id === userId);
-    if (targetUser?.role === 'owner' && currentUser?.id !== userId) {
-      showTopBanner('🚫 لا يمكن تعديل رتبة المالك الرئيسي!');
+    if (!targetUser) return;
+
+    if (targetUser?.id === 'user-owner' && currentUser?.id !== 'user-owner') {
+      showTopBanner('🚫 لا يمكن تعديل أو تغيير رتبة المالك الرئيسي إلا بواسطة المالك الرئيسي الأصلي!');
+      return;
+    }
+
+    const isActorOwner = currentUser.role === 'owner' || currentUser.id === 'user-owner';
+    const isActorSuperAdmin = !!currentUser.is_super_admin || isActorOwner;
+
+    if (targetUser.is_super_admin && !isActorSuperAdmin && currentUser.id !== userId) {
+      showTopBanner('🛡️ هذا العضو يتمتع بحصانة (Super Admin). لا يمكن تغيير رتبته!');
+      return;
+    }
+
+    const actorLevel = getRoleLevel(currentUser.role);
+    const targetLevel = getRoleLevel(targetUser.role);
+    if (!isActorSuperAdmin && targetLevel >= actorLevel && currentUser.id !== userId) {
+      showTopBanner('🚫 لا يمكنك تعديل رتبة عضو يملك نفس رتبتك أو رتبة أعلى منك!');
       return;
     }
     const updatedUser = { ...targetUser, role: newRole } as User;
@@ -4083,6 +5230,10 @@ ${modsText}
   // Add News
   const addNewsPost = (title: string, content: string, imageUrl?: string) => {
     if (!currentUser) return;
+    if (currentUser.role === 'guest') {
+      showTopBanner('⚠️ نشر الأخبار متاح للإدارة والمشرفين فقط');
+      return;
+    }
     const post: NewsPost = {
       id: `news-${Date.now()}`,
       authorName: currentUser.username,
@@ -4095,43 +5246,99 @@ ${modsText}
       comments: []
     };
     setNews(prev => [post, ...prev]);
+    sendSocketEvent('ADD_NEWS_POST', post);
+
+    // Immediate Local Notification / Toast for the publisher
+    showTopBanner(`📰 تم نشر الخبر بنجاح: "${title}"`);
+    addToast({
+      type: 'news',
+      title: `📰 تم نشر خبرك: ${title}`,
+      message: content.length > 55 ? content.substring(0, 55) + '...' : content,
+      avatar: currentUser.avatar,
+      senderName: currentUser.username,
+    });
+    if (audioSettingsRef.current?.notificationSound !== false) {
+      playChatSound('notification');
+    }
   };
 
   const deleteNewsPost = (newsId: string) => {
     setNews(prev => prev.filter(n => n.id !== newsId));
+    sendSocketEvent('DELETE_NEWS_POST', { newsId });
   };
 
   const reactToNews = (newsId: string, emoji: string) => {
     if (!currentUser) return;
+    if (currentUser.role === 'guest') {
+      showTopBanner('⚠️ عذراً، الإعجاب والتفاعل في الأخبار متاح للأعضاء المسجلين فقط');
+      addToast({
+        type: 'warning',
+        title: 'تنبيه الزوار',
+        message: 'عذراً، الإعجاب والتفاعل في الأخبار متاح للأعضاء المسجلين فقط. يرجى تسجيل حسابك أولاً.',
+      });
+      return;
+    }
+
     setNews(prev => prev.map(n => {
       if (n.id !== newsId) return n;
-      const currentList = n.reactions[emoji] || [];
-      const updatedList = currentList.includes(currentUser.id)
-        ? currentList.filter(id => id !== currentUser.id)
-        : [...currentList, currentUser.id];
-      return { ...n, reactions: { ...n.reactions, [emoji]: updatedList } };
+      const reactions: { [key: string]: string[] } = {};
+      Object.entries(n.reactions || {}).forEach(([em, uIds]) => {
+        reactions[em] = Array.isArray(uIds) ? [...uIds] : [];
+      });
+
+      // Find if user currently reacted with any emoji
+      let currentReactionEmoji: string | null = null;
+      Object.entries(reactions).forEach(([em, uIds]) => {
+        if (uIds.includes(currentUser.id)) {
+          currentReactionEmoji = em;
+        }
+      });
+
+      // Remove user from all reaction arrays (Enforcing exactly one reaction per user)
+      Object.keys(reactions).forEach(em => {
+        reactions[em] = reactions[em].filter(id => id !== currentUser.id);
+      });
+
+      // If user clicked a different emoji, set their new reaction.
+      // If they clicked the same emoji, they simply toggled off their reaction.
+      if (currentReactionEmoji !== emoji) {
+        reactions[emoji] = [...(reactions[emoji] || []), currentUser.id];
+      }
+
+      sendSocketEvent('REACT_NEWS_POST', { newsId, reactions });
+      return { ...n, reactions };
     }));
   };
 
   const addNewsComment = (newsId: string, content: string) => {
     if (!currentUser || !content.trim()) return;
+    if (currentUser.role === 'guest') {
+      showTopBanner('⚠️ عذراً، التعليق متاح للأعضاء المسجلين فقط');
+      return;
+    }
+    const comment = {
+      id: `nc-${Date.now()}`,
+      authorName: currentUser.username,
+      content: content.trim(),
+      timestamp: formatEnglishTime(new Date())
+    };
     setNews(prev => prev.map(n => {
       if (n.id !== newsId) return n;
       return {
         ...n,
-        comments: [...n.comments, {
-          id: `nc-${Date.now()}`,
-          authorName: currentUser.username,
-          content,
-          timestamp: formatEnglishTime(new Date())
-        }]
+        comments: [...n.comments, comment]
       };
     }));
+    sendSocketEvent('ADD_NEWS_COMMENT', { newsId, comment });
   };
 
   // Add Wall Post
   const addWallPost = (content: string, imageUrl?: string) => {
     if (!currentUser) return;
+    if (currentUser.role === 'guest') {
+      showTopBanner('⚠️ عذراً، حائط الأصدقاء مخصص للأعضاء المسجلين فقط');
+      return;
+    }
     const post: WallPost = {
       id: `wall-${Date.now()}`,
       authorId: currentUser.id,
@@ -4140,10 +5347,12 @@ ${modsText}
       content,
       imageUrl,
       timestamp: 'الآن',
+      reactions: {},
       likes: [],
       comments: []
     };
     setWallPosts(prev => [post, ...prev]);
+    sendSocketEvent('ADD_WALL_POST', post);
 
     // Send notifications to friends
     const friends = currentUser.friends || [];
@@ -4168,34 +5377,79 @@ ${modsText}
 
   const deleteWallPost = (postId: string) => {
     setWallPosts(prev => prev.filter(w => w.id !== postId));
+    sendSocketEvent('DELETE_WALL_POST', { postId });
   };
 
-  const reactToWallPost = (postId: string) => {
+  const reactToWallPost = (postId: string, emoji: string = '❤️') => {
     if (!currentUser) return;
+    if (currentUser.role === 'guest') {
+      showTopBanner('⚠️ عذراً، حائط الأصدقاء والتفاعل متاح للأعضاء المسجلين فقط');
+      addToast({
+        type: 'warning',
+        title: 'تنبيه الزوار',
+        message: 'عذراً، حائط الأصدقاء والتفاعل متاح للأعضاء المسجلين فقط.',
+      });
+      return;
+    }
+
     setWallPosts(prev => prev.map(w => {
       if (w.id !== postId) return w;
-      const hasLiked = w.likes.includes(currentUser.id);
-      return {
-        ...w,
-        likes: hasLiked ? w.likes.filter(id => id !== currentUser.id) : [...w.likes, currentUser.id]
-      };
+      const reactions: { [key: string]: string[] } = {};
+      Object.entries(w.reactions || {}).forEach(([em, uIds]) => {
+        reactions[em] = Array.isArray(uIds) ? [...uIds] : [];
+      });
+
+      // Find current user's reaction
+      let currentReactionEmoji: string | null = null;
+      Object.entries(reactions).forEach(([em, uIds]) => {
+        if (uIds.includes(currentUser.id)) {
+          currentReactionEmoji = em;
+        }
+      });
+      if (!currentReactionEmoji && w.likes?.includes(currentUser.id)) {
+        currentReactionEmoji = '❤️';
+      }
+
+      // Remove user from all reaction arrays (Enforcing exactly one reaction per user)
+      Object.keys(reactions).forEach(em => {
+        reactions[em] = reactions[em].filter(id => id !== currentUser.id);
+      });
+
+      // If user clicked a different emoji, set new reaction.
+      if (currentReactionEmoji !== emoji) {
+        reactions[emoji] = [...(reactions[emoji] || []), currentUser.id];
+      }
+
+      // Compute consolidated unique user likes
+      const allLikedUserIds = Array.from(
+        new Set(Object.values(reactions).flat().filter(Boolean))
+      );
+
+      sendSocketEvent('REACT_WALL_POST', { postId, reactions, likes: allLikedUserIds });
+      return { ...w, reactions, likes: allLikedUserIds };
     }));
   };
 
   const addWallComment = (postId: string, content: string) => {
     if (!currentUser || !content.trim()) return;
+    if (currentUser.role === 'guest') {
+      showTopBanner('⚠️ عذراً، التعليق في الحائط متاح للأعضاء المسجلين فقط');
+      return;
+    }
+    const comment = {
+      id: `wc-${Date.now()}`,
+      authorName: currentUser.username,
+      content: content.trim(),
+      timestamp: formatEnglishTime(new Date())
+    };
     setWallPosts(prev => prev.map(w => {
       if (w.id !== postId) return w;
       return {
         ...w,
-        comments: [...w.comments, {
-          id: `wc-${Date.now()}`,
-          authorName: currentUser.username,
-          content,
-          timestamp: formatEnglishTime(new Date())
-        }]
+        comments: [...w.comments, comment]
       };
     }));
+    sendSocketEvent('ADD_WALL_COMMENT', { postId, comment });
   };
 
   // Mark notifications as read
@@ -4326,6 +5580,7 @@ ${modsText}
         currentView,
         currentRoom,
         rooms,
+        setRooms,
         users,
         messages: filteredMessages,
         privateMessages: filteredPrivateMessages,
@@ -4372,6 +5627,9 @@ ${modsText}
         isOwnerDashboardOpen,
         isStoreOpen,
         isSideMenuOpen,
+        sideMenuInitialView,
+        setSideMenuInitialView,
+        openNews,
         isReportsOpen,
         isNotificationsOpen,
         isFriendRequestsOpen,
@@ -4380,6 +5638,8 @@ ${modsText}
         isRoomsListOpen,
         isRoomLogsOpen,
         isRoomSettingsOpen,
+        isGoogleChatOpen,
+        isGoogleDriveOpen,
         inputInsertedUsername,
         topBannerMessage,
         siteSettings,
@@ -4401,6 +5661,8 @@ ${modsText}
         setIsRoomsListOpen,
         setIsRoomLogsOpen,
         setIsRoomSettingsOpen,
+        setIsGoogleChatOpen,
+        setIsGoogleDriveOpen,
         isLogoutConfirmOpen,
         setIsLogoutConfirmOpen,
         passwordPromptRoom,
@@ -4422,10 +5684,13 @@ ${modsText}
         addRoomActivityLog,
         clearRoomActivityLogs,
 
+        hasPermission,
+        currentUserCan,
+
         loginAsVisitor,
         loginAsMember,
         registerAccount,
-        loginAsOwner,
+        loginWithFirebaseGoogle,
         logout,
 
         switchRoom,
@@ -4494,6 +5759,24 @@ ${modsText}
         removeToast,
 
         switchRoleForTesting,
+
+        bannedIps,
+        banIp,
+        unbanIp,
+        banDevice,
+        unbanDevice,
+        banBrowser,
+        unbanBrowser,
+        banCountry,
+        unbanCountry,
+
+        cleanupInactiveUsers,
+        updateUserLastActivity,
+        sendBotWelcomeMessage,
+
+        currentLang,
+        setAppLanguage: handleSetAppLanguage,
+        isRtl,
       }}
     >
       {children}

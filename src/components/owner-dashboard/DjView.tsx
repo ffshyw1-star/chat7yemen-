@@ -7,14 +7,14 @@ import {
 } from 'lucide-react';
 
 export const DjView: React.FC<{ showToast: (msg: string) => void }> = ({ showToast }) => {
-  const { currentUser, rooms, currentRoom } = useChat();
+  const { currentUser, rooms, currentRoom, siteSettings, updateSiteSettings } = useChat();
 
   // DJ State
   const [isOnAir, setIsOnAir] = useState(false);
   const [micActive, setMicActive] = useState(false);
   const [currentDjUser, setCurrentDjUser] = useState<string>(currentUser?.username || 'المالك');
-  const [djPermissionRole, setDjPermissionRole] = useState<'owner' | 'admin' | 'vip' | 'all'>('admin');
-  const [autoApproveSongs, setAutoApproveSongs] = useState(false);
+  const [djPermissionRole, setDjPermissionRole] = useState<'owner' | 'admin' | 'vip' | 'all'>(siteSettings.djPermissionRole || 'admin');
+  const [autoApproveSongs, setAutoApproveSongs] = useState(siteSettings.djAutoApproveSongs || false);
   const [activeTab, setActiveTab] = useState<'station' | 'queue' | 'soundboard' | 'settings'>('station');
 
   // Soundboard audio synth using Web Audio API
@@ -499,8 +499,10 @@ export const DjView: React.FC<{ showToast: (msg: string) => void }> = ({ showToa
               <select
                 value={djPermissionRole}
                 onChange={(e: any) => {
-                  setDjPermissionRole(e.target.value);
-                  showToast('تم تحديث رتبة صلاحيات الدي جي 🎚️');
+                  const val = e.target.value;
+                  setDjPermissionRole(val);
+                  updateSiteSettings({ djPermissionRole: val });
+                  showToast('تم تحديث وحفظ رتبة صلاحيات الدي جي 🎚️');
                 }}
                 className="w-full sm:w-64 bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold text-xs"
               >
@@ -518,8 +520,10 @@ export const DjView: React.FC<{ showToast: (msg: string) => void }> = ({ showToa
               </div>
               <button
                 onClick={() => {
-                  setAutoApproveSongs(!autoApproveSongs);
-                  showToast(autoApproveSongs ? 'تم تفعيل المراجعة اليدوية' : 'تم تفعيل الموافقة التلقائية');
+                  const nextVal = !autoApproveSongs;
+                  setAutoApproveSongs(nextVal);
+                  updateSiteSettings({ djAutoApproveSongs: nextVal });
+                  showToast(nextVal ? 'تم تفعيل وحفظ الموافقة التلقائية' : 'تم تفعيل وحفظ المراجعة اليدوية');
                 }}
                 className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
                   autoApproveSongs ? 'bg-purple-600' : 'bg-slate-300'

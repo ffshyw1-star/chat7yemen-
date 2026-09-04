@@ -8,7 +8,8 @@ import {
   ChevronDown, ChevronLeft, ChevronRight, X, Check, Search, Shield,
   RefreshCw, Trash2, Edit, Plus, Monitor, AlertCircle, Radio, Lock, Unlock,
   Download, Upload, ExternalLink, Globe, Key, AlertTriangle, UserCheck,
-  UserX, Sliders, Music, RadioTower, Database, Menu, Bell, Smile, Gem, Sparkles
+  UserX, Sliders, Music, RadioTower, Database, Menu, Bell, Smile, Gem, Sparkles,
+  Flame, Heart, Gamepad2, Coffee, Trophy, Image, Activity, BarChart3
 } from 'lucide-react';
 import { DjView } from './owner-dashboard/DjView';
 import { PermissionsView } from './owner-dashboard/PermissionsView';
@@ -21,6 +22,8 @@ import { PagesView } from './owner-dashboard/PagesView';
 import { LogsView } from './owner-dashboard/LogsView';
 import { ActionsView } from './owner-dashboard/ActionsView';
 import { EmojisView } from './owner-dashboard/EmojisView';
+import { BlacklistView } from './owner-dashboard/BlacklistView';
+import { RoomPresenceAnalytics } from './owner-dashboard/RoomPresenceAnalytics';
 
 export const OwnerDashboardModal: React.FC = () => {
   const {
@@ -59,6 +62,10 @@ export const OwnerDashboardModal: React.FC = () => {
     banIp
   } = useChat();
 
+  if (!currentUser || currentUser.role !== 'owner') {
+    return null;
+  }
+
   // Navigation State
   const [activeSection, setActiveSection] = useState<string>('dashboard');
   const [ownerSubTab, setOwnerSubTab] = useState<'features' | 'backup' | 'links' | 'gifts' | 'logins' | 'ads' | 'archive' | 'bans'>('backup');
@@ -94,10 +101,20 @@ export const OwnerDashboardModal: React.FC = () => {
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomDesc, setNewRoomDesc] = useState('');
   const [newRoomPass, setNewRoomPass] = useState('');
+  const [newRoomIcon, setNewRoomIcon] = useState<string>('globe');
+  const [newRoomIconUrl, setNewRoomIconUrl] = useState<string>('');
   const [newRoomType, setNewRoomType] = useState<'standard' | 'diamond' | 'admin'>('standard');
   const [selectedAllowedRoles, setSelectedAllowedRoles] = useState<UserRole[]>([
     'owner', 'management', 'admin', 'moderator', 'vip', 'member', 'visitor'
   ]);
+
+  // Edit Room Modal State
+  const [editingRoom, setEditingRoom] = useState<any | null>(null);
+  const [editRoomName, setEditRoomName] = useState('');
+  const [editRoomDesc, setEditRoomDesc] = useState('');
+  const [editRoomPass, setEditRoomPass] = useState('');
+  const [editRoomIcon, setEditRoomIcon] = useState('globe');
+  const [editRoomIconUrl, setEditRoomIconUrl] = useState('');
 
   // Bad words
   const [newBadWord, setNewBadWord] = useState('');
@@ -186,7 +203,7 @@ export const OwnerDashboardModal: React.FC = () => {
     if (!newRoomName.trim()) return;
 
     let flag = '🇾🇪';
-    let icon = 'globe';
+    let icon = newRoomIcon || 'globe';
     let allowedRolesToSave: UserRole[] | undefined = undefined;
 
     if (newRoomType === 'diamond') {
@@ -207,19 +224,52 @@ export const OwnerDashboardModal: React.FC = () => {
       roomType: newRoomType,
       allowedRoles: allowedRolesToSave,
       customIcon: icon,
+      iconUrl: newRoomIconUrl.trim() || undefined,
       flag
     });
 
     setNewRoomName('');
     setNewRoomDesc('');
     setNewRoomPass('');
+    setNewRoomIcon('globe');
+    setNewRoomIconUrl('');
     showToast(
       newRoomType === 'diamond'
         ? 'تم إنشاء الغرفة الماسية بنجاح 💎'
         : newRoomType === 'admin'
         ? 'تم إنشاء غرفة الإدارة بنجاح (⭐ نجمة حمراء بوسط أبيض)'
-        : 'تم إنشاء الغرفة بنجاح 🏠'
+        : 'تم إنشاء الغرفة وتعيين أيقونتها بنجاح 🏠'
     );
+  };
+
+  const handleOpenEditRoom = (r: any) => {
+    setEditingRoom(r);
+    setEditRoomName(r.name || '');
+    setEditRoomDesc(r.description || '');
+    setEditRoomPass(r.password || '');
+    setEditRoomIcon(r.customIcon || (r.roomType === 'diamond' ? 'diamond' : r.roomType === 'admin' ? 'admin_star' : 'globe'));
+    setEditRoomIconUrl(r.iconUrl || '');
+  };
+
+  const handleSaveEditRoom = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingRoom) return;
+    if (!editRoomName.trim()) {
+      showToast('⚠️ يرجى إدخال اسم الغرفة');
+      return;
+    }
+
+    updateRoomDetails(editingRoom.id, {
+      name: editRoomName.trim(),
+      description: editRoomDesc.trim(),
+      password: editRoomPass.trim() || undefined,
+      isLocked: Boolean(editRoomPass.trim()),
+      customIcon: editRoomIcon,
+      iconUrl: editRoomIconUrl.trim() || undefined
+    });
+
+    setEditingRoom(null);
+    showToast('تم تحديث إعدادات وأيقونة الغرفة بنجاح ✅');
   };
 
   const handleBroadcast = (e: React.FormEvent) => {
@@ -251,6 +301,118 @@ export const OwnerDashboardModal: React.FC = () => {
       case 'pages': return 'الصفحات';
       case 'emojis': return 'إدارة الإيموجي والسمايلات';
       default: return 'لوحة التحكم';
+    }
+  };
+
+  const ROOM_ICON_PRESET_LIST = [
+    { key: 'globe', label: 'كرة أرضية', icon: Globe },
+    { key: 'diamond', label: 'ماسة', icon: Gem },
+    { key: 'admin_star', label: 'نجمة إدارة', icon: Star },
+    { key: 'crown', label: 'تاج', icon: Crown },
+    { key: 'flame', label: 'شعلة', icon: Flame },
+    { key: 'heart', label: 'قلب', icon: Heart },
+    { key: 'music', label: 'موسيقى', icon: Music },
+    { key: 'game', label: 'ألعاب', icon: Gamepad2 },
+    { key: 'coffee', label: 'قهوة', icon: Coffee },
+    { key: 'sparkles', label: 'بريق', icon: Sparkles },
+    { key: 'trophy', label: 'كأس', icon: Trophy },
+    { key: 'shield', label: 'درع', icon: Shield },
+    { key: 'message', label: 'دردشة', icon: MessageSquare }
+  ];
+
+  const renderDashboardRoomIcon = (r: any) => {
+    if (r.iconUrl) {
+      return (
+        <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-sky-400 bg-slate-100 flex items-center justify-center shrink-0">
+          <img
+            src={r.iconUrl}
+            alt={r.name}
+            className="w-full h-full object-cover"
+            onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+          />
+        </div>
+      );
+    }
+    const iconKey = r.customIcon || (r.roomType === 'diamond' ? 'diamond' : r.roomType === 'admin' ? 'admin_star' : 'globe');
+    switch (iconKey) {
+      case 'diamond':
+        return (
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-xs text-white shrink-0">
+            <Gem className="w-5 h-5" />
+          </div>
+        );
+      case 'admin_star':
+        return (
+          <div className="w-10 h-10 rounded-full bg-rose-50 border-2 border-rose-500 flex items-center justify-center shadow-xs shrink-0">
+            <Star className="w-5 h-5 text-rose-600 fill-white stroke-[2.5]" />
+          </div>
+        );
+      case 'crown':
+        return (
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-xs text-white shrink-0">
+            <Crown className="w-5 h-5" />
+          </div>
+        );
+      case 'flame':
+        return (
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center shadow-xs text-white shrink-0">
+            <Flame className="w-5 h-5" />
+          </div>
+        );
+      case 'heart':
+        return (
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center shadow-xs text-white shrink-0">
+            <Heart className="w-5 h-5" />
+          </div>
+        );
+      case 'music':
+        return (
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-xs text-white shrink-0">
+            <Music className="w-5 h-5" />
+          </div>
+        );
+      case 'game':
+        return (
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-xs text-white shrink-0">
+            <Gamepad2 className="w-5 h-5" />
+          </div>
+        );
+      case 'coffee':
+        return (
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-700 to-amber-900 flex items-center justify-center shadow-xs text-white shrink-0">
+            <Coffee className="w-5 h-5" />
+          </div>
+        );
+      case 'sparkles':
+        return (
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-600 flex items-center justify-center shadow-xs text-white shrink-0">
+            <Sparkles className="w-5 h-5" />
+          </div>
+        );
+      case 'trophy':
+        return (
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-yellow-500 to-amber-600 flex items-center justify-center shadow-xs text-white shrink-0">
+            <Trophy className="w-5 h-5" />
+          </div>
+        );
+      case 'shield':
+        return (
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-slate-700 flex items-center justify-center shadow-xs text-white shrink-0">
+            <Shield className="w-5 h-5" />
+          </div>
+        );
+      case 'message':
+        return (
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center shadow-xs text-white shrink-0">
+            <MessageSquare className="w-5 h-5" />
+          </div>
+        );
+      default:
+        return (
+          <div className="w-10 h-10 rounded-full bg-[#1e88e5] text-white flex items-center justify-center shadow-xs shrink-0">
+            <Globe className="w-5 h-5" />
+          </div>
+        );
     }
   };
 
@@ -351,6 +513,20 @@ export const OwnerDashboardModal: React.FC = () => {
                 </div>
               </button>
 
+              {/* إحصائيات المتواجدين (Recharts) */}
+              <button
+                onClick={() => { setActiveSection('presence_analytics'); setIsMobileSidebarOpen(false); }}
+                className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
+                  activeSection === 'presence_analytics' ? 'bg-amber-50 text-amber-600 font-black border-r-4 border-amber-500' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <BarChart3 className="w-4 h-4 text-sky-600" />
+                  <span>إحصائيات المتواجدين</span>
+                </div>
+                <span className="text-[10px] bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded-full font-bold">Recharts</span>
+              </button>
+
               {/* 2. اعدادات صاحب الموقع */}
               <button
                 onClick={() => { setActiveSection('owner_settings'); setIsMobileSidebarOpen(false); }}
@@ -433,7 +609,7 @@ export const OwnerDashboardModal: React.FC = () => {
                 </div>
               </button>
 
-              {/* 8. إدارة حظر IP */}
+              {/* 8. إدارة الحظر الشامل */}
               <button
                 onClick={() => { setActiveSection('ip_bans'); setIsMobileSidebarOpen(false); }}
                 className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
@@ -442,7 +618,7 @@ export const OwnerDashboardModal: React.FC = () => {
               >
                 <div className="flex items-center gap-2.5">
                   <Ban className="w-4 h-4 text-red-600" />
-                  <span>إدارة حظر IP</span>
+                  <span>إدارة الحظر الشامل</span>
                 </div>
                 {bannedIps?.length > 0 && (
                   <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-mono">{bannedIps.length}</span>
@@ -746,6 +922,9 @@ export const OwnerDashboardModal: React.FC = () => {
 
                 </div>
 
+                {/* Visual Presence Analytics by Recharts */}
+                <RoomPresenceAnalytics />
+
                 {/* Quick Emoji Banner Action */}
                 <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 p-3.5 rounded-xl text-slate-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
                   <div className="flex items-center gap-3">
@@ -950,15 +1129,33 @@ export const OwnerDashboardModal: React.FC = () => {
                     <h3 className="text-xs font-black text-slate-800 border-b border-slate-100 pb-2">تحكم مميزات ووظائف الدردشة وقائمة المتواجدين</h3>
 
                     {/* Online Presence Timeout Setting */}
-                    <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200 space-y-2">
-                      <div className="flex items-center justify-between">
+                    <div className="p-3.5 bg-amber-50/70 rounded-xl border border-amber-200 space-y-2.5">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div>
-                          <p className="text-xs font-bold text-amber-950">⏱️ تحديد مدة بقاء المستخدم في قائمة المتواجدين</p>
+                          <p className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                            <span>⏱️</span>
+                            <span>تحديد مدة بقاء المستخدم في قائمة المتواجدين</span>
+                          </p>
                           <p className="text-[10px] text-amber-800/80 mt-0.5">
-                            المدة التي يظل فيها حساب المستخدم ظاهراً في قائمة المتواجدين بعد إغلاق الموقع أو انقطاع الاتصال
+                            المدة التي يظل فيها حساب المستخدم ظاهراً في قائمة المتواجدين بعد إغلاق الموقع أو انقطاع الاتصال (يتم حفظها في السيرفر وقاعدة البيانات فورياً)
                           </p>
                         </div>
+                        <span className="text-[11px] font-black text-amber-900 bg-amber-200/70 px-2.5 py-1 rounded-lg self-start sm:self-auto shrink-0">
+                          {settingsForm.onlinePresenceTimeoutHours === 0 ? 'المتصلين الآن فقط' :
+                           settingsForm.onlinePresenceTimeoutHours === 0.0833 ? '5 دقائق' :
+                           settingsForm.onlinePresenceTimeoutHours === 0.25 ? '15 دقيقة' :
+                           settingsForm.onlinePresenceTimeoutHours === 0.5 ? '30 دقيقة' :
+                           settingsForm.onlinePresenceTimeoutHours === 1 ? 'ساعة واحدة' :
+                           settingsForm.onlinePresenceTimeoutHours === 6 ? '6 ساعات' :
+                           settingsForm.onlinePresenceTimeoutHours === 12 ? '12 ساعة' :
+                           settingsForm.onlinePresenceTimeoutHours === 24 ? '24 ساعة' :
+                           settingsForm.onlinePresenceTimeoutHours === 48 ? '48 ساعة' :
+                           settingsForm.onlinePresenceTimeoutHours === -1 ? 'دائم ♾️' :
+                           `${settingsForm.onlinePresenceTimeoutHours || 0} ساعة`}
+                        </span>
                       </div>
+
+                      {/* Dropdown Selector */}
                       <select
                         value={settingsForm.onlinePresenceTimeoutHours ?? 0}
                         onChange={(e) => {
@@ -966,16 +1163,122 @@ export const OwnerDashboardModal: React.FC = () => {
                           const updated = { ...settingsForm, onlinePresenceTimeoutHours: val };
                           setSettingsForm(updated);
                           updateSiteSettings(updated);
-                          showToast('تم تحديث مدة بقاء المتواجدين بنجاح ✨');
+                          showToast('تم تحديث وحفظ مدة بقاء المتواجدين في قاعدة البيانات بنجاح 💾✨');
                         }}
                         className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-xs font-bold text-slate-800 cursor-pointer focus:outline-none"
                       >
                         <option value={0}>المتصلين فقط بالوقت الفعلي (الافتراضي)</option>
+                        <option value={0.0833}>يختفي الحساب بعد 5 دقائق من الخروج</option>
+                        <option value={0.25}>يختفي الحساب بعد 15 دقيقة من الخروج</option>
+                        <option value={0.5}>يختفي الحساب بعد 30 دقيقة من الخروج</option>
+                        <option value={1}>يختفي الحساب بعد ساعة واحدة (60 دقيقة)</option>
                         <option value={6}>يختفي الحساب بعد 6 ساعات من عدم فتح الموقع</option>
                         <option value={12}>يختفي الحساب بعد 12 ساعة من عدم فتح الموقع</option>
                         <option value={24}>يختفي الحساب بعد يوم واحد (24 ساعة)</option>
                         <option value={48}>يختفي الحساب بعد يومين (48 ساعة)</option>
+                        <option value={-1}>دائم في قائمة المتواجدين حتى تسجيل الخروج الفعلي ♾️</option>
                       </select>
+
+                      {/* Quick Select Pill Buttons */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                        {[
+                          { val: 0, label: '⚡ وقت فعلي' },
+                          { val: 0.0833, label: '5 دقائق' },
+                          { val: 0.25, label: '15 دقيقة' },
+                          { val: 0.5, label: '30 دقيقة' },
+                          { val: 1, label: '1 ساعة' },
+                          { val: 6, label: '6 ساعات' },
+                          { val: 24, label: '24 ساعة' },
+                          { val: -1, label: '♾️ دائم' },
+                        ].map((btn) => (
+                          <button
+                            key={btn.val}
+                            type="button"
+                            onClick={() => {
+                              const updated = { ...settingsForm, onlinePresenceTimeoutHours: btn.val };
+                              setSettingsForm(updated);
+                              updateSiteSettings(updated);
+                              showToast(`تم ضبط مدة المتواجدين على (${btn.label}) وحفظها مباشرة 💾`);
+                            }}
+                            className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-colors cursor-pointer border ${
+                              (settingsForm.onlinePresenceTimeoutHours ?? 0) === btn.val
+                                ? 'bg-amber-600 text-white border-amber-700 shadow-xs'
+                                : 'bg-white text-amber-900 border-amber-200 hover:bg-amber-100'
+                            }`}
+                          >
+                            {btn.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Disable Username Change by Rank Settings Card */}
+                    <div className="p-3.5 bg-purple-50/70 rounded-xl border border-purple-200 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-bold text-purple-950 flex items-center gap-1.5">
+                            <span>🔒</span>
+                            <span>إيقاف تغيير اسم المستخدم حسب الرتبة</span>
+                          </p>
+                          <p className="text-[10px] text-purple-800/80 mt-0.5">
+                            التحكم في إمكانية تعديل الاسم المستعار للأعضاء والزوار أو قفله حسب الرتبة وتخزينه فورياً
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setActiveSection('permissions')}
+                          className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-black rounded-lg cursor-pointer transition-colors shrink-0 flex items-center gap-1 shadow-xs"
+                        >
+                          <Key className="w-3 h-3" />
+                          <span>تعديل مصفوفة الرتب ⚙️</span>
+                        </button>
+                      </div>
+
+                      {/* Quick Role Checkboxes for Username Change */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                        {[
+                          { key: 'visitor', name: 'الزائر 🌐' },
+                          { key: 'member', name: 'عضو مسجل 👤' },
+                          { key: 'vip', name: 'عضو VIP 💎' },
+                          { key: 'moderator', name: 'مشرف ⚡' },
+                        ].map((roleItem) => {
+                          const currentMatrix = settingsForm.rolePermissions || {};
+                          const rolePerms = currentMatrix[roleItem.key] ?? (roleItem.key === 'visitor' ? ['send_text', 'private_chat', 'change_username'] : ['send_text', 'send_media', 'send_voice', 'send_canvas', 'private_chat', 'custom_font', 'change_username']);
+                          const canChange = rolePerms.includes('change_username');
+
+                          return (
+                            <button
+                              key={roleItem.key}
+                              type="button"
+                              onClick={() => {
+                                const nextPerms = canChange
+                                  ? rolePerms.filter((p: string) => p !== 'change_username')
+                                  : [...rolePerms, 'change_username'];
+                                const updatedMatrix = { ...currentMatrix, [roleItem.key]: nextPerms };
+                                const updated = { ...settingsForm, rolePermissions: updatedMatrix };
+                                setSettingsForm(updated);
+                                updateSiteSettings(updated);
+                                showToast(canChange
+                                  ? `تم إيقاف تغيير الاسم لرتبة ${roleItem.name} ❌`
+                                  : `تم تفعيل تغيير الاسم لرتبة ${roleItem.name} ✅`
+                                );
+                              }}
+                              className={`p-2 rounded-lg border text-right flex items-center justify-between transition-all cursor-pointer ${
+                                canChange
+                                  ? 'bg-white border-purple-200 text-purple-950 font-bold'
+                                  : 'bg-rose-50 border-rose-200 text-rose-700 font-bold'
+                              }`}
+                            >
+                              <span className="text-[11px]">{roleItem.name}</span>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-md ${
+                                canChange ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                              }`}>
+                                {canChange ? 'مسموح' : 'موقوف 🔒'}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
 
                     {/* Hide Room Switch Notifications Toggle */}
@@ -1007,6 +1310,7 @@ export const OwnerDashboardModal: React.FC = () => {
                         { key: 'enableVoiceNotes', label: 'التسجيلات الصوتية', desc: 'إمكانية إرسال رسائل صوتية في الغرف' },
                         { key: 'enableGifts', label: 'نظام الهدايا والمتجر', desc: 'إرسال هدايا وشراء الرتب بالكوينز' },
                         { key: 'enableSocialWall', label: 'الحائط العام والمنشورات', desc: 'السماح بنشر البوستات والصور' },
+                        { key: 'hideChatBackgroundForVisitorAndMember', label: 'إخفاء تبويب خلفية عن الزائر والعضو المسجل', desc: 'حظر واجهة الخلفيات اللامعة من الزوار والأعضاء واقتصارها على الرتب الإدارية والمميزة' },
                       ].map((item: any) => (
                         <div key={item.key} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
                           <div>
@@ -1020,7 +1324,7 @@ export const OwnerDashboardModal: React.FC = () => {
                               const updated = { ...settingsForm, [item.key]: e.target.checked };
                               setSettingsForm(updated);
                               updateSiteSettings(updated);
-                              showToast('تم تحديث الميزة بنجاح ✨');
+                              showToast('تم تحديث الميزة وحفظها بنجاح ✨💾');
                             }}
                             className="w-4 h-4 accent-[#f97316] cursor-pointer"
                           />
@@ -1344,8 +1648,9 @@ export const OwnerDashboardModal: React.FC = () => {
                           <label className="font-bold text-slate-600 block mb-1">الرتبة:</label>
                           <select
                             value={editUserRole}
+                            disabled={selectedUserForEdit.id === 'user-owner' && currentUser?.id !== 'user-owner'}
                             onChange={(e) => setEditUserRole(e.target.value as any)}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold"
+                            className={`w-full border rounded-lg p-2 font-bold ${selectedUserForEdit.id === 'user-owner' && currentUser?.id !== 'user-owner' ? 'bg-slate-200 text-slate-500 cursor-not-allowed' : 'bg-slate-50 border-slate-200'}`}
                           >
                             <option value="visitor">زائر</option>
                             <option value="member">عضو</option>
@@ -1382,6 +1687,10 @@ export const OwnerDashboardModal: React.FC = () => {
                       <div className="flex gap-2 pt-2">
                         <button
                           onClick={() => {
+                            if (selectedUserForEdit.id === 'user-owner' && currentUser?.id !== 'user-owner') {
+                              showToast('🚫 لا يمكن تعديل أو تغيير رتبة المالك الرئيسي إلا بواسطة المالك الرئيسي الأصلي!');
+                              return;
+                            }
                             updateUserRole(selectedUserForEdit.id, editUserRole);
                             ownerUpdateUser(selectedUserForEdit.id, {
                               coins: editUserCoins,
@@ -1561,6 +1870,68 @@ export const OwnerDashboardModal: React.FC = () => {
                       />
                     </div>
 
+                    {/* Icon & Avatar Selection for standard rooms */}
+                    {newRoomType === 'standard' && (
+                      <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                            <span>اختر أيقونة مخصصة للغرفة أو ارفع صورة رمزية:</span>
+                          </span>
+                          {newRoomIconUrl && (
+                            <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                              صورة رمزية مفعلة ✓
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Preset Icon Pills */}
+                        <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-1 bg-white border border-slate-200/80 rounded-lg">
+                          {ROOM_ICON_PRESET_LIST.map((preset) => {
+                            const IconComponent = preset.icon;
+                            const isSelected = newRoomIcon === preset.key && !newRoomIconUrl;
+                            return (
+                              <button
+                                key={preset.key}
+                                type="button"
+                                onClick={() => {
+                                  setNewRoomIcon(preset.key);
+                                  setNewRoomIconUrl('');
+                                }}
+                                className={`px-2.5 py-1 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-sky-600 text-white shadow-xs'
+                                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                }`}
+                              >
+                                <IconComponent className="w-3.5 h-3.5" />
+                                <span>{preset.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Custom Image Avatar URL Input */}
+                        <div className="flex items-center gap-2">
+                          <div className="relative flex-1">
+                            <input
+                              type="url"
+                              placeholder="أو ضع رابط صورة رمزية للغرفة (Avatar URL)..."
+                              value={newRoomIconUrl}
+                              onChange={(e) => setNewRoomIconUrl(e.target.value)}
+                              className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500"
+                            />
+                            <Image className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                          </div>
+                          {newRoomIconUrl && (
+                            <div className="w-8 h-8 rounded-full overflow-hidden border border-sky-400 bg-slate-100 shrink-0">
+                              <img src={newRoomIconUrl} alt="معاينة" className="w-full h-full object-cover" />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex justify-end">
                       <button
                         type="submit"
@@ -1585,7 +1956,7 @@ export const OwnerDashboardModal: React.FC = () => {
                         ) : (
                           <>
                             <Plus className="w-4 h-4" />
-                            <span>إنشاء الغرفة العادية 🏠</span>
+                            <span>إنشاء الغرفة وتعيين الأيقونة 🏠</span>
                           </>
                         )}
                       </button>
@@ -1602,21 +1973,9 @@ export const OwnerDashboardModal: React.FC = () => {
                     return (
                       <div key={r.id} className="bg-white rounded-xl border border-slate-200 p-3.5 flex items-center justify-between shadow-2xs hover:border-slate-300 transition-all">
                         <div className="flex items-center gap-3">
-                          {/* Room Icon */}
+                          {/* Room Icon / Custom Avatar */}
                           <div className="shrink-0">
-                            {isDiamond ? (
-                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-xs text-white">
-                                <Gem className="w-5 h-5" />
-                              </div>
-                            ) : isAdminRoom ? (
-                              <div className="w-10 h-10 rounded-full bg-rose-50 border-2 border-rose-500 flex items-center justify-center shadow-xs">
-                                <Star className="w-5 h-5 text-rose-600 fill-white stroke-[2.5]" />
-                              </div>
-                            ) : (
-                              <div className="w-10 h-10 rounded-full bg-[#1e88e5] text-white flex items-center justify-center shadow-xs">
-                                <Globe className="w-5 h-5" />
-                              </div>
-                            )}
+                            {renderDashboardRoomIcon(r)}
                           </div>
 
                           <div>
@@ -1632,6 +1991,11 @@ export const OwnerDashboardModal: React.FC = () => {
                                   إدارة ⭐
                                 </span>
                               )}
+                              {r.iconUrl && (
+                                <span className="text-[10px] bg-sky-50 text-sky-700 border border-sky-200 px-1.5 py-0.2 rounded font-bold">
+                                  صورة رمزية 🖼️
+                                </span>
+                              )}
                               {r.isLocked && <Lock className="w-3.5 h-3.5 text-amber-500" title="مقفلة بكلمة سر" />}
                             </div>
                             <p className="text-[11px] text-slate-500 mt-0.5">{r.description || 'غرفة دردشة'}</p>
@@ -1644,7 +2008,18 @@ export const OwnerDashboardModal: React.FC = () => {
                         </div>
 
                         <div className="flex items-center gap-1 shrink-0">
+                          {/* Edit Icon and Room Details Button */}
                           <button
+                            type="button"
+                            onClick={() => handleOpenEditRoom(r)}
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors"
+                            title="تعديل الأيقونة وبيانات الغرفة"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+
+                          <button
+                            type="button"
                             onClick={() => {
                               if (window.confirm(`هل أنت متأكد من حذف الغرفة "${r.name}"؟`)) {
                                 deleteRoom(r.id);
@@ -1661,36 +2036,158 @@ export const OwnerDashboardModal: React.FC = () => {
                     );
                   })}
                 </div>
+
+                {/* Edit Room Modal Dialog */}
+                {editingRoom && (
+                  <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 animate-in fade-in duration-150">
+                    <div className="bg-white rounded-2xl border border-slate-200 max-w-lg w-full p-5 space-y-4 shadow-2xl">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <h4 className="text-sm font-black text-slate-800 flex items-center gap-2">
+                          <Edit className="w-4 h-4 text-blue-600" />
+                          <span>تخصيص أيقونة وبيانات الغرفة: {editingRoom.name}</span>
+                        </h4>
+                        <button
+                          type="button"
+                          onClick={() => setEditingRoom(null)}
+                          className="p-1 text-slate-400 hover:text-slate-700 rounded-lg"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleSaveEditRoom} className="space-y-3 text-xs">
+                        <div className="space-y-1">
+                          <label className="font-bold text-slate-700">اسم الغرفة:</label>
+                          <input
+                            type="text"
+                            value={editRoomName}
+                            onChange={(e) => setEditRoomName(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 font-bold focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            required
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="font-bold text-slate-700">وصف الغرفة:</label>
+                          <input
+                            type="text"
+                            value={editRoomDesc}
+                            onChange={(e) => setEditRoomDesc(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="font-bold text-slate-700">كلمة المرور (اتركها فارغة لإلغاء القفل):</label>
+                          <input
+                            type="text"
+                            value={editRoomPass}
+                            onChange={(e) => setEditRoomPass(e.target.value)}
+                            placeholder="بدون كلمة سر (مفتوحة للجميع)"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                        </div>
+
+                        {/* Icon Selection */}
+                        <div className="space-y-2 pt-1">
+                          <label className="font-bold text-slate-700 flex items-center justify-between">
+                            <span>اختر أيقونة الغرفة:</span>
+                            {editRoomIcon && !editRoomIconUrl && (
+                              <span className="text-[10px] text-sky-600 font-bold">
+                                الأيقونة المختارة: {ROOM_ICON_PRESET_LIST.find(p => p.key === editRoomIcon)?.label || editRoomIcon}
+                              </span>
+                            )}
+                          </label>
+                          <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-1.5 bg-slate-50 border border-slate-200 rounded-lg">
+                            {ROOM_ICON_PRESET_LIST.map((preset) => {
+                              const IconCmp = preset.icon;
+                              const isSelected = editRoomIcon === preset.key && !editRoomIconUrl;
+                              return (
+                                <button
+                                  key={preset.key}
+                                  type="button"
+                                  onClick={() => {
+                                    setEditRoomIcon(preset.key);
+                                    setEditRoomIconUrl('');
+                                  }}
+                                  className={`px-2.5 py-1.5 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                                    isSelected
+                                      ? 'bg-sky-600 text-white shadow-xs'
+                                      : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                                  }`}
+                                >
+                                  <IconCmp className="w-3.5 h-3.5" />
+                                  <span>{preset.label}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Avatar Image URL */}
+                        <div className="space-y-1.5 pt-1">
+                          <label className="font-bold text-slate-700 flex items-center justify-between">
+                            <span>أو رابط صورة رمزية (Avatar Image URL):</span>
+                            {editRoomIconUrl && (
+                              <button
+                                type="button"
+                                onClick={() => setEditRoomIconUrl('')}
+                                className="text-[10px] text-rose-600 hover:underline"
+                              >
+                                إزالة الصورة واستخدام الأيقونة
+                              </button>
+                            )}
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="url"
+                              placeholder="https://example.com/avatar.png"
+                              value={editRoomIconUrl}
+                              onChange={(e) => setEditRoomIconUrl(e.target.value)}
+                              className="flex-1 bg-slate-50 border border-slate-200 rounded-lg p-2.5 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                            {editRoomIconUrl && (
+                              <div className="w-9 h-9 rounded-full overflow-hidden border border-sky-400 bg-slate-100 shrink-0">
+                                <img
+                                  src={editRoomIconUrl}
+                                  alt="معاينة"
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                          <button
+                            type="button"
+                            onClick={() => setEditingRoom(null)}
+                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl cursor-pointer"
+                          >
+                            إلغاء
+                          </button>
+                          <button
+                            type="submit"
+                            className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
+                          >
+                            <Check className="w-4 h-4" />
+                            <span>حفظ التعديلات والأيقونة</span>
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
             {/* ===================================================================== */}
-            {/* VIEW 6: إدارة حظر IP */}
+            {/* VIEW 6: إدارة الحظر الشامل (IP, Devices, Browsers, Countries, XBands) */}
             {/* ===================================================================== */}
             {activeSection === 'ip_bans' && (
-              <div className="max-w-4xl mx-auto bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-4 shadow-2xs">
-                <h3 className="text-xs font-black text-slate-800 border-b border-slate-100 pb-2">قائمة عناوين IP المحظورة نهائياً</h3>
-                
-                {bannedIps && bannedIps.length > 0 ? (
-                  <div className="space-y-2">
-                    {bannedIps.map(ip => (
-                      <div key={ip} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200">
-                        <span className="font-mono text-xs font-bold text-rose-700">{ip}</span>
-                        <button
-                          onClick={() => { unbanIp(ip); showToast(`تم فك حظر الآي بي: ${ip}`); }}
-                          className="px-3 py-1 bg-emerald-600 text-white text-xs font-bold rounded-lg cursor-pointer"
-                        >
-                          فك الحظر 🔓
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="py-12 text-center text-slate-400 text-xs font-bold">
-                    لا توجد عناوين IP محظورة حالياً ✅
-                  </div>
-                )}
-              </div>
+              <BlacklistView showToast={showToast} />
             )}
 
             {/* ===================================================================== */}
@@ -1755,6 +2252,7 @@ export const OwnerDashboardModal: React.FC = () => {
             {/* ===================================================================== */}
             {/* DEDICATED SECTIONS */}
             {/* ===================================================================== */}
+            {activeSection === 'presence_analytics' && <RoomPresenceAnalytics />}
             {activeSection === 'dj' && <DjView showToast={showToast} />}
             {activeSection === 'permissions' && <PermissionsView showToast={showToast} />}
             {activeSection === 'modules' && <ModulesView showToast={showToast} />}

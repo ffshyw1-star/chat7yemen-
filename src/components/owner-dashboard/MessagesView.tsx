@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 
 export const MessagesView: React.FC<{ showToast: (msg: string) => void }> = ({ showToast }) => {
-  const { messages, setMessages, privateMessages, setPrivateMessages } = useChat();
+  const { messages, privateMessages, clearChat, clearAllPrivateConversations, deleteMessage } = useChat();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRoomFilter, setSelectedRoomFilter] = useState('all');
 
@@ -18,15 +18,15 @@ export const MessagesView: React.FC<{ showToast: (msg: string) => void }> = ({ s
 
   const handleClearPublicChat = () => {
     if (window.confirm('هل أنت متأكد من مسح جميع رسائل الدردشة العامة لكافة الغرف؟ لا يمكن التراجع.')) {
-      setMessages([]);
-      showToast('تم مسح جميع رسائل الدردشة العامة بنجاح 🧹');
+      clearChat();
+      showToast('تم مسح جميع رسائل الدردشة العامة وحفظ التغييرات في قاعدة البيانات 🧹');
     }
   };
 
   const handleClearPrivateChats = () => {
     if (window.confirm('هل أنت متأكد من مسح أرشيف المحادثات الخاصة بالكامل؟')) {
-      setPrivateMessages({});
-      showToast('تم تفريغ أرشيف المحادثات الخاصة 🧹');
+      clearAllPrivateConversations();
+      showToast('تم تفريغ وحذف أرشيف المحادثات الخاصة من قاعدة البيانات 🧹');
     }
   };
 
@@ -120,7 +120,7 @@ export const MessagesView: React.FC<{ showToast: (msg: string) => void }> = ({ s
 
                 <button
                   onClick={() => {
-                    setMessages(prev => prev.filter(m => m.id !== msg.id));
+                    deleteMessage(msg.id);
                     showToast('تم حذف الرسالة بنجاح 🗑️');
                   }}
                   className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer shrink-0"

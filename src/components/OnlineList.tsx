@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useChat } from '../context/ChatContext';
 import { UserAvatar } from './UserAvatar';
+import { UsernameDisplay } from './UsernameDisplay';
 import { User } from '../types';
-import { getRankEmoji, getRankEmojiClass, isSystemUser } from '../utils/permissions';
+import { getRankEmoji, getRankEmojiClass, isSystemUser, isSiteOwner } from '../utils/permissions';
 import { NEON_COLORS } from './ProfileEditorModal';
 import { formatEnglishDate } from '../utils/dateUtils';
+import { getUserDisplayTag, getUserIdentityNumber } from '../utils/geoip';
 import { UserPlus, Home, Search, X, Users, Check, MapPin } from 'lucide-react';
 
 type SortMode = 'random' | 'new_members' | 'last_seen' | 'username' | 'rank';
@@ -13,8 +15,25 @@ export const OnlineList: React.FC = () => {
   const {
     users, currentUser, currentRoom, rooms, setIsOnlineListOpen,
     setSelectedUserForCard, setIsFriendRequestsOpen, setIsRoomsListOpen,
-    banList, ipModerations, siteSettings
+    banList, ipModerations, siteSettings,
+    openTextContextMenu
   } = useChat();
+
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const startLongPressText = (textMsg: string, title?: string) => {
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      openTextContextMenu(textMsg, title);
+    }, 450);
+  };
+
+  const cancelLongPress = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
 
   const [activeTab, setActiveTab] = useState<'online' | 'search'>('online');
   const [searchQuery, setSearchQuery] = useState('');
@@ -23,9 +42,41 @@ export const OnlineList: React.FC = () => {
   const [sortMode, setSortMode] = useState<SortMode>('rank');
   const [isSortModalOpen, setIsSortModalOpen] = useState(false);
 
+  // Status icon helper for online / busy / away
+  const renderStatusIcon = (status?: string) => {
+    if (status === 'busy') {
+      return (
+        <span
+          title="مشغول"
+          className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-rose-500 text-white shadow-2xs shrink-0 select-none"
+        >
+          <span className="w-1.5 h-0.5 bg-white rounded-full"></span>
+        </span>
+      );
+    }
+    if (status === 'away') {
+      return (
+        <span
+          title="بعيد"
+          className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-amber-400 text-white shadow-2xs shrink-0 select-none"
+        >
+          <span className="w-1.5 h-1.5 bg-white/90 rounded-full"></span>
+        </span>
+      );
+    }
+    return (
+      <span
+        title="متصل"
+        className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-emerald-500 text-white shadow-2xs shrink-0 select-none"
+      >
+        <Check className="w-2.5 h-2.5 stroke-[3]" />
+      </span>
+    );
+  };
+
   // Precise Rank Hierarchy Weight according to user specifications
   const getUserRankWeight = (u: User): number => {
-    if (u.role === 'owner') return 100;
+    if (u.role === 'owner' || isSiteOwner(u)) return 150;
     if (isSystemUser(u)) return 90;
     if (u.role === 'admin') return 80;
     if (u.role === 'management') return 70;
@@ -36,19 +87,39 @@ export const OnlineList: React.FC = () => {
     return 0;
   };
 
-  // Helper to determine if user should appear in the online list based on owner timeout setting
+  // Helper to determine if user should appear in the presence list based on actual active presence
   const isUserConsideredOnline = (u: User): boolean => {
+    if (currentUser && u.id === currentUser.id) return true;
+
+    // Check inactivity timeout (in minutes) configured by owner in dashboard
+    const inactivityMinutes = siteSettings?.userInactivityTimeoutMinutes || 15;
+    if (u.lastSeenTimestamp && u.lastSeenTimestamp > 0) {
+      const elapsedMinutes = (Date.now() - u.lastSeenTimestamp) / (1000 * 60);
+      if (elapsedMinutes > inactivityMinutes) {
+        return false;
+      }
+    }
+
+    if (u.onlineStatus === 'offline') return false;
     if (u.onlineStatus === 'online') return true;
-    const timeoutHours = siteSettings?.onlinePresenceTimeoutHours || 0;
-    if (timeoutHours > 0 && u.lastSeenTimestamp) {
-      const diffHours = (Date.now() - u.lastSeenTimestamp) / (1000 * 60 * 60);
-      return diffHours <= timeoutHours;
+
+    const timeoutHours = siteSettings?.onlinePresenceTimeoutHours ?? 0;
+    if (timeoutHours === -1) {
+      // Forever mode: Keep user in presence list until explicit logout
+      return true;
+    }
+    if (timeoutHours > 0) {
+      if (u.lastSeenTimestamp && u.lastSeenTimestamp > 0) {
+        const diffHours = (Date.now() - u.lastSeenTimestamp) / (1000 * 60 * 60);
+        return diffHours <= timeoutHours;
+      }
+      return true;
     }
     return false;
   };
 
   // Filter stealth mode owners unless logged in as owner, and filter out banned users
-  const baseUsers = users.filter(u => {
+  const baseUsers = users.map(u => (currentUser && u.id === currentUser.id ? { ...u, ...currentUser } : u)).filter(u => {
     if (u.isBanned) return false;
     if (banList && (banList.includes(u.id) || (u.ip && banList.includes(u.ip)))) return false;
     if (ipModerations && ipModerations.some(rec => rec.type === 'ban' && (rec.targetUserId === u.id || (u.ip && rec.ip === u.ip)))) return false;
@@ -65,14 +136,25 @@ export const OnlineList: React.FC = () => {
     // In online tab, filter strictly by current active room presence
     if (activeTab === 'online') {
       if (!isUserConsideredOnline(u)) return false;
+      if ((currentRoom.kickedUsers || []).includes(u.id)) return false;
       const userRoomId = u.currentRoomId || 'room-general';
       if (userRoomId !== currentRoom.id) return false;
     }
 
-    // 1. Search Query
+    // 1. Search Query (Matches username, username tag e.g. أحمد@, أحمد@1234, or ID digits)
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
-      if (!u.username.toLowerCase().includes(q)) return false;
+      const uName = u.username.toLowerCase();
+      const userTag = getUserDisplayTag(u).toLowerCase();
+      const userDigits = getUserIdentityNumber(u.id);
+      const isMatch =
+        uName.includes(q) ||
+        userTag.includes(q) ||
+        (q.startsWith('@') && uName.includes(q.substring(1))) ||
+        (q.endsWith('@') && uName.includes(q.slice(0, -1))) ||
+        (q.includes('@') && userTag.includes(q)) ||
+        (q.replace(/\D/g, '').length >= 2 && userDigits.includes(q.replace(/\D/g, '')));
+      if (!isMatch) return false;
     }
 
     // 3. Gender/Role Filter
@@ -318,18 +400,27 @@ export const OnlineList: React.FC = () => {
                         {/* Name & Bio & Location Badge */}
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span
-                              style={{
-                                color: user.usernameColor || undefined,
-                                fontSize: user.usernameFontSize || undefined,
-                                textShadow: NEON_COLORS.some(n => n.value.toLowerCase() === (user.usernameColor || '').toLowerCase())
-                                  ? `0 0 6px ${user.usernameColor}`
-                                  : 'none'
+                            <UsernameDisplay
+                              username={user.username}
+                              role={user.role}
+                              showRankBadge={true}
+                              customRoleBadge={user.customRoleBadge}
+                              badgeSize="sm"
+                              usernameColor={user.usernameColor}
+                              usernameBgGradient={user.usernameBgGradient}
+                              isNeon={user.isNeon || NEON_COLORS.some(n => n.value.toLowerCase() === (user.usernameColor || '').toLowerCase())}
+                              fontSize={user.usernameFontSize}
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                openTextContextMenu(user.username, `اسم المستخدم: ${user.username}`);
                               }}
-                              className="text-xs sm:text-sm font-bold text-slate-900 truncate group-hover:text-sky-600 transition-colors"
-                            >
-                              {user.username}
-                            </span>
+                              onTouchStart={() => startLongPressText(user.username, `اسم المستخدم: ${user.username}`)}
+                              onTouchEnd={cancelLongPress}
+                              onTouchCancel={cancelLongPress}
+                              className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-sky-600 transition-colors"
+                            />
+                            {renderStatusIcon(user.onlineStatus)}
                             {user.role === 'owner' && user.isStealth && (
                               <span className="text-[10px] bg-purple-100 text-purple-700 border border-purple-300 px-1.5 py-0.2 rounded font-black">
                                 مخفي 🕵️‍♂️
@@ -337,7 +428,21 @@ export const OnlineList: React.FC = () => {
                             )}
                           </div>
 
-                          <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                          <p
+                            onContextMenu={(e) => {
+                              const bio = user.statusMessage || user.bio || `${user.countryFlag || '🇾🇪'} ${user.country || 'اليمن'}`;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              openTextContextMenu(bio, `معلومات ${user.username}`);
+                            }}
+                            onTouchStart={() => {
+                              const bio = user.statusMessage || user.bio || `${user.countryFlag || '🇾🇪'} ${user.country || 'اليمن'}`;
+                              startLongPressText(bio, `معلومات ${user.username}`);
+                            }}
+                            onTouchEnd={cancelLongPress}
+                            onTouchCancel={cancelLongPress}
+                            className="text-[11px] text-slate-500 truncate mt-0.5 select-text"
+                          >
                             {user.statusMessage || user.bio || `${user.countryFlag || '🇾🇪'} ${user.country || 'اليمن'}`}
                           </p>
                         </div>
@@ -441,19 +546,48 @@ export const OnlineList: React.FC = () => {
                                 🖐️
                               </span>
                             )}
-                            <span
-                              style={{
-                                color: user.usernameColor || undefined,
-                                fontSize: user.usernameFontSize || undefined,
+                            <UsernameDisplay
+                              username={user.username}
+                              role={user.role}
+                              showRankBadge={true}
+                              customRoleBadge={user.customRoleBadge}
+                              badgeSize="sm"
+                              usernameColor={user.usernameColor}
+                              usernameBgGradient={user.usernameBgGradient}
+                              isNeon={user.isNeon}
+                              fontSize={user.usernameFontSize}
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                openTextContextMenu(user.username, `اسم المستخدم: ${user.username}`);
                               }}
-                              className="text-xs sm:text-sm font-bold text-slate-900 truncate group-hover:text-sky-600 transition-colors block"
-                            >
-                              {user.username}
+                              onTouchStart={() => startLongPressText(user.username, `اسم المستخدم: ${user.username}`)}
+                              onTouchEnd={cancelLongPress}
+                              onTouchCancel={cancelLongPress}
+                              className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-sky-600 transition-colors block"
+                            />
+                            {renderStatusIcon(user.onlineStatus)}
+                            <span className="text-[10px] font-mono text-sky-700 bg-sky-50 border border-sky-200 px-1.5 py-0.2 rounded-md font-bold dir-ltr">
+                              {getUserDisplayTag(user)}
                             </span>
                           </div>
                           
-                          <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                            {user.statusMessage || user.bio || `${user.countryFlag || '🇸🇦'} ${user.country || 'اليمن'}`}
+                          <p
+                            onContextMenu={(e) => {
+                              const bio = user.statusMessage || user.bio || `${user.countryFlag || '🇾🇪'} ${user.country || 'Yemen'}`;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              openTextContextMenu(bio, `معلومات ${user.username}`);
+                            }}
+                            onTouchStart={() => {
+                              const bio = user.statusMessage || user.bio || `${user.countryFlag || '🇾🇪'} ${user.country || 'Yemen'}`;
+                              startLongPressText(bio, `معلومات ${user.username}`);
+                            }}
+                            onTouchEnd={cancelLongPress}
+                            onTouchCancel={cancelLongPress}
+                            className="text-[10px] text-slate-400 truncate mt-0.5 select-text"
+                          >
+                            {user.statusMessage || user.bio || `${user.countryFlag || '🇾🇪'} ${user.country || 'Yemen'}`}
                           </p>
                         </div>
                       </div>

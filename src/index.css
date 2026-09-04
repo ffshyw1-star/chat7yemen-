@@ -44,87 +44,374 @@
   animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* Theme Color Customizations */
-.theme-light {
+/* Shiny & Sparkling Badge Animations */
+@keyframes shine-sweep {
+  0% {
+    transform: translateX(-150%) skewX(-25deg);
+  }
+  50%, 100% {
+    transform: translateX(200%) skewX(-25deg);
+  }
+}
+
+@keyframes sparkle-pulse {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+/* Role Badge Frame & Non-Overlapping Layout */
+.role-badge-frame {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  flex-shrink: 0;
+  vertical-align: middle;
+  line-height: 1;
+  user-select: none;
+  isolation: isolate;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.role-badge-frame:hover {
+  transform: scale(1.08);
+}
+
+.username-with-badge-container {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  max-width: 100%;
+  flex-wrap: nowrap;
+  gap: 0.375rem;
+  overflow: visible;
+}
+
+@media (max-width: 640px) {
+  .username-with-badge-container {
+    gap: 0.25rem;
+  }
+}
+
+.username-with-badge-container .username-text-wrapper {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.username-shiny-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.2), inset 0 1px 1px rgba(255, 255, 255, 0.4);
+  transition: all 0.2s ease-in-out;
+}
+
+.username-shiny-badge::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.45) 50%,
+    transparent 100%
+  );
+  animation: shine-sweep 3s infinite cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.username-text-foreground {
+  position: relative;
+  z-index: 2;
+  font-weight: 800;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  letter-spacing: -0.01em;
+}
+
+/* =========================================================================
+   Theme System Customizations
+   ========================================================================= */
+
+/* --- 0. DEFAULT THEME (الثيم الافتراضي) --- */
+.theme-default {
+  /* Default stylish chat appearance */
+}
+
+/* --- 1. LIGHT / LITE THEME (Lite) --- */
+.theme-light,
+.theme-lite {
   background-color: #f8fafc !important;
   color: #0f172a !important;
 }
+
+.theme-light .app-chat-header,
+.theme-lite .app-chat-header {
+  background-color: #ffffff !important;
+  border-bottom-color: #e2e8f0 !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+}
+
+.theme-light .header-action-btn,
+.theme-lite .header-action-btn {
+  color: #334155 !important;
+}
+.theme-light .header-action-btn:hover,
+.theme-lite .header-action-btn:hover {
+  background-color: #f1f5f9 !important;
+}
+.theme-light .header-icon,
+.theme-lite .header-icon {
+  color: #334155 !important;
+  stroke: #334155 !important;
+}
+.theme-light .header-icon.fill-white,
+.theme-lite .header-icon.fill-white {
+  fill: #334155 !important;
+}
+
+.theme-light .header-store-btn,
+.theme-lite .header-store-btn {
+  background-color: #0f172a !important;
+  color: #ffffff !important;
+  border-color: #1e293b !important;
+}
+.theme-light .header-store-btn *,
+.theme-lite .header-store-btn * {
+  color: #ffffff !important;
+  fill: #ffffff !important;
+}
+
+/* Send Button High Contrast in Light / Lite Theme */
+.theme-light .chat-send-btn,
+.theme-lite .chat-send-btn {
+  background-color: #0f172a !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.25) !important;
+}
+.theme-light .chat-send-btn:hover,
+.theme-lite .chat-send-btn:hover {
+  background-color: #1e293b !important;
+}
+.theme-light .chat-send-btn svg,
+.theme-lite .chat-send-btn svg {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
+}
+
+/* Bottom Navigation in Light / Lite Theme */
+.theme-light footer,
+.theme-lite footer {
+  background-color: #ffffff !important;
+  border-top-color: #e2e8f0 !important;
+  color: #0f172a !important;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.04) !important;
+}
+.theme-light footer button,
+.theme-lite footer button {
+  color: #475569 !important;
+}
+.theme-light footer button:hover,
+.theme-lite footer button:hover {
+  color: #0f172a !important;
+}
+
+/* Containers in Light / Lite Theme */
 .theme-light .bg-slate-950,
-.theme-light .bg-slate-900 {
+.theme-lite .bg-slate-950 {
   background-color: #ffffff !important;
   color: #0f172a !important;
-  border-color: #cbd5e1 !important;
+  border-color: #e2e8f0 !important;
+}
+.theme-light .bg-slate-900,
+.theme-lite .bg-slate-900 {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+  border-color: #e2e8f0 !important;
 }
 .theme-light .bg-slate-950\/60,
 .theme-light .bg-slate-950\/80,
-.theme-light .bg-slate-800 {
+.theme-light .bg-slate-800,
+.theme-lite .bg-slate-950\/60,
+.theme-lite .bg-slate-950\/80,
+.theme-lite .bg-slate-800 {
   background-color: #f1f5f9 !important;
   color: #0f172a !important;
   border-color: #cbd5e1 !important;
 }
 .theme-light .text-slate-100,
 .theme-light .text-slate-200,
-.theme-light .text-slate-300 {
+.theme-light .text-slate-300,
+.theme-lite .text-slate-100,
+.theme-lite .text-slate-200,
+.theme-lite .text-slate-300 {
   color: #1e293b !important;
 }
 .theme-light .text-slate-400,
-.theme-light .text-slate-500 {
+.theme-light .text-slate-500,
+.theme-lite .text-slate-400,
+.theme-lite .text-slate-500 {
   color: #64748b !important;
 }
 
+/* --- GRAY THEME (Gray) --- */
+.theme-gray {
+  background-color: #2b2e38 !important;
+  color: #f1f5f9 !important;
+}
+.theme-gray .app-chat-header,
+.theme-gray .bg-slate-950 {
+  background-color: #242730 !important;
+  border-color: #3b404d !important;
+}
+.theme-gray .bg-slate-900 {
+  background-color: #2d313d !important;
+  border-color: #3b404d !important;
+}
+.theme-gray .border-slate-800 {
+  border-color: #3b404d !important;
+}
+.theme-gray .chat-send-btn {
+  background-color: #4b5563 !important;
+}
+.theme-gray .chat-send-btn:hover {
+  background-color: #6b7280 !important;
+}
+
+/* --- DARK THEME (Dark) --- */
+.theme-dark {
+  background-color: #0b0f17 !important;
+  color: #f8fafc !important;
+}
+.theme-dark .app-chat-header,
+.theme-dark .bg-slate-950 {
+  background-color: #080b11 !important;
+  border-color: #1a2233 !important;
+}
+.theme-dark .bg-slate-900 {
+  background-color: #0f1726 !important;
+  border-color: #1a2233 !important;
+}
+.theme-dark .border-slate-800 {
+  border-color: #1a2233 !important;
+}
+.theme-dark .chat-send-btn {
+  background-color: #0284c7 !important;
+}
+.theme-dark .chat-send-btn:hover {
+  background-color: #0369a1 !important;
+}
+
+/* --- 2. EMERALD THEME (الزمردي الليلي) --- */
 .theme-emerald {
   background-color: #022c22 !important;
   color: #ecfdf5 !important;
 }
+.theme-emerald .app-chat-header,
 .theme-emerald .bg-slate-950 {
   background-color: #022c22 !important;
+  border-color: #047857 !important;
 }
 .theme-emerald .bg-slate-900 {
   background-color: #064e3b !important;
+  border-color: #047857 !important;
 }
 .theme-emerald .border-slate-800 {
   border-color: #047857 !important;
 }
+.theme-emerald .chat-send-btn {
+  background-color: #059669 !important;
+}
+.theme-emerald .chat-send-btn:hover {
+  background-color: #10b981 !important;
+}
 
+/* --- 3. SAPPHIRE THEME (الأزرق الملكي) --- */
 .theme-sapphire {
   background-color: #0b1329 !important;
   color: #f0f9ff !important;
 }
+.theme-sapphire .app-chat-header,
 .theme-sapphire .bg-slate-950 {
   background-color: #0b1329 !important;
+  border-color: #1e3a8a !important;
 }
 .theme-sapphire .bg-slate-900 {
   background-color: #101f42 !important;
+  border-color: #1e3a8a !important;
 }
 .theme-sapphire .border-slate-800 {
   border-color: #1e3a8a !important;
 }
+.theme-sapphire .chat-send-btn {
+  background-color: #2563eb !important;
+}
+.theme-sapphire .chat-send-btn:hover {
+  background-color: #3b82f6 !important;
+}
 
+/* --- 4. PURPLE THEME (البنفسجي المخملي) --- */
 .theme-purple {
   background-color: #170d2b !important;
   color: #faf5ff !important;
 }
+.theme-purple .app-chat-header,
 .theme-purple .bg-slate-950 {
   background-color: #170d2b !important;
+  border-color: #581c87 !important;
 }
 .theme-purple .bg-slate-900 {
   background-color: #271447 !important;
+  border-color: #581c87 !important;
 }
 .theme-purple .border-slate-800 {
   border-color: #581c87 !important;
 }
+.theme-purple .chat-send-btn {
+  background-color: #9333ea !important;
+}
+.theme-purple .chat-send-btn:hover {
+  background-color: #a855f7 !important;
+}
 
+/* --- 5. ROSE THEME (الوردي الجذاب) --- */
 .theme-rose {
   background-color: #240a15 !important;
   color: #fff1f2 !important;
 }
+.theme-rose .app-chat-header,
 .theme-rose .bg-slate-950 {
   background-color: #240a15 !important;
+  border-color: #9f1239 !important;
 }
 .theme-rose .bg-slate-900 {
   background-color: #3f1025 !important;
+  border-color: #9f1239 !important;
 }
 .theme-rose .border-slate-800 {
   border-color: #9f1239 !important;
 }
-
+.theme-rose .chat-send-btn {
+  background-color: #e11d48 !important;
+}
+.theme-rose .chat-send-btn:hover {
+  background-color: #f43f5e !important;
+}

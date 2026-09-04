@@ -6,42 +6,54 @@ import {
 } from 'lucide-react';
 
 export const MusicView: React.FC<{ showToast: (msg: string) => void }> = ({ showToast }) => {
-  const [playlist, setPlaylist] = useState([
-    { id: 'm1', title: 'شيلة يمنية طرب - تراث صنعاء', url: 'https://youtube.com/watch?v=sample1', duration: '3:45' },
-    { id: 'm2', title: 'موسيقى هادئة للاسترخاء والدردشة', url: 'https://youtube.com/watch?v=sample2', duration: '5:10' },
-    { id: 'm3', title: 'عزف عود يمني أصيل - روقان', url: 'https://youtube.com/watch?v=sample3', duration: '4:20' },
-  ]);
+  const { siteSettings, updateSiteSettings } = useChat();
+
+  const [playlist, setPlaylist] = useState<{ id: string; title: string; url: string; duration: string }[]>(
+    siteSettings.musicPlaylist || [
+      { id: 'm1', title: 'شيلة يمنية طرب - تراث صنعاء', url: 'https://youtube.com/watch?v=sample1', duration: '3:45' },
+      { id: 'm2', title: 'موسيقى هادئة للاسترخاء والدردشة', url: 'https://youtube.com/watch?v=sample2', duration: '5:10' },
+      { id: 'm3', title: 'عزف عود يمني أصيل - روقان', url: 'https://youtube.com/watch?v=sample3', duration: '4:20' },
+    ]
+  );
 
   const [newTitle, setNewTitle] = useState('');
   const [newUrl, setNewUrl] = useState('');
-  const [autoPlayBackground, setAutoPlayBackground] = useState(false);
-  const [defaultVolume, setDefaultVolume] = useState(70);
-  const [allowMemberRequests, setAllowMemberRequests] = useState(true);
+  const [autoPlayBackground, setAutoPlayBackground] = useState(siteSettings.autoPlayBackgroundMusic || false);
+  const [defaultVolume, setDefaultVolume] = useState(siteSettings.defaultMusicVolume || 70);
+  const [allowMemberRequests, setAllowMemberRequests] = useState(siteSettings.allowMusicRequests ?? true);
 
   const handleAddTrack = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
-    setPlaylist(prev => [
-      ...prev,
-      {
-        id: `m-${Date.now()}`,
-        title: newTitle.trim(),
-        url: newUrl.trim() || 'https://youtube.com/watch?v=sample',
-        duration: '3:30'
-      }
-    ]);
+    const newTrack = {
+      id: `m-${Date.now()}`,
+      title: newTitle.trim(),
+      url: newUrl.trim() || 'https://youtube.com/watch?v=sample',
+      duration: '3:30'
+    };
+    const updated = [...playlist, newTrack];
+    setPlaylist(updated);
+    updateSiteSettings({ musicPlaylist: updated });
     setNewTitle('');
     setNewUrl('');
-    showToast('تمت إضافة المقطع إلى قائمة تشغيل الموقع 🎵');
+    showToast('تمت إضافة المقطع إلى قائمة تشغيل الموقع وحفظه في السيرفر 🎵');
   };
 
   const handleDeleteTrack = (id: string) => {
-    setPlaylist(prev => prev.filter(t => t.id !== id));
-    showToast('تم حذف المقطع من القائمة 🗑️');
+    const updated = playlist.filter(t => t.id !== id);
+    setPlaylist(updated);
+    updateSiteSettings({ musicPlaylist: updated });
+    showToast('تم حذف المقطع من القائمة وتحديث السيرفر 🗑️');
   };
 
   const handleSaveSettings = () => {
-    showToast('تم حفظ إعدادات مشغلات الموسيقى واليوتيوب 💾');
+    updateSiteSettings({
+      musicPlaylist: playlist,
+      autoPlayBackgroundMusic: autoPlayBackground,
+      defaultMusicVolume: defaultVolume,
+      allowMusicRequests: allowMemberRequests
+    });
+    showToast('تم حفظ إعدادات مشغلات الموسيقى واليوتيوب في قاعدة البيانات 💾');
   };
 
   return (

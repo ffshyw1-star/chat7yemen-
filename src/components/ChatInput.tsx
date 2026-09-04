@@ -4,12 +4,14 @@ import { VoiceRecorder } from '../utils/audio';
 import { canSendMediaInPublic, getYouTubeVideoId } from '../utils/permissions';
 import {
   Send, Mic, Smile, Plus, Image as ImageIcon, X, Square, Youtube, Upload, Video,
-  Paperclip, FileText, Music, PenTool, Palette, Check, Search, Type, Camera
+  Paperclip, FileText, Music, PenTool, Palette, Check, Search, Type, Camera, HardDrive
 } from 'lucide-react';
 import { DrawingCanvasModal } from './DrawingCanvasModal';
 import { ActionChoiceModal } from './ActionChoiceModal';
 import { YouTubeModal } from './YouTubeModal';
 import { StickerPicker } from './StickerPicker';
+import { TextFormatModal } from './TextFormatModal';
+import { t } from '../utils/translations';
 
 const STANDARD_COLORS = [
   { name: 'أسود', value: '#000000' },
@@ -48,14 +50,22 @@ const FONT_WEIGHTS = [
 
 export const ChatInput: React.FC = () => {
   const {
-    currentUser, sendMessage, inputInsertedUsername, setInputInsertedUsername, sendTypingStatus,
-    customEmojis, setIsOwnerDashboardOpen
+    currentUser, currentRoom, sendMessage, inputInsertedUsername, setInputInsertedUsername, sendTypingStatus,
+    customEmojis, setIsOwnerDashboardOpen, setIsGoogleDriveOpen, showTopBanner, currentUserCan
   } = useChat();
+
+  const isMutedInCurrentRoom = Boolean(
+    currentUser && (
+      currentUser.isMuted ||
+      (currentRoom?.mutedUsers || []).includes(currentUser.id)
+    )
+  );
 
   const [text, setText] = useState('');
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isMutedInCurrentRoom) return;
     const val = e.target.value;
     setText(val);
     if (sendTypingStatus) {
@@ -75,6 +85,7 @@ export const ChatInput: React.FC = () => {
   const [isYouTubeModalOpen, setIsYouTubeModalOpen] = useState(false);
   const [isDrawingModalOpen, setIsDrawingModalOpen] = useState(false);
   const [isFormatPanelOpen, setIsFormatPanelOpen] = useState(false);
+  const [isTextFormatModalOpen, setIsTextFormatModalOpen] = useState(false);
 
   // File Manager & Media Upload States
   const [selectedFile, setSelectedFile] = useState<{ type: 'audio' | 'image'; base64: string; name: string; durationSec?: number } | null>(null);
@@ -159,6 +170,14 @@ export const ChatInput: React.FC = () => {
 
   const handleSendSelectedFile = () => {
     if (!selectedFile) return;
+    if (isMutedInCurrentRoom) {
+      showTopBanner('🚫 عذراً، أنت مكتوم عن إرسال الوسائط في هذه الغرفة');
+      return;
+    }
+    if (!currentUserCan('send_media')) {
+      showTopBanner('🚫 ليس لديك صلاحية إرسال الوسائط والملفات حسب رتبتك');
+      return;
+    }
     if (selectedFile.type === 'image') {
       sendMessage(text.trim() || 'صورة من الوسائط', 'image', selectedFile.base64);
     } else {
@@ -171,11 +190,29 @@ export const ChatInput: React.FC = () => {
 
   // YouTube Song / Video selection
   const handleSelectYouTubeVideo = (ytId: string, title: string) => {
+    if (isMutedInCurrentRoom) {
+      showTopBanner('🚫 عذراً، أنت مكتوم في هذه الغرفة');
+      return;
+    }
+    if (!currentUserCan('send_media')) {
+      showTopBanner('🚫 ليس لديك صلاحية إرسال مقاطع اليوتيوب حسب رتبتك');
+      return;
+    }
     sendMessage(title || 'مقطع من YouTube', 'youtube', ytId);
   };
 
   const handleSend = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+
+    if (isMutedInCurrentRoom) {
+      showTopBanner('🚫 عذراً، أنت مكتوم عن الكتابة في هذه الغرفة (مشاهدة فقط)');
+      return;
+    }
+
+    if (!currentUserCan('send_text')) {
+      showTopBanner('🚫 ليس لديك صلاحية إرسال الرسائل النصية حسب رتبتك');
+      return;
+    }
 
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     if (sendTypingStatus) sendTypingStatus(false);
@@ -186,6 +223,10 @@ export const ChatInput: React.FC = () => {
     }
 
     if (recordedAudio) {
+      if (!currentUserCan('send_voice')) {
+        showTopBanner('🚫 ليس لديك صلاحية إرسال الرسائل الصوتية حسب رتبتك');
+        return;
+      }
       sendMessage(text.trim() || 'رسالة صوتية', 'voice', recordedAudio.base64, recordedAudio.durationSec);
       setRecordedAudio(null);
       setText('');
@@ -195,9 +236,13 @@ export const ChatInput: React.FC = () => {
     if (!text.trim()) return;
 
     sendMessage(text.trim(), 'text', undefined, undefined, {
-      color: selectedTextColor,
-      fontSize: selectedFontSize,
-      fontWeight: selectedFontWeight
+      color: currentUser?.chatTextColor || (selectedTextColor !== '#000000' ? selectedTextColor : undefined),
+      fontSize: currentUser?.chatTextFontSize || selectedFontSize,
+      fontWeight: currentUser?.chatTextWeight || selectedFontWeight,
+      fontFamily: currentUser?.chatFontFamily,
+      fontStyle: currentUser?.chatFontStyle,
+      bgGradient: currentUser?.chatTextBgGradient,
+      isNeon: currentUser?.chatIsNeon
     });
 
     setText('');
@@ -206,9 +251,17 @@ export const ChatInput: React.FC = () => {
 
   // Start voice recording
   const startVoiceRecording = async () => {
+    if (isMutedInCurrentRoom) {
+      showTopBanner('🚫 عذراً، أنت مكتوم عن المشاركة الصوتية في هذه الغرفة');
+      return;
+    }
+    if (!currentUserCan('send_voice')) {
+      showTopBanner('🚫 ليس لديك صلاحية إرسال الرسائل الصوتية حسب رتبتك');
+      return;
+    }
     recorderRef.current = new VoiceRecorder();
-    const ok = await recorderRef.current.startRecording();
-    if (ok) {
+    const result = await recorderRef.current.startRecording();
+    if (result.ok) {
       setIsRecording(true);
       setRecordingSeconds(0);
       setRecordedAudio(null);
@@ -217,7 +270,7 @@ export const ChatInput: React.FC = () => {
         setRecordingSeconds((prev) => prev + 1);
       }, 1000);
     } else {
-      alert('تعذر الوصول للميكروفون. يرجى تفعيل إذن الميكروفون في المتصفح.');
+      showTopBanner(result.error || 'تعذر الوصول للميكروفون. يرجى تفعيل إذن الميكروفون في المتصفح.', 'error');
     }
   };
 
@@ -248,7 +301,7 @@ export const ChatInput: React.FC = () => {
   };
 
   return (
-    <div className="bg-white border-t border-slate-200/90 p-2 sm:p-2.5 relative select-none shadow-xs dir-rtl">
+    <div className="shrink-0 z-20 bg-white border-t border-slate-200/90 p-2 sm:p-2.5 relative select-none shadow-xs dir-rtl">
       {/* Hidden Native File Inputs */}
       <input
         type="file"
@@ -305,17 +358,16 @@ export const ChatInput: React.FC = () => {
               <Upload className="w-5 h-5 text-white stroke-[2.4]" />
             </button>
 
-            {/* 2. Text Note / Formatting Circle Button (دفتر الملاحظات والتنسيق) */}
+            {/* 2. Text Note / Formatting Circle Button (دفتر الملاحظات والتنسيق - يفتح نافذة تنسيق النصوص والألوان والخلفيات اللامعة) */}
             <button
               id="text-format-btn"
               type="button"
               onClick={() => {
-                setIsFormatPanelOpen(!isFormatPanelOpen);
+                setIsMediaOpen(false);
+                setIsTextFormatModalOpen(true);
               }}
-              className={`w-10 h-10 rounded-full bg-[#0284c7] hover:bg-[#0369a1] text-white flex items-center justify-center shadow-md transition-transform hover:scale-105 active:scale-95 cursor-pointer ${
-                isFormatPanelOpen ? 'ring-2 ring-sky-300 scale-105' : ''
-              }`}
-              title="تنسيق النصوص والألوان وحجم وعرض الخط 📝"
+              className="w-10 h-10 rounded-full bg-[#0284c7] hover:bg-[#0369a1] text-white flex items-center justify-center shadow-md transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+              title="تنسيق النصوص والألوان وحجم وعرض الخط والخلفيات اللامعة 📝"
             >
               <FileText className="w-5 h-5 text-white stroke-[2.4]" />
             </button>
@@ -348,6 +400,20 @@ export const ChatInput: React.FC = () => {
               <div className="bg-[#ff0000] text-white rounded-md px-1.5 py-0.5 flex items-center justify-center shadow-xs text-[10px] font-black tracking-tighter">
                 <span className="font-sans">YouTube</span>
               </div>
+            </button>
+
+            {/* 5. Google Drive Button */}
+            <button
+              id="google-drive-open-btn"
+              type="button"
+              onClick={() => {
+                setIsMediaOpen(false);
+                setIsGoogleDriveOpen(true);
+              }}
+              className="w-10 h-10 rounded-full bg-[#2563eb] hover:bg-[#1d4ed8] text-white flex items-center justify-center shadow-md transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+              title="ملفاتي السحابية في Google Drive 📁"
+            >
+              <HardDrive className="w-5 h-5 text-white stroke-[2.2]" />
             </button>
 
           </div>
@@ -519,10 +585,10 @@ export const ChatInput: React.FC = () => {
         {/* Circular Dark Send Button (➤) on Far Right (DOM 1st in RTL) */}
         <button
           type="submit"
-          className="w-9 h-9 sm:w-10 sm:h-10 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white rounded-full font-bold shadow-md transition-all shrink-0 cursor-pointer flex items-center justify-center"
+          className="chat-send-btn w-9 h-9 sm:w-10 sm:h-10 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white rounded-full font-bold shadow-md transition-all shrink-0 cursor-pointer flex items-center justify-center"
           title="إرسال الرسالة"
         >
-          <Send className="w-4 h-4 rotate-180 text-white" />
+          <Send className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-white shrink-0 -translate-x-0.5" />
         </button>
 
         {/* Voice Recorder Button (🎤) */}
@@ -580,14 +646,22 @@ export const ChatInput: React.FC = () => {
             type="text"
             value={text}
             onChange={handleTextChange}
-            placeholder={isRecording ? 'جاري تسجيل مقطعك الصوتي...' : 'اكتب هنا... (أو اكتب /Clear لمسح الدردشة)'}
-            disabled={isRecording}
+            placeholder={
+              isMutedInCurrentRoom
+                ? '🔇 أنت مكتوم عن الكتابة في هذه الغرفة (مشاهدة فقط)...'
+                : isRecording
+                ? 'Recording audio...'
+                : t('input.placeholder', 'اكتب هنا... (أو اكتب /Clear لمسح الدردشة)')
+            }
+            disabled={isRecording || isMutedInCurrentRoom}
             style={{
               color: selectedTextColor !== '#000000' && selectedTextColor !== '#ffffff' ? selectedTextColor : undefined,
               fontSize: selectedFontSize !== '14px' ? selectedFontSize : undefined,
               fontWeight: selectedFontWeight !== 'normal' ? selectedFontWeight : undefined
             }}
-            className="w-full bg-slate-50 border border-slate-300/90 focus:border-slate-400 rounded-full px-4 py-2 sm:py-2.5 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none transition-colors shadow-inner"
+            className={`w-full ${
+              isMutedInCurrentRoom ? 'bg-slate-100/90 text-slate-500 cursor-not-allowed border-dashed border-red-300' : 'bg-slate-50 border-slate-300/90 focus:border-slate-400 text-slate-800'
+            } border rounded-full px-4 py-2 sm:py-2.5 text-xs sm:text-sm placeholder-slate-400 focus:outline-none transition-colors shadow-inner`}
           />
         </div>
 
@@ -622,6 +696,17 @@ export const ChatInput: React.FC = () => {
           <Plus className={`w-5 h-5 transition-transform duration-150 ${isMediaOpen ? 'rotate-45' : ''}`} />
         </button>
       </form>
+
+      {/* Text Format & Shiny Backgrounds Modal (نافذة تنسيق الخط والألوان والخلفيات اللامعة) */}
+      <TextFormatModal
+        isOpen={isTextFormatModalOpen}
+        onClose={() => setIsTextFormatModalOpen(false)}
+        onApplyFormat={(format) => {
+          if (format.color) setSelectedTextColor(format.color);
+          if (format.fontSize) setSelectedFontSize(format.fontSize);
+          if (format.fontWeight) setSelectedFontWeight(format.fontWeight);
+        }}
+      />
     </div>
   );
 };

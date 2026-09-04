@@ -1,15 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useChat } from '../context/ChatContext';
-import { Gender, PrivatePrivacySetting } from '../types';
+import { Gender, PrivatePrivacySetting, ThemeMode } from '../types';
 import { UserAvatar } from './UserAvatar';
+import { UsernameDisplay } from './UsernameDisplay';
 import { DEFAULT_AVATARS, NEON_COLORS, USERNAME_FONT_SIZES } from './ProfileEditorModal';
 import { playChatSound } from '../utils/audio';
 import { COUNTRIES_LIST, getCountryFlagByName, getArabicCountryName, getEnglishCountryName } from '../utils/geoip';
+import { formatEnglishDate } from '../utils/dateUtils';
+import { applyLanguageSettings, getAppLanguage, t } from '../utils/translations';
+import { RANK_TITLES } from '../utils/permissions';
 import {
   X, User, Shield, Volume2, Globe, Lock, Trash2, Check,
   Palette, Edit3, VolumeX, Camera, Upload, Link, RefreshCw, Volume1,
   UserCheck, HelpCircle, Brush, UserPlus, Ban, Monitor, MessageSquare,
-  Mail, Key, ArrowRight, ShieldCheck, Save, ChevronDown
+  Mail, Key, ArrowRight, ShieldCheck, Save, ChevronDown, Search
 } from 'lucide-react';
 
 // All World Languages in English sorted alphabetically
@@ -276,48 +280,49 @@ const NEON_SWATCHES = [
 ];
 
 const GRADIENT_SWATCHES = [
-  'linear-gradient(to right, #ff4e50, #f9d423)',
-  'linear-gradient(to right, #11998e, #38ef7d)',
-  'linear-gradient(to right, #fc4a1a, #f7b733)',
-  'linear-gradient(to right, #ff007f, #7f00ff)',
-  'linear-gradient(to right, #00c6ff, #0072ff)',
-  'linear-gradient(to right, #f857a6, #ff5858)',
-  'linear-gradient(to right, #43e97b, #38f9d7)',
-  'linear-gradient(to right, #fa709a, #fee140)',
-  'linear-gradient(to right, #30cfd0, #330867)',
-  'linear-gradient(to right, #a8c0ff, #3f2b96)',
-  'linear-gradient(to right, #f093fb, #f5576c)',
-  'linear-gradient(to right, #5ee7df, #b490ca)',
-  'linear-gradient(to right, #c31432, #240b36)',
-  'linear-gradient(to right, #f12711, #f5af19)',
-  'linear-gradient(to right, #b92b27, #1565c0)',
-  'linear-gradient(to right, #3a1c71, #d76d77, #ffaf7b)',
-  'linear-gradient(to right, #00b4db, #0083b0)',
-  'linear-gradient(to right, #833ab4, #fd1d1d, #fcb045)',
-  'linear-gradient(to right, #fe8c00, #f83600)',
-  'linear-gradient(to right, #1e3c72, #2a5298)',
-  'linear-gradient(to right, #2c3e50, #000000)',
-  'linear-gradient(to right, #ed213a, #93291e)',
-  'linear-gradient(to right, #ff9966, #ff5e62)',
-  'linear-gradient(to right, #00f2fe, #4facfe)',
-  'linear-gradient(to right, #13547a, #80d0c7)',
-  'linear-gradient(to right, #ff0844, #ffb199)',
-  'linear-gradient(to right, #2193b0, #6dd5ed)',
-  'linear-gradient(to right, #cc2b5e, #753a88)',
-  'linear-gradient(to right, #ee9ca7, #ffdde1)',
-  'linear-gradient(to right, #42275a, #734b6d)',
-  'linear-gradient(to right, #bdc3c7, #2c3e50)',
-  'linear-gradient(to right, #de6262, #ffb88c)',
-  'linear-gradient(to right, #06beb6, #48b1bf)',
-  'linear-gradient(to right, #eb3349, #f45c43)',
-  'linear-gradient(to right, #dd5e89, #f7bb97)',
-  'linear-gradient(to right, #56ab2f, #a8e063)',
-  'linear-gradient(to right, #eecda3, #ef629f)',
-  'linear-gradient(to right, #e29587, #d66d75)',
-  'linear-gradient(to right, #200122, #6f0000)',
-  'linear-gradient(to right, #141e30, #243b55)',
-  'linear-gradient(to right, #4568dc, #b06ab3)',
-  'linear-gradient(to right, #40e0d0, #ff8c00, #ff0080)'
+  // Glittering Golds & Metallics
+  'linear-gradient(135deg, #ffd700 0%, #fff8dc 25%, #ffb700 50%, #fff2a3 75%, #d4af37 100%)', // Gold Sparkle
+  'linear-gradient(135deg, #e6c875 0%, #ffd700 30%, #ffae19 60%, #fff3b0 100%)', // Imperial Gold
+  'linear-gradient(135deg, #e0e0e0 0%, #ffffff 35%, #9e9e9e 70%, #f5f5f5 100%)', // Platinum Chrome
+  'linear-gradient(135deg, #f3a683 0%, #f7d794 50%, #f8a5c2 100%)', // Rose Gold Shimmer
+
+  // Radiant Gems & Jewels
+  'linear-gradient(135deg, #ff0844 0%, #ffb199 50%, #e50914 100%)', // Ruby Fire
+  'linear-gradient(135deg, #00f2fe 0%, #4facfe 50%, #00c6ff 100%)', // Diamond Sapphire
+  'linear-gradient(135deg, #0ba360 0%, #3cba92 50%, #30dd8a 100%)', // Emerald Glow
+  'linear-gradient(135deg, #b92b27 0%, #1565c0 100%)', // Royal Velvet
+  'linear-gradient(135deg, #f857a6 0%, #ff5858 100%)', // Radiant Coral
+  'linear-gradient(135deg, #8a2387 0%, #e94057 50%, #f27121 100%)', // Sunset Flare
+
+  // Neon & Cyber Glowing
+  'linear-gradient(135deg, #ff007f 0%, #7f00ff 50%, #00ffff 100%)', // Cyber Laser
+  'linear-gradient(135deg, #30cfd0 0%, #330867 100%)', // Cosmic Violet
+  'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)', // Neon Mint
+  'linear-gradient(135deg, #fa709a 0%, #fee140 100%)', // Sweet Pink Glow
+  'linear-gradient(135deg, #a8c0ff 0%, #3f2b96 100%)', // Deep Indigo
+  'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', // Orchid Shine
+
+  // Holographic & Aurora
+  'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)', // Mystic Teal
+  'linear-gradient(135deg, #5ee7df 0%, #b490ca 100%)', // Fairy Dust
+  'linear-gradient(135deg, #ff4e50 0%, #f9d423 100%)', // Solar Flash
+  'linear-gradient(135deg, #00c6ff 0%, #0072ff 100%)', // Ocean Electric
+  'linear-gradient(135deg, #f12711 0%, #f5af19 100%)', // Volcano Flame
+  'linear-gradient(135deg, #833ab4 0%, #fd1d1d 50%, #fcb045 100%)', // Prismatic Rainbow
+  'linear-gradient(135deg, #fe8c00 0%, #f83600 100%)', // Neon Orange
+  'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)', // Deep Space
+  'linear-gradient(135deg, #ed213a 0%, #93291e 100%)', // Blood Diamond
+  'linear-gradient(135deg, #4568dc 0%, #b06ab3 100%)', // Velvet Purple
+  'linear-gradient(135deg, #00b4db 0%, #0083b0 100%)', // Cyan Ice
+  'linear-gradient(135deg, #13547a 0%, #80d0c7 100%)', // Glacier Sparkle
+  'linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%)', // Sky Blue Glow
+  'linear-gradient(135deg, #cc2b5e 0%, #753a88 100%)', // Purple Velvet
+  'linear-gradient(135deg, #40e0d0 0%, #ff8c00 50%, #ff0080 100%)', // Exotic Prism
+  'linear-gradient(135deg, #2c3e50 0%, #4ca1af 100%)', // Slate Topaz
+  'linear-gradient(135deg, #c31432 0%, #240b36 100%)', // Dark Nebula
+  'linear-gradient(135deg, #3a1c71 0%, #d76d77 50%, #ffaf7b 100%)', // Celestial Dawn
+  'linear-gradient(135deg, #ff9966 0%, #ff5e62 100%)', // Tropical Sunset
+  'linear-gradient(135deg, #06beb6 0%, #48b1bf 100%)' // Aqua Jewel
 ];
 
 const FONTS_LIST = [
@@ -344,7 +349,8 @@ export const AccountSettingsModal: React.FC = () => {
   const {
     currentUser, updateUserProfile, audioSettings, updateAudioSettings,
     setIsProfileSettingsOpen, removeFriend, users, themeMode, setThemeMode,
-    toggleIgnore, toggleBlockUser, requestBlockConfirm
+    toggleIgnore, toggleBlockUser, requestBlockConfirm, showTopBanner,
+    currentUserCan
   } = useChat();
 
   const [activeSubMenu, setActiveSubMenu] = useState<string | null>(null);
@@ -372,15 +378,38 @@ export const AccountSettingsModal: React.FC = () => {
 
   // Sub-tabs & Popups for Language / Location sub-menu
   const [selectedLang, setSelectedLang] = useState<string>(() => localStorage.getItem('selectedLang') || 'Arabic');
-  const [selectedCountryLoc, setSelectedCountryLoc] = useState<string>(() => currentUser?.country || 'اليمن');
+  const [selectedCountryLoc, setSelectedCountryLoc] = useState<string>(() => {
+    if (currentUser?.hideCountry || currentUser?.country === 'عدم إظهار') return 'عدم إظهار';
+    return getEnglishCountryName(currentUser?.country) || 'Yemen';
+  });
   const [selectedTimezoneLoc, setSelectedTimezoneLoc] = useState<string>(() => localStorage.getItem('selectedTimezone') || 'Asia/Aden');
   const [openLocPickerModal, setOpenLocPickerModal] = useState<'lang' | 'country' | 'timezone' | null>(null);
+  const [countrySearchQuery, setCountrySearchQuery] = useState('');
+
+  const [privatePrivacy, setPrivatePrivacy] = useState<PrivatePrivacySetting>(currentUser?.privatePrivacy || 'everyone');
+  const [selectedTheme, setSelectedTheme] = useState<ThemeMode>(themeMode);
+  const [isThemeSelectModalOpen, setIsThemeSelectModalOpen] = useState(false);
+
+  const THEME_OPTIONS: { id: ThemeMode; name: string }[] = [
+    { id: 'default', name: 'الثيم الافتراضي' },
+    { id: 'dark', name: 'Dark' },
+    { id: 'gray', name: 'Gray' },
+    { id: 'lite', name: 'Lite' },
+  ];
 
   useEffect(() => {
-    if (currentUser?.country) {
-      setSelectedCountryLoc(currentUser.country);
+    if (currentUser?.privatePrivacy) {
+      setPrivatePrivacy(currentUser.privatePrivacy);
     }
-  }, [currentUser?.country]);
+  }, [currentUser?.privatePrivacy]);
+
+  useEffect(() => {
+    if (currentUser?.hideCountry || currentUser?.country === 'عدم إظهار') {
+      setSelectedCountryLoc('عدم إظهار');
+    } else if (currentUser?.country) {
+      setSelectedCountryLoc(getEnglishCountryName(currentUser.country));
+    }
+  }, [currentUser?.country, currentUser?.hideCountry]);
 
   // Avatar Selection State
   const [avatarCategory, setAvatarCategory] = useState<'men' | 'women' | 'royal' | 'cute'>('men');
@@ -404,6 +433,13 @@ export const AccountSettingsModal: React.FC = () => {
 
   const canChangeAvatar = ['vip', 'moderator', 'management', 'admin', 'owner'].includes(currentUser.role);
 
+  const triggerSaveNotification = () => {
+    setSaveSuccess('تم الحفظ');
+    showTopBanner('تم الحفظ');
+    setActiveSubMenu(null);
+    setTimeout(() => setSaveSuccess(''), 3000);
+  };
+
   // File upload handlers
   const handleCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -417,8 +453,7 @@ export const AccountSettingsModal: React.FC = () => {
         if (typeof reader.result === 'string') {
           setWallCover(reader.result);
           updateUserProfile({ wallCover: reader.result });
-          setSaveSuccess('تم تحديث غلاف الملف الشخصي 🌌');
-          setTimeout(() => setSaveSuccess(''), 3000);
+          triggerSaveNotification();
         }
       };
       reader.readAsDataURL(file);
@@ -441,8 +476,7 @@ export const AccountSettingsModal: React.FC = () => {
         if (typeof reader.result === 'string') {
           setAvatar(reader.result);
           updateUserProfile({ avatar: reader.result });
-          setSaveSuccess('تم تحديث الصورة الرمزية 🖼️');
-          setTimeout(() => setSaveSuccess(''), 3000);
+          triggerSaveNotification();
         }
       };
       reader.readAsDataURL(file);
@@ -453,13 +487,13 @@ export const AccountSettingsModal: React.FC = () => {
     const defaultCover = 'https://images.unsplash.com/photo-1532693322450-2cb5c511067d?w=800&auto=format&fit=crop&q=80';
     setWallCover(defaultCover);
     updateUserProfile({ wallCover: defaultCover });
+    triggerSaveNotification();
   };
 
   const handleRemoveAvatar = () => {
     setAvatar('');
     updateUserProfile({ avatar: '' });
-    setSaveSuccess('تم استرجاع الصورة الرمزية الافتراضية بنجاح 🖼️');
-    setTimeout(() => setSaveSuccess(''), 3000);
+    triggerSaveNotification();
   };
 
   const handleSaveData = (e?: React.FormEvent) => {
@@ -476,10 +510,12 @@ export const AccountSettingsModal: React.FC = () => {
       username: username.trim() || currentUser.username,
       email: email.trim(),
       usernameColor,
+      usernameBgGradient,
+      fontFamily,
+      isNeon,
       usernameFontSize
     });
-    setSaveSuccess('تم حفظ التعديلات بنجاح ✨');
-    setTimeout(() => setSaveSuccess(''), 3000);
+    triggerSaveNotification();
   };
 
   const handleChangePassword = (e: React.FormEvent) => {
@@ -489,17 +525,16 @@ export const AccountSettingsModal: React.FC = () => {
       return;
     }
     updateUserProfile({ password: newPass });
-    setSaveSuccess('تم تغيير كلمة المرور بنجاح 🔒');
     setOldPass('');
     setNewPass('');
     setConfirmPass('');
-    setTimeout(() => setSaveSuccess(''), 3000);
+    triggerSaveNotification();
   };
 
   const handleDeleteAccount = () => {
     if (confirm('هل أنت تأكد من جدولة حذف عضوية الشات؟ سيتم حذف حسابك نهائياً بعد أسبوع.')) {
       updateUserProfile({ deletionScheduledDate: new Date(Date.now() + 7 * 86400000).toISOString() });
-      alert('تم إدراج العضوية في جدول الحذف النهائي بعد أسبوع.');
+      triggerSaveNotification();
     }
   };
 
@@ -564,6 +599,13 @@ export const AccountSettingsModal: React.FC = () => {
       />
 
       <div className="bg-white rounded-3xl w-full max-w-md sm:max-w-lg max-h-[90vh] flex flex-col overflow-hidden shadow-2xl relative select-none border border-slate-200">
+        {/* TOP SUCCESS GREEN BAR (شريط أخضر في أعلى الشاشة في وسطه مكتوب تم الحفظ) */}
+        {saveSuccess && (
+          <div className="absolute top-0 inset-x-0 z-50 bg-[#4caf50] text-white py-3 px-4 font-black text-sm text-center shadow-lg animate-in slide-in-from-top duration-200 flex items-center justify-center gap-2 select-none">
+            <Check className="w-4 h-4 stroke-[3]" />
+            <span>تم الحفظ</span>
+          </div>
+        )}
         
         {/* HEADER SECTION (Visitor vs Registered Member) */}
         {isVisitor ? (
@@ -571,12 +613,12 @@ export const AccountSettingsModal: React.FC = () => {
             {/* Top Left Close/Back Button */}
             <div className="flex justify-start">
               <button
+                type="button"
                 onClick={handleModalCloseOrBack}
-                className="text-white hover:text-slate-300 transition-colors p-1 cursor-pointer flex items-center gap-1"
+                className="w-8 h-8 rounded-full bg-black/90 hover:bg-black text-rose-500 flex items-center justify-center transition-colors cursor-pointer border border-white/20 shadow-md"
                 title={activeSubMenu ? "إلغاء والعودة للقائمة" : "إغلاق"}
               >
-                <X className="w-6 h-6" />
-                {activeSubMenu && <span className="text-xs font-bold bg-rose-600/80 px-2 py-0.5 rounded-md">إلغاء</span>}
+                <X className="w-4 h-4 text-rose-500 stroke-[2.5]" />
               </button>
             </div>
 
@@ -607,38 +649,43 @@ export const AccountSettingsModal: React.FC = () => {
             />
             <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/40 to-transparent" />
 
-            {/* Top Left Buttons: Close/Back, Cover Camera, Cover Remove */}
-            <div className="absolute top-3 left-3 flex items-center gap-2 z-20">
+            {/* Top Left Buttons: Red Close/Cancel, Cover Camera, Cover Remove (Black Circular Icons) */}
+            <div className="absolute top-3 left-3 flex items-center gap-2 z-20" dir="ltr">
+              {/* 1. زر الزائد / الإلغاء الأحمر في أقصى اليسار */}
               <button
+                type="button"
                 onClick={handleModalCloseOrBack}
-                className="h-8 px-2.5 rounded-full bg-slate-950/80 hover:bg-slate-950 text-white flex items-center justify-center gap-1 transition-colors cursor-pointer border border-white/20 shadow-md text-xs font-bold"
+                className="w-8 h-8 rounded-full bg-black/90 hover:bg-black text-rose-500 flex items-center justify-center transition-colors cursor-pointer border border-white/20 shadow-md"
                 title={activeSubMenu ? "إلغاء والعودة للقائمة" : "إغلاق"}
               >
-                <X className="w-4 h-4 text-rose-400" />
-                {activeSubMenu && <span>إلغاء</span>}
+                <X className="w-4 h-4 text-rose-500 stroke-[2.5]" />
               </button>
 
+              {/* 2. زر الكاميرا في المنتصف لتغيير غلاف الحائط */}
               <button
+                type="button"
                 onClick={() => coverInputRef.current?.click()}
-                className="w-8 h-8 rounded-full bg-slate-950/70 hover:bg-slate-950 text-white flex items-center justify-center transition-colors cursor-pointer border border-white/20 shadow-md"
+                className="w-8 h-8 rounded-full bg-black/90 hover:bg-black text-white flex items-center justify-center transition-colors cursor-pointer border border-white/20 shadow-md"
                 title="تغيير غلاف الحساب"
               >
-                <Camera className="w-4 h-4" />
+                <Camera className="w-4 h-4 text-white" />
               </button>
 
+              {/* 3. زر الزائد لحذف صورة الحائط */}
               <button
+                type="button"
                 onClick={handleRemoveCover}
-                className="w-8 h-8 rounded-full bg-slate-950/70 hover:bg-slate-950 text-white flex items-center justify-center transition-colors cursor-pointer border border-white/20 shadow-md"
-                title="إزالة الغلاف"
+                className="w-8 h-8 rounded-full bg-black/90 hover:bg-black text-white flex items-center justify-center transition-colors cursor-pointer border border-white/20 shadow-md"
+                title="إزالة صورة الحائط"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-3.5 h-3.5 text-white" />
               </button>
             </div>
 
-            {/* User Profile Info Overlay on Cover */}
-            <div className="absolute bottom-3 inset-x-4 flex items-end justify-between z-10">
-              {/* Display Name & Status text */}
-              <div className="flex-1 min-w-0 pr-2">
+            {/* User Profile Info Overlay on Cover: Avatar on RIGHT, Name & Status on LEFT */}
+            <div className="absolute bottom-3 inset-x-4 flex items-end justify-between z-10" dir="ltr">
+              {/* Display Name & Status text on the LEFT */}
+              <div className="flex-1 min-w-0 pr-3 text-right">
                 <h2
                   style={{
                     color: usernameColor,
@@ -654,7 +701,7 @@ export const AccountSettingsModal: React.FC = () => {
                 </p>
               </div>
 
-              {/* Avatar Frame with camera & remove icons */}
+              {/* Avatar Frame on the RIGHT */}
               <div className="relative shrink-0">
                 <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl border-2 border-white shadow-xl overflow-hidden relative bg-slate-800">
                   <UserAvatar
@@ -666,27 +713,33 @@ export const AccountSettingsModal: React.FC = () => {
                     className="w-full h-full object-cover"
                   />
 
-                  {/* Avatar Action Icons Overlay */}
-                  <div className="absolute inset-x-0 bottom-0 bg-slate-950/75 p-1 flex items-center justify-around text-white">
+                  {/* Avatar Action Icons Overlay: Camera on LEFT, Plus/X on RIGHT */}
+                  <div className="absolute inset-x-0 bottom-0 bg-black/85 p-1 flex items-center justify-between px-2 text-white" dir="ltr">
                     {canChangeAvatar ? (
                       <>
+                        {/* زر الكاميرا في اليسار */}
                         <button
+                          type="button"
                           onClick={() => avatarInputRef.current?.click()}
                           className="hover:text-amber-400 cursor-pointer p-0.5 transition-colors"
                           title="تغيير الرمزية"
                         >
-                          <Camera className="w-3.5 h-3.5" />
+                          <Camera className="w-3.5 h-3.5 text-white" />
                         </button>
+
+                        {/* زر الزائد / حذف الرمزية في اليمين */}
                         <button
+                          type="button"
                           onClick={handleRemoveAvatar}
                           className="hover:text-red-400 cursor-pointer p-0.5 transition-colors"
                           title="إزالة الرمزية والعودة للافتراضي"
                         >
-                          <X className="w-3.5 h-3.5" />
+                          <X className="w-3.5 h-3.5 text-white" />
                         </button>
                       </>
                     ) : (
                       <button
+                        type="button"
                         onClick={() => alert('🔒 الصورة الشخصية ثابتة للعضو المسجل. ستتمكن من تغيير ورفع صورتك المخصصة عند ترقية حسابك إلى رتبة مميز ⭐ فما فوق.')}
                         className="text-amber-300 hover:text-amber-200 cursor-pointer p-0.5 transition-colors flex items-center justify-center gap-1 w-full"
                         title="الصورة ثابتة للعضو المسجل (الترقية لرتبة مميز مطلوبة لتغييرها)"
@@ -789,14 +842,15 @@ export const AccountSettingsModal: React.FC = () => {
                   alert('كلمة المرور وتأكيد كلمة المرور غير متطابقين');
                   return;
                 }
+                const now = new Date();
                 updateUserProfile({
                   role: 'member',
                   username: username.trim(),
-                  password: newPass
+                  password: newPass,
+                  joinedDate: formatEnglishDate(now),
+                  joinedTimestamp: now.getTime()
                 });
-                setSaveSuccess('تم تسجيل حسابك بنجاح وترقيته إلى عضو دائم! 🎉');
-                setActiveSubMenu(null);
-                setTimeout(() => setSaveSuccess(''), 4000);
+                triggerSaveNotification();
               }}
               className="p-5 space-y-4 animate-in fade-in duration-150"
             >
@@ -955,33 +1009,47 @@ export const AccountSettingsModal: React.FC = () => {
 
           {/* SUB-MENU 2.5: تغيير اسم المستخدم (Change Username) */}
           {activeSubMenu === 'change_username' && (
-            <form onSubmit={handleSaveData} className="p-5 space-y-4 animate-in fade-in duration-150 text-right">
+            <div className="p-5 space-y-4 animate-in fade-in duration-150 text-right">
               <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                 <h3 className="text-sm font-black text-[#0b333e]">تغيير اسم المستخدم</h3>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">اسم المستخدم الجديد:</label>
-                <input
-                  type="text"
-                  required
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full bg-[#f2f2f2] border border-slate-200 rounded-lg p-3 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0b333e]"
-                  placeholder="أدخل الاسم الجديد"
-                />
-              </div>
+              {!currentUserCan('change_username') ? (
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-2.5 text-right">
+                  <div className="flex items-center gap-2 text-amber-900 font-black text-xs">
+                    <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>ميزة تغيير اسم المستخدم معطلة لرتبتك 🔒</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 leading-relaxed font-bold">
+                    قام المالك بتعطيل إمكانية تغيير الاسم المستعار لرتبة ({currentUser?.role ? (RANK_TITLES[currentUser.role] || currentUser.role) : 'الزائر'}). لا يمكنك تعديل الاسم حالياً.
+                  </p>
+                </div>
+              ) : (
+                <form onSubmit={handleSaveData} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">اسم المستخدم الجديد:</label>
+                    <input
+                      type="text"
+                      required
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      className="w-full bg-[#f2f2f2] border border-slate-200 rounded-lg p-3 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0b333e]"
+                      placeholder="أدخل الاسم الجديد"
+                    />
+                  </div>
 
-              <div className="flex justify-start pt-2">
-                <button
-                  type="submit"
-                  className="bg-[#0099c8] hover:bg-[#0088b3] text-white px-7 py-2.5 rounded-lg font-bold text-sm flex items-center gap-2 cursor-pointer shadow-sm transition-colors"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>حفظ</span>
-                </button>
-              </div>
-            </form>
+                  <div className="flex justify-start pt-2">
+                    <button
+                      type="submit"
+                      className="bg-[#0099c8] hover:bg-[#0088b3] text-white px-7 py-2.5 rounded-lg font-bold text-sm flex items-center gap-2 cursor-pointer shadow-sm transition-colors"
+                    >
+                      <Save className="w-4 h-4" />
+                      <span>حفظ</span>
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
           )}
 
           {/* SUB-MENU 3: تغيير لون اسم المستخدم (Change Username Color / Style) */}
@@ -989,38 +1057,28 @@ export const AccountSettingsModal: React.FC = () => {
             <form onSubmit={handleSaveData} className="p-5 space-y-4 animate-in fade-in duration-150 text-right relative">
               {/* Preview Header */}
               <div className="text-right">
-                <span className="text-xs font-black text-slate-700 block mb-1">عرض</span>
+                <span className="text-xs font-black text-slate-700 block mb-1.5">معاينة شكل الاسم</span>
                 {/* Live Preview Box */}
-                <div
-                  className="w-full min-h-[50px] p-3 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-center text-center overflow-hidden"
-                  style={{
-                    background: usernameBgGradient || '#ffffff'
-                  }}
-                >
-                  <span
-                    style={{
-                      color: usernameColor || '#000000',
-                      fontFamily: FONTS_LIST.find(f => f.name === fontFamily)?.family || 'Cairo, sans-serif',
-                      fontSize: '18px',
-                      fontWeight: 900,
-                      letterSpacing: '1px',
-                      textShadow: isNeon ? `0 0 8px ${usernameColor}, 0 0 15px ${usernameColor}` : 'none'
-                    }}
-                    className="truncate max-w-full px-2 py-1 rounded"
-                  >
-                    {username || currentUser.username || '000 A L E X E C U T I O N E R R R R R'}
-                  </span>
+                <div className="w-full min-h-[68px] p-4 rounded-xl bg-slate-900 border border-slate-700/60 flex items-center justify-center text-center overflow-hidden shadow-inner">
+                  <UsernameDisplay
+                    username={username || currentUser.username || 'Owner'}
+                    usernameColor={usernameColor || '#ffffff'}
+                    usernameBgGradient={usernameBgGradient}
+                    isNeon={isNeon}
+                    fontFamily={FONTS_LIST.find(f => f.name === fontFamily)?.family}
+                    fontSize="18px"
+                    className="text-lg"
+                  />
                 </div>
               </div>
 
-              {/* Sub-Tabs Row: لون | نيون | خلفية */}
+              {/* Sub-Tabs Row: لون | نيون | خلفية لامعة */}
               <div className="flex items-center justify-center gap-2 py-1">
                 <button
                   type="button"
                   onClick={() => {
                     setColorTab('color');
                     setIsNeon(false);
-                    setUsernameBgGradient('');
                   }}
                   className={`px-5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                     colorTab === 'color'
@@ -1036,7 +1094,6 @@ export const AccountSettingsModal: React.FC = () => {
                   onClick={() => {
                     setColorTab('neon');
                     setIsNeon(true);
-                    setUsernameBgGradient('');
                   }}
                   className={`px-5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                     colorTab === 'neon'
@@ -1044,14 +1101,13 @@ export const AccountSettingsModal: React.FC = () => {
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  نيون
+                  نيون مشع
                 </button>
 
                 <button
                   type="button"
                   onClick={() => {
                     setColorTab('bg');
-                    setIsNeon(false);
                   }}
                   className={`px-5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                     colorTab === 'bg'
@@ -1059,7 +1115,7 @@ export const AccountSettingsModal: React.FC = () => {
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  خلفية
+                  خلفية لامعة وبراقة ✨
                 </button>
               </div>
 
@@ -1111,21 +1167,33 @@ export const AccountSettingsModal: React.FC = () => {
               )}
 
               {colorTab === 'bg' && (
-                <div className="grid grid-cols-6 gap-1.5 p-1 max-h-[200px] overflow-y-auto custom-scrollbar">
-                  {GRADIENT_SWATCHES.map((g, idx) => {
-                    const isSelected = usernameBgGradient === g;
-                    return (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => setUsernameBgGradient(g)}
-                        style={{ background: g }}
-                        className={`w-full aspect-square rounded-sm cursor-pointer transition-transform hover:scale-105 border ${
-                          isSelected ? 'border-2 border-slate-900 scale-105' : 'border-transparent'
-                        }`}
-                      />
-                    );
-                  })}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-[11px] font-bold text-slate-500">اختر خلفية براقة للاسم:</span>
+                    <button
+                      type="button"
+                      onClick={() => setUsernameBgGradient('')}
+                      className="text-[11px] font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2.5 py-0.5 rounded-md border border-red-200 cursor-pointer"
+                    >
+                      إلغاء الخلفية ✖
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-6 gap-2 p-1 max-h-[210px] overflow-y-auto custom-scrollbar">
+                    {GRADIENT_SWATCHES.map((g, idx) => {
+                      const isSelected = usernameBgGradient === g;
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setUsernameBgGradient(g)}
+                          style={{ background: g }}
+                          className={`w-full aspect-square rounded-lg cursor-pointer transition-transform hover:scale-110 shadow-sm border ${
+                            isSelected ? 'ring-2 ring-blue-600 scale-105 border-white shadow-md' : 'border-white/20'
+                          }`}
+                        />
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
@@ -1298,7 +1366,10 @@ export const AccountSettingsModal: React.FC = () => {
                         <span className="font-bold text-xs text-slate-900">{f.username}</span>
                       </div>
                       <button
-                        onClick={() => removeFriend(f.id)}
+                        onClick={() => {
+                          removeFriend(f.id);
+                          triggerSaveNotification();
+                        }}
                         className="p-1.5 hover:bg-red-50 text-red-600 rounded-xl cursor-pointer text-xs font-bold border border-red-200"
                         title="إلغاء الصداقة"
                       >
@@ -1345,6 +1416,7 @@ export const AccountSettingsModal: React.FC = () => {
                         onClick={() => {
                           requestBlockConfirm(u, 'unblock', () => {
                             toggleIgnore(u.id);
+                            triggerSaveNotification();
                           });
                         }}
                         className="p-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl cursor-pointer text-xs font-bold transition-colors"
@@ -1360,7 +1432,7 @@ export const AccountSettingsModal: React.FC = () => {
 
           {/* SUB-MENU 8: اعدادات الصوت (Sound Settings) */}
           {activeSubMenu === 'sound' && (
-            <div className="p-5 space-y-3 animate-in fade-in duration-150">
+            <div className="p-5 space-y-4 animate-in fade-in duration-150">
               <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                 <h3 className="text-sm font-black text-[#0b333e]">إعدادات الصوت والتنبيهات</h3>
                 <button
@@ -1374,48 +1446,69 @@ export const AccountSettingsModal: React.FC = () => {
                 </button>
               </div>
 
-              {[
-                { key: 'privateSound', label: 'تنبيه صوتي للرسائل الخاصة 💬', soundType: 'private' },
-                { key: 'friendRequestSound', label: 'تنبيه طلبات الصداقة 👥', soundType: 'friend_request' },
-                { key: 'publicSound', label: 'صوت الرسائل العامة 💬', soundType: 'public' },
-                { key: 'mentionSound', label: 'صوت المنشن والإشارة 🏷️', soundType: 'mention' },
-                { key: 'notifSound', label: 'صوت الإشعارات العامة 🔔', soundType: 'notification' },
-              ].map((item) => {
-                const val = (audioSettings as any)[item.key] !== false;
-                return (
-                  <div key={item.key} className="flex items-center justify-between bg-slate-50 p-3 rounded-2xl border border-slate-200">
-                    <span className="font-bold text-slate-800 text-xs">{item.label}</span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => playChatSound(item.soundType as any)}
-                        className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl text-[11px] font-bold flex items-center gap-1 cursor-pointer"
-                      >
-                        <Volume1 className="w-3.5 h-3.5 text-[#0b333e]" />
-                        <span>تجربة</span>
-                      </button>
+              <div className="space-y-2.5">
+                {[
+                  { key: 'privateSound', label: 'تنبيه صوتي للرسائل الخاصة 💬', soundType: 'private' },
+                  { key: 'friendRequestSound', label: 'تنبيه طلبات الصداقة 👥', soundType: 'friend_request' },
+                  { key: 'publicSound', label: 'صوت الرسائل العامة 💬', soundType: 'public' },
+                  { key: 'mentionSound', label: 'صوت المنشن والإشارة 🏷️', soundType: 'mention' },
+                  { key: 'notifSound', label: 'صوت الإشعارات العامة 🔔', soundType: 'notification' },
+                ].map((item) => {
+                  const val = (audioSettings as any)[item.key] !== false;
+                  return (
+                    <div key={item.key} className="flex items-center justify-between bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                      <span className="font-bold text-slate-800 text-xs">{item.label}</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => playChatSound(item.soundType as any)}
+                          className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Volume1 className="w-3.5 h-3.5 text-[#0b333e]" />
+                          <span>تجربة</span>
+                        </button>
 
-                      <button
-                        type="button"
-                        onClick={() => updateAudioSettings({ [item.key]: !val })}
-                        className={`px-3 py-1 rounded-full text-xs font-black transition-all cursor-pointer ${
-                          val ? 'bg-[#0b333e] text-white' : 'bg-slate-200 text-slate-600'
-                        }`}
-                      >
-                        {val ? 'تشغيل 🔊' : 'إيقاف 🔇'}
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => updateAudioSettings({ [item.key]: !val })}
+                          className={`px-3 py-1 rounded-full text-xs font-black transition-all cursor-pointer ${
+                            val ? 'bg-[#0b333e] text-white' : 'bg-slate-200 text-slate-600'
+                          }`}
+                        >
+                          {val ? 'تشغيل 🔊' : 'إيقاف 🔇'}
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
+
+              {/* Bottom Save & Cancel Buttons */}
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => triggerSaveNotification()}
+                  className="bg-[#0099c8] hover:bg-[#0088b3] text-white font-bold px-7 py-2.5 rounded-lg text-xs sm:text-sm flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>حفظ</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubMenu(null)}
+                  className="bg-[#082831] hover:bg-[#051c23] text-white font-bold px-7 py-2.5 rounded-lg text-xs sm:text-sm transition-colors cursor-pointer"
+                >
+                  إلغاء
+                </button>
+              </div>
             </div>
           )}
 
           {/* SUB-MENU 9: إعدادات الستايل (Style Settings) */}
           {activeSubMenu === 'style' && (
-            <div className="p-5 space-y-3 animate-in fade-in duration-150">
+            <div className="p-5 space-y-4 animate-in fade-in duration-150 relative">
               <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                <h3 className="text-sm font-black text-[#0b333e]">إعدادات الستايل والثيمات</h3>
+                <h3 className="text-sm font-black text-[#0b333e]">إعدادات الستايل</h3>
                 <button
                   type="button"
                   onClick={() => setActiveSubMenu(null)}
@@ -1427,30 +1520,29 @@ export const AccountSettingsModal: React.FC = () => {
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                {[
-                  { id: 'dark', name: 'الداكن الملكي 🌙' },
-                  { id: 'light', name: 'النهاري الناصع ☀️' },
-                  { id: 'emerald', name: 'الزمردي الليلي 💚' },
-                  { id: 'sapphire', name: 'الأزرق الملكي 💙' },
-                  { id: 'purple', name: 'البنفسجي المخملي 💜' },
-                  { id: 'rose', name: 'الوردي الجذاب 💖' },
-                ].map((t) => {
-                  const isSelected = themeMode === t.id;
-                  return (
-                    <button
-                      key={t.id}
-                      onClick={() => setThemeMode(t.id as any)}
-                      className={`p-3 rounded-2xl border transition-all text-right cursor-pointer font-bold ${
-                        isSelected
-                          ? 'bg-[#0b333e] text-white border-[#0b333e] shadow-md'
-                          : 'bg-slate-50 text-slate-800 border-slate-200 hover:bg-slate-100'
-                      }`}
-                    >
-                      {t.name}
-                    </button>
-                  );
-                })}
+              {/* Theme Dropdown Field matching Screenshot 1 */}
+              <div className="space-y-1.5 pt-1 text-right">
+                <label className="text-xs font-bold text-slate-700 block pr-0.5">
+                  الثيم
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsThemeSelectModalOpen(true)}
+                  className="w-full bg-[#f8fafc] hover:bg-[#f1f5f9] border border-slate-300 rounded px-3 py-2.5 text-xs sm:text-sm font-medium text-slate-800 flex items-center justify-between transition-colors cursor-pointer shadow-2xs"
+                >
+                  {/* Downward triangle arrow */}
+                  <span className="text-slate-500 text-[10px]">▼</span>
+                  <span>
+                    {THEME_OPTIONS.find(t => t.id === themeMode)?.name || 'الثيم الافتراضي'}
+                  </span>
+                </button>
+              </div>
+
+              {/* Save Notification / Banner trigger */}
+              <div className="pt-2">
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  يتم تطبيق وحفظ الثيم المختار فوراً على مظهر المحادثة والغرف.
+                </p>
               </div>
             </div>
           )}
@@ -1481,9 +1573,9 @@ export const AccountSettingsModal: React.FC = () => {
                 ].map((p) => (
                   <button
                     key={p.id}
-                    onClick={() => updateUserProfile({ privatePrivacy: p.id as PrivatePrivacySetting })}
-                    className={`w-full text-right p-3 rounded-2xl border text-xs font-bold transition-all ${
-                      currentUser.privatePrivacy === p.id
+                    onClick={() => setPrivatePrivacy(p.id as PrivatePrivacySetting)}
+                    className={`w-full text-right p-3 rounded-2xl border text-xs font-bold transition-all cursor-pointer ${
+                      privatePrivacy === p.id
                         ? 'bg-[#0b333e] text-white border-[#0b333e]'
                         : 'bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100'
                     }`}
@@ -1519,6 +1611,28 @@ export const AccountSettingsModal: React.FC = () => {
                     </button>
                   </div>
                 </div>
+              </div>
+
+              {/* Bottom Save & Cancel Buttons */}
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    updateUserProfile({ privatePrivacy });
+                    triggerSaveNotification();
+                  }}
+                  className="bg-[#0099c8] hover:bg-[#0088b3] text-white font-bold px-7 py-2.5 rounded-lg text-xs sm:text-sm flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>حفظ</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubMenu(null)}
+                  className="bg-[#082831] hover:bg-[#051c23] text-white font-bold px-7 py-2.5 rounded-lg text-xs sm:text-sm transition-colors cursor-pointer"
+                >
+                  إلغاء
+                </button>
               </div>
             </div>
           )}
@@ -1563,15 +1677,18 @@ export const AccountSettingsModal: React.FC = () => {
                 </label>
                 <button
                   type="button"
-                  onClick={() => setOpenLocPickerModal('country')}
+                  onClick={() => {
+                    setCountrySearchQuery('');
+                    setOpenLocPickerModal('country');
+                  }}
                   className="w-full bg-[#f2f2f2] hover:bg-[#e8e8e8] border border-slate-200 rounded-lg p-3 flex items-center justify-between cursor-pointer transition-colors text-right"
                 >
                   <div className="flex items-center gap-2">
                     {selectedCountryLoc !== 'عدم إظهار' && (
-                      <span className="text-base">{getCountryFlagByName(selectedCountryLoc)}</span>
+                      <span className="text-xl leading-none">{getCountryFlagByName(selectedCountryLoc)}</span>
                     )}
                     <span className="text-slate-800 font-semibold text-xs sm:text-sm">
-                      {selectedCountryLoc}
+                      {selectedCountryLoc === 'عدم إظهار' ? 'عدم إظهار' : (getEnglishCountryName(selectedCountryLoc) || selectedCountryLoc)}
                     </span>
                   </div>
                   <span className="text-slate-600 text-[10px] text-[#0b333e] font-bold">▼</span>
@@ -1595,46 +1712,51 @@ export const AccountSettingsModal: React.FC = () => {
                 </button>
               </div>
 
-              {/* Success Message */}
-              {saveSuccess && (
-                <p className="text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 p-2.5 rounded-xl text-center">
-                  {saveSuccess}
-                </p>
-              )}
-
               {/* Action Buttons: حفظ / إلغاء */}
               <div className="flex items-center justify-end gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => {
+                    const previousLang = getAppLanguage();
                     localStorage.setItem('selectedLang', selectedLang);
                     localStorage.setItem('selectedTimezone', selectedTimezoneLoc);
+                    applyLanguageSettings(selectedLang);
+
+                    const isLangChanged = previousLang !== selectedLang;
+
                     if (selectedCountryLoc === 'عدم إظهار') {
                       updateUserProfile({
+                        language: selectedLang,
                         country: 'عدم إظهار',
                         countryFlag: '',
                         hideCountry: true,
-                        showCountryFlag: false
+                        showCountryFlag: false,
+                        countryModified: true
                       });
                     } else {
-                      const flag = getCountryFlagByName(selectedCountryLoc);
+                      const arabicName = getArabicCountryName(selectedCountryLoc);
+                      const flag = getCountryFlagByName(arabicName);
                       updateUserProfile({
-                        country: selectedCountryLoc,
+                        language: selectedLang,
+                        country: arabicName,
                         countryFlag: flag,
                         hideCountry: false,
-                        showCountryFlag: true
+                        showCountryFlag: true,
+                        countryModified: true
                       });
                     }
-                    setSaveSuccess('تم حفظ إعدادات اللغة والموقع بنجاح!');
-                    setTimeout(() => {
-                      setSaveSuccess('');
-                      setActiveSubMenu(null);
-                    }, 1200);
+
+                    triggerSaveNotification();
+                    if (isLangChanged) {
+                      setTimeout(() => {
+                        window.location.reload();
+                      }, 500);
+                    }
                   }}
                   className="bg-[#0099c8] hover:bg-[#0088b3] text-white font-bold px-7 py-2.5 rounded-lg text-xs sm:text-sm flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
                 >
                   <Save className="w-4 h-4" />
-                  <span>حفظ</span>
+                  <span>{t('settings.save', 'حفظ')}</span>
                 </button>
 
                 <button
@@ -1642,7 +1764,7 @@ export const AccountSettingsModal: React.FC = () => {
                   onClick={() => setActiveSubMenu(null)}
                   className="bg-[#082831] hover:bg-[#051c23] text-white font-bold px-7 py-2.5 rounded-lg text-xs sm:text-sm transition-colors cursor-pointer"
                 >
-                  إلغاء
+                  {t('settings.cancel', 'إلغاء')}
                 </button>
               </div>
 
@@ -1667,70 +1789,22 @@ export const AccountSettingsModal: React.FC = () => {
                     </div>
 
                     {/* Options List */}
-                    <div className="overflow-y-auto p-2 flex-1 divide-y divide-slate-100">
-                      {openLocPickerModal === 'lang' && POPUP_LANGUAGES.map((langItem) => {
-                        const isSelected = selectedLang === langItem;
-                        return (
-                          <button
-                            key={langItem}
-                            type="button"
-                            onClick={() => {
-                              setSelectedLang(langItem);
-                              setOpenLocPickerModal(null);
-                            }}
-                            className="w-full flex items-center justify-between py-2.5 px-4 hover:bg-slate-50 cursor-pointer transition-colors text-right"
-                          >
-                            {/* Selected Radio Indicator on Left */}
-                            {isSelected ? (
-                              <div className="w-5 h-5 rounded-full border-2 border-indigo-900 flex items-center justify-center shrink-0">
-                                <div className="w-2.5 h-2.5 rounded-full bg-indigo-900" />
-                              </div>
-                            ) : (
-                              <div className="w-5 h-5 rounded-full border-2 border-slate-300 shrink-0" />
-                            )}
-
-                            {/* Text on Right */}
-                            <span className={`text-xs sm:text-sm font-medium ${isSelected ? 'text-indigo-950 font-bold' : 'text-slate-800'}`}>
-                              {langItem}
-                            </span>
-                          </button>
-                        );
-                      })}
-
-                      {openLocPickerModal === 'country' && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedCountryLoc('عدم إظهار');
-                              setOpenLocPickerModal(null);
-                            }}
-                            className="w-full flex items-center justify-between py-2.5 px-4 hover:bg-slate-50 cursor-pointer transition-colors text-right"
-                          >
-                            {selectedCountryLoc === 'عدم إظهار' ? (
-                              <div className="w-5 h-5 rounded-full border-2 border-indigo-900 flex items-center justify-center shrink-0">
-                                <div className="w-2.5 h-2.5 rounded-full bg-indigo-900" />
-                              </div>
-                            ) : (
-                              <div className="w-5 h-5 rounded-full border-2 border-slate-300 shrink-0" />
-                            )}
-                            <span className={`text-xs sm:text-sm font-medium ${selectedCountryLoc === 'عدم إظهار' ? 'text-indigo-950 font-bold' : 'text-slate-800'}`}>
-                              عدم إظهار
-                            </span>
-                          </button>
-
-                          {COUNTRIES_LIST.map((countryItem) => {
-                            const isSelected = selectedCountryLoc === countryItem.name || selectedCountryLoc === countryItem.englishName;
+                    <div className="overflow-y-auto flex-1">
+                      {openLocPickerModal === 'lang' && (
+                        <div className="p-2 divide-y divide-slate-100">
+                          {POPUP_LANGUAGES.map((langItem) => {
+                            const isSelected = selectedLang === langItem;
                             return (
                               <button
-                                key={countryItem.code}
+                                key={langItem}
                                 type="button"
                                 onClick={() => {
-                                  setSelectedCountryLoc(countryItem.name);
+                                  setSelectedLang(langItem);
                                   setOpenLocPickerModal(null);
                                 }}
                                 className="w-full flex items-center justify-between py-2.5 px-4 hover:bg-slate-50 cursor-pointer transition-colors text-right"
                               >
+                                {/* Selected Radio Indicator on Left */}
                                 {isSelected ? (
                                   <div className="w-5 h-5 rounded-full border-2 border-indigo-900 flex items-center justify-center shrink-0">
                                     <div className="w-2.5 h-2.5 rounded-full bg-indigo-900" />
@@ -1739,47 +1813,106 @@ export const AccountSettingsModal: React.FC = () => {
                                   <div className="w-5 h-5 rounded-full border-2 border-slate-300 shrink-0" />
                                 )}
 
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[11px] text-slate-400 font-mono">({countryItem.englishName})</span>
-                                  <span className={`text-xs sm:text-sm font-medium ${isSelected ? 'text-indigo-950 font-bold' : 'text-slate-800'}`}>
-                                    {countryItem.name}
-                                  </span>
-                                  <span className="text-base">{countryItem.flag}</span>
-                                </div>
+                                {/* Text on Right */}
+                                <span className={`text-xs sm:text-sm font-medium ${isSelected ? 'text-indigo-950 font-bold' : 'text-slate-800'}`}>
+                                  {langItem}
+                                </span>
                               </button>
                             );
                           })}
-                        </>
+                        </div>
                       )}
 
-                      {openLocPickerModal === 'timezone' && POPUP_TIMEZONES.map((tzItem) => {
-                        const isSelected = selectedTimezoneLoc === tzItem;
-                        return (
-                          <button
-                            key={tzItem}
-                            type="button"
-                            onClick={() => {
-                              setSelectedTimezoneLoc(tzItem);
-                              setOpenLocPickerModal(null);
-                            }}
-                            className="w-full flex items-center justify-between py-2.5 px-4 hover:bg-slate-50 cursor-pointer transition-colors text-right"
-                          >
-                            {/* Selected Radio Indicator on Left */}
-                            {isSelected ? (
-                              <div className="w-5 h-5 rounded-full border-2 border-indigo-900 flex items-center justify-center shrink-0">
-                                <div className="w-2.5 h-2.5 rounded-full bg-indigo-900" />
-                              </div>
-                            ) : (
-                              <div className="w-5 h-5 rounded-full border-2 border-slate-300 shrink-0" />
-                            )}
+                      {openLocPickerModal === 'country' && (
+                        <div className="flex flex-col h-full">
+                          <div className="overflow-y-auto p-1 divide-y divide-slate-100 flex-1 max-h-[65vh]">
+                            {/* Hide Country Option */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedCountryLoc('عدم إظهار');
+                                setOpenLocPickerModal(null);
+                              }}
+                              className="w-full flex items-center justify-between py-2.5 px-3.5 hover:bg-slate-50 cursor-pointer transition-colors text-right"
+                            >
+                              {selectedCountryLoc === 'عدم إظهار' ? (
+                                <div className="w-5 h-5 rounded-full border-2 border-indigo-900 flex items-center justify-center shrink-0">
+                                  <div className="w-2.5 h-2.5 rounded-full bg-indigo-900" />
+                                </div>
+                              ) : (
+                                <div className="w-5 h-5 rounded-full border-2 border-slate-300 shrink-0" />
+                              )}
+                              <span className={`text-xs sm:text-sm font-medium ${selectedCountryLoc === 'عدم إظهار' ? 'text-indigo-950 font-bold' : 'text-slate-800'}`}>
+                                عدم إظهار
+                              </span>
+                            </button>
 
-                            {/* Text on Right */}
-                            <span className={`text-xs sm:text-sm font-medium ${isSelected ? 'text-indigo-950 font-bold' : 'text-slate-800'}`}>
-                              {tzItem}
-                            </span>
-                          </button>
-                        );
-                      })}
+                            {/* All World Countries List with Full English Name + Flag */}
+                            {COUNTRIES_LIST.map((countryItem) => {
+                              const isSelected = selectedCountryLoc === countryItem.englishName || selectedCountryLoc === countryItem.name || selectedCountryLoc === countryItem.code;
+                              return (
+                                <button
+                                  key={countryItem.code}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedCountryLoc(countryItem.englishName);
+                                    setOpenLocPickerModal(null);
+                                  }}
+                                  className={`w-full flex items-center justify-between py-2.5 px-3.5 hover:bg-slate-50 cursor-pointer transition-colors text-right ${isSelected ? 'bg-indigo-50/50' : ''}`}
+                                >
+                                  {isSelected ? (
+                                    <div className="w-5 h-5 rounded-full border-2 border-indigo-900 flex items-center justify-center shrink-0">
+                                      <div className="w-2.5 h-2.5 rounded-full bg-indigo-900" />
+                                    </div>
+                                  ) : (
+                                    <div className="w-5 h-5 rounded-full border-2 border-slate-300 shrink-0" />
+                                  )}
+
+                                  <div className="flex items-center gap-2.5">
+                                    <span className={`text-xs sm:text-sm font-semibold tracking-wide ${isSelected ? 'text-indigo-950 font-bold' : 'text-slate-800'}`}>
+                                      {countryItem.englishName}
+                                    </span>
+                                    <span className="text-xl leading-none">{countryItem.flag}</span>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {openLocPickerModal === 'timezone' && (
+                        <div className="p-2 divide-y divide-slate-100">
+                          {POPUP_TIMEZONES.map((tzItem) => {
+                            const isSelected = selectedTimezoneLoc === tzItem;
+                            return (
+                              <button
+                                key={tzItem}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedTimezoneLoc(tzItem);
+                                  setOpenLocPickerModal(null);
+                                }}
+                                className="w-full flex items-center justify-between py-2.5 px-4 hover:bg-slate-50 cursor-pointer transition-colors text-right"
+                              >
+                                {/* Selected Radio Indicator on Left */}
+                                {isSelected ? (
+                                  <div className="w-5 h-5 rounded-full border-2 border-indigo-900 flex items-center justify-center shrink-0">
+                                    <div className="w-2.5 h-2.5 rounded-full bg-indigo-900" />
+                                  </div>
+                                ) : (
+                                  <div className="w-5 h-5 rounded-full border-2 border-slate-300 shrink-0" />
+                                )}
+
+                                {/* Text on Right */}
+                                <span className={`text-xs sm:text-sm font-medium ${isSelected ? 'text-indigo-950 font-bold' : 'text-slate-800'}`}>
+                                  {tzItem}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1913,6 +2046,54 @@ export const AccountSettingsModal: React.FC = () => {
           )}
         </div>
       </div>
+      {/* POPUP: Theme Selection Modal (مطابق للصورة 2: نافذة راديو خيارات الثيم) */}
+      {isThemeSelectModalOpen && (
+        <div
+          className="fixed inset-0 z-60 bg-black/50 flex items-center justify-center p-4 animate-in fade-in duration-100"
+          onClick={() => setIsThemeSelectModalOpen(false)}
+        >
+          <div
+            className="bg-white text-slate-900 rounded-3xl w-full max-w-xs shadow-2xl p-5 space-y-3 animate-in zoom-in-95 duration-100 border border-slate-100"
+            onClick={(e) => e.stopPropagation()}
+            dir="rtl"
+          >
+            <div className="space-y-2">
+              {THEME_OPTIONS.map((t) => {
+                const isSelected = (themeMode === t.id) || (themeMode === 'light' && t.id === 'lite');
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedTheme(t.id);
+                      setThemeMode(t.id);
+                      try {
+                        localStorage.setItem('araby_chat_theme', t.id);
+                      } catch (err) {
+                        console.error('Failed to save theme to localStorage', err);
+                      }
+                      setIsThemeSelectModalOpen(false);
+                      triggerSaveNotification();
+                    }}
+                    className="w-full flex items-center justify-between py-2 px-3 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer group text-right"
+                  >
+                    {/* Radio circle */}
+                    <div className="flex items-center justify-center w-5 h-5 rounded-full border-2 border-slate-400 group-hover:border-purple-600 transition-colors">
+                      {isSelected && (
+                        <div className="w-2.5 h-2.5 rounded-full bg-[#5c2d91]" />
+                      )}
+                    </div>
+
+                    <span className="text-sm font-medium text-slate-800">
+                      {t.name}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

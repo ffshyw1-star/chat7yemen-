@@ -1,6 +1,9 @@
 import React from 'react';
 import { useChat } from '../context/ChatContext';
-import { X, Users, UserPlus, Home, Search, Globe, User, Lock, ShieldCheck, Gem, Star } from 'lucide-react';
+import {
+  X, Users, UserPlus, Home, Search, Globe, User, Lock, ShieldCheck, Gem, Star,
+  Crown, Flame, Heart, Music, Gamepad2, Coffee, Sparkles, Trophy, Shield, MessageSquare
+} from 'lucide-react';
 
 export const RoomsListPanel: React.FC = () => {
   const {
@@ -106,7 +109,58 @@ export const RoomsListPanel: React.FC = () => {
               {/* Right Side in RTL: Room Icon & Room Name & Badges */}
               <div className="flex items-center gap-3 min-w-0 flex-1">
                 <div className="relative shrink-0">
-                  {isDiamond ? (
+                  {room.iconUrl ? (
+                    <div className="w-8 h-8 rounded-full overflow-hidden border border-sky-300 shadow-xs flex items-center justify-center bg-slate-100">
+                      <img
+                        src={room.iconUrl}
+                        alt={room.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                    </div>
+                  ) : room.customIcon === 'crown' ? (
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center shadow-xs">
+                      <Crown className="w-4 h-4" />
+                    </div>
+                  ) : room.customIcon === 'flame' ? (
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-500 to-red-600 text-white flex items-center justify-center shadow-xs">
+                      <Flame className="w-4 h-4" />
+                    </div>
+                  ) : room.customIcon === 'heart' ? (
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-500 to-rose-600 text-white flex items-center justify-center shadow-xs">
+                      <Heart className="w-4 h-4" />
+                    </div>
+                  ) : room.customIcon === 'music' ? (
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center shadow-xs">
+                      <Music className="w-4 h-4" />
+                    </div>
+                  ) : room.customIcon === 'game' ? (
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center shadow-xs">
+                      <Gamepad2 className="w-4 h-4" />
+                    </div>
+                  ) : room.customIcon === 'coffee' ? (
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-700 to-amber-900 text-white flex items-center justify-center shadow-xs">
+                      <Coffee className="w-4 h-4" />
+                    </div>
+                  ) : room.customIcon === 'sparkles' ? (
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-600 text-white flex items-center justify-center shadow-xs">
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+                  ) : room.customIcon === 'trophy' ? (
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-yellow-500 to-amber-600 text-white flex items-center justify-center shadow-xs">
+                      <Trophy className="w-4 h-4" />
+                    </div>
+                  ) : room.customIcon === 'shield' ? (
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 to-slate-700 text-white flex items-center justify-center shadow-xs">
+                      <Shield className="w-4 h-4" />
+                    </div>
+                  ) : room.customIcon === 'message' ? (
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sky-500 to-blue-600 text-white flex items-center justify-center shadow-xs">
+                      <MessageSquare className="w-4 h-4" />
+                    </div>
+                  ) : isDiamond ? (
                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 text-white flex items-center justify-center shadow-xs">
                       <Gem className="w-4 h-4" />
                     </div>

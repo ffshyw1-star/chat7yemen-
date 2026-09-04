@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useChat } from '../context/ChatContext';
 import { UserAvatar } from './UserAvatar';
+import { UsernameDisplay } from './UsernameDisplay';
 import { User, UserRole } from '../types';
 import {
   getRankEmoji,
@@ -20,7 +21,7 @@ import {
   canEditProfile,
   formatLastSeenDateTime
 } from '../utils/permissions';
-import { getEnglishCountryName, getCountryFlagByName, getUserFlagEmoji } from '../utils/geoip';
+import { getEnglishCountryName, getArabicCountryName, getCountryFlagByName, getUserFlagEmoji } from '../utils/geoip';
 import { formatEnglishNumber, toEnglishDigits, formatEnglishDate } from '../utils/dateUtils';
 import {
   X, Zap, FileText, Heart, MessageSquare, UserPlus, Ban, Unlock,
@@ -232,8 +233,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   // Handle direct role selection from dropdown (Owner only)
   const handleRoleSelectChange = (newRole: UserRole) => {
     if (!currentUser || currentUser.role !== 'owner') return;
-    if (target.role === 'owner' && currentUser.id !== target.id) {
-      alert('لا يمكنك تعديل رتبة المالك الرئيسي!');
+    if (target.id === 'user-owner' && currentUser.id !== 'user-owner') {
+      alert('🚫 لا يمكن تعديل أو تغيير رتبة المالك الرئيسي إلا بواسطة المالك الرئيسي الأصلي!');
       return;
     }
     updateUserRole(target.id, newRole);
@@ -443,16 +444,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   const historyDisplayLogs = (isSystemTarget || isHistoryCleared)
     ? []
-    : (targetModLogs.length > 0
-        ? targetModLogs.map(log => ({
-            id: log.id,
-            typeTitle: log.actionType === 'mute' ? 'كتم' : log.actionType === 'kick' ? 'طرد' : 'كلمة الكتم',
-            timestamp: log.timestamp,
-            author: log.actionBy,
-            duration: `${log.durationMinutes || 2} دقائق`,
-            reason: log.reason
-          }))
-        : sampleHistoryLogs);
+    : targetModLogs.map(log => ({
+        id: log.id,
+        typeTitle: log.actionType === 'mute' ? 'كتم' : log.actionType === 'kick' ? 'طرد' : log.actionType === 'ban' ? 'حظر' : 'عقوبة إدارية',
+        timestamp: log.timestamp,
+        author: log.actionBy,
+        duration: log.durationMinutes ? `${log.durationMinutes} دقائق` : 'دائم',
+        reason: log.reason || 'لا يوجد سبب مقدم'
+      }));
 
   // Owner Handler: Save Status Message (تعديل حالة المستخدم)
   const handleSaveOwnerStatus = () => {
@@ -810,7 +809,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         <div className="flex justify-between items-center border-b border-slate-200 pb-3.5">
           <span className="text-slate-800 font-extrabold">تاريخ الإنضمام</span>
           <span className="font-bold text-slate-600 dir-ltr">
-            {target.joinedDate || '2020-11-16'}
+            {toEnglishDigits(
+              target.joinedDate && target.joinedDate !== '01/01/2026'
+                ? target.joinedDate
+                : formatEnglishDate(new Date(target.joinedTimestamp || Date.now()))
+            )}
           </span>
         </div>
 
@@ -1114,7 +1117,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               )}
               {/* Online indicator dot - Hidden when target is stealth owner and viewer is not owner */}
               {!(target.role === 'owner' && target.isStealth && currentUser?.role !== 'owner') && (
-                <span className={`absolute bottom-1 right-1 w-3.5 h-3.5 ${target.onlineStatus === 'online' ? 'bg-emerald-500' : 'bg-slate-400'} border-2 border-white rounded-full shadow-xs`}></span>
+                <span className={`absolute bottom-1 right-1 w-3.5 h-3.5 ${
+                  target.onlineStatus === 'online' ? 'bg-emerald-500' :
+                  target.onlineStatus === 'busy' ? 'bg-rose-500' :
+                  target.onlineStatus === 'away' ? 'bg-amber-400' : 'bg-slate-400'
+                } border-2 border-white rounded-full shadow-xs`}></span>
               )}
             </div>
           </div>
@@ -1122,9 +1129,18 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           {/* User Name, Rank & Status on Left side */}
           <div className="flex-1 text-right min-w-0 pr-1">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-white font-black text-base sm:text-lg drop-shadow-md truncate">
-                {target.username}
-              </span>
+              <UsernameDisplay
+                username={target.username}
+                role={target.role}
+                showRankBadge={true}
+                customRoleBadge={target.customRoleBadge}
+                badgeSize="md"
+                usernameColor={target.usernameColor || '#ffffff'}
+                usernameBgGradient={target.usernameBgGradient}
+                isNeon={target.isNeon}
+                fontSize="18px"
+                className="font-black text-base sm:text-lg drop-shadow-md"
+              />
               {!isSystemTarget ? (
                 <span className="text-xs text-amber-300 bg-slate-950/80 px-2 py-0.5 rounded-lg border border-amber-500/40 font-bold flex items-center gap-1">
                   <span className={getRankEmojiClass(target.role, target.username)}>{getRankEmoji(target.role, target.username)}</span>
@@ -1398,11 +1414,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             {/* 5. Country (البلد) */}
             <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
               <span className="text-slate-700 font-bold text-sm">البلد</span>
-              <span className="font-bold text-slate-600 text-sm flex items-center gap-1.5">
-                {(target.countryFlag || getCountryFlagByName(target.country) || getUserFlagEmoji(target)) && (
-                  <span className="text-base">{target.countryFlag || getCountryFlagByName(target.country) || getUserFlagEmoji(target)}</span>
-                )}
-                <span>{target.country || 'اليمن'}</span>
+              <span className="font-bold text-slate-600 text-sm">
+                {target.hideCountry ? 'عدم إظهار' : (getEnglishCountryName(target.country) || target.country || 'Yemen')}
               </span>
             </div>
 
@@ -1410,7 +1423,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
               <span className="text-slate-700 font-bold text-sm">تاريخ الإنضمام</span>
               <span className="font-mono text-slate-500 text-sm dir-ltr">
-                {toEnglishDigits(target.joinedDate || formatEnglishDate(new Date(target.joinedTimestamp || Date.now())))}
+                {toEnglishDigits(
+                  target.joinedDate && target.joinedDate !== '01/01/2026'
+                    ? target.joinedDate
+                    : formatEnglishDate(new Date(target.joinedTimestamp || Date.now()))
+                )}
               </span>
             </div>
 
@@ -1490,7 +1507,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
                 <span className="text-slate-700 font-bold text-sm">آخر تواجد</span>
                 <span className="font-semibold text-slate-600 text-sm flex items-center gap-1.5 dir-ltr">
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${target.onlineStatus === 'online' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${
+                    target.onlineStatus === 'online' ? 'bg-emerald-500 animate-pulse' :
+                    target.onlineStatus === 'busy' ? 'bg-rose-500' :
+                    target.onlineStatus === 'away' ? 'bg-amber-400' : 'bg-slate-400'
+                  }`}></span>
                   <span>{formatLastSeenDateTime(target.lastSeen, target.lastSeenTimestamp, target.onlineStatus === 'online')}</span>
                   {target.role === 'owner' && target.isStealth && (
                     <span className="text-[10px] text-purple-600 font-bold dir-rtl mr-1">🕵️‍♂️ (مخفي)</span>

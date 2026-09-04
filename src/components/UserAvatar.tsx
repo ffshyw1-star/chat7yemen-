@@ -58,12 +58,13 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
     switch (role) {
       case 'owner':
         return {
-          icon: (
-            <span className="text-[12px] leading-none select-none">
-              🏆
-            </span>
-          ),
+          icon: <img src="/owner_badge.svg" alt="owner" className="w-full h-full object-cover rounded-full" />,
           bg: 'bg-amber-500 border-amber-300',
+        };
+      case 'system':
+        return {
+          icon: <img src="/bot_badge.svg" alt="system" className="w-full h-full object-cover rounded-full" />,
+          bg: 'bg-slate-700 border-slate-400',
         };
       case 'admin':
         return { icon: <Star className="w-full h-full text-red-500 fill-red-500" />, bg: 'bg-red-950 border-red-500' };
@@ -110,14 +111,14 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
 
   return (
     <div
-      className={`relative inline-block shrink-0 ${className}`}
+      className={`relative inline-flex items-center justify-center shrink-0 ${sizeClasses} ${className}`}
       onContextMenu={handleAvatarContextMenu}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       onTouchCancel={handleTouchEnd}
     >
       <div
-        className={`${sizeClasses} rounded-full overflow-hidden flex items-center justify-center bg-slate-200 ${ringClass} transition-transform duration-200`}
+        className={`w-full h-full rounded-full overflow-hidden flex items-center justify-center bg-slate-200 ${ringClass} transition-transform duration-200`}
       >
         <img
           src={effectiveAvatar}
@@ -134,7 +135,7 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
         />
       </div>
 
-      {showRankBadge && !isSystem && badgeInfo && (
+      {showRankBadge && badgeInfo && (
         <div
           className={`absolute -bottom-0.5 -right-0.5 ${badgeSize} rounded-full border border-slate-900 flex items-center justify-center p-0.5 shadow-md ${badgeInfo.bg}`}
           title={role}

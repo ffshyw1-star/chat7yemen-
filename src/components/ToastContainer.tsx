@@ -2,10 +2,10 @@ import React from 'react';
 import { useChat } from '../context/ChatContext';
 import { ToastNotification } from '../types';
 import { UserAvatar } from './UserAvatar';
-import { MessageSquare, LogIn, X, Bell, ChevronLeft } from 'lucide-react';
+import { MessageSquare, LogIn, X, Bell, ChevronLeft, Newspaper } from 'lucide-react';
 
 export const ToastContainer: React.FC = () => {
-  const { toasts, removeToast, setActivePrivateUserId, setIsPrivateChatOpen } = useChat();
+  const { toasts, removeToast, setActivePrivateUserId, setIsPrivateChatOpen, openNews } = useChat();
 
   if (!toasts || toasts.length === 0) return null;
 
@@ -19,6 +19,8 @@ export const ToastContainer: React.FC = () => {
             if (toast.type === 'private_message' && toast.senderId) {
               setActivePrivateUserId(toast.senderId);
               setIsPrivateChatOpen(true);
+            } else if (toast.type === 'news') {
+              openNews();
             }
             removeToast(toast.id);
           }}
@@ -28,6 +30,8 @@ export const ToastContainer: React.FC = () => {
             className={`absolute right-0 top-0 bottom-0 w-1.5 ${
               toast.type === 'private_message'
                 ? 'bg-[#00aeeF]'
+                : toast.type === 'news'
+                ? 'bg-amber-500'
                 : toast.type === 'mention'
                 ? 'bg-rose-500'
                 : toast.type === 'user_join'
@@ -50,6 +54,8 @@ export const ToastContainer: React.FC = () => {
               <div className="w-10 h-10 rounded-full bg-sky-50 text-[#00aeeF] flex items-center justify-center">
                 {toast.type === 'private_message' ? (
                   <MessageSquare className="w-5 h-5" />
+                ) : toast.type === 'news' ? (
+                  <Newspaper className="w-5 h-5 text-amber-600" />
                 ) : toast.type === 'mention' ? (
                   <Bell className="w-5 h-5 text-rose-500" />
                 ) : toast.type === 'user_join' ? (
@@ -67,6 +73,9 @@ export const ToastContainer: React.FC = () => {
               <span className="text-xs font-black text-slate-800 truncate flex items-center gap-1.5">
                 {toast.type === 'private_message' && (
                   <span className="bg-sky-100 text-[#0284c7] text-[10px] px-1.5 py-0.2 rounded font-bold">خاص</span>
+                )}
+                {toast.type === 'news' && (
+                  <span className="bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.2 rounded font-bold">الأخبار 📰</span>
                 )}
                 {toast.type === 'mention' && (
                   <span className="bg-rose-100 text-rose-600 text-[10px] px-1.5 py-0.2 rounded font-bold">إشارة 📣</span>
@@ -86,6 +95,12 @@ export const ToastContainer: React.FC = () => {
             {toast.type === 'private_message' && (
               <div className="mt-1.5 text-[11px] font-bold text-[#00aeeF] flex items-center gap-1 group-hover:translate-x-[-2px] transition-transform">
                 <span>انقر بالضغط للرد المباشر</span>
+                <ChevronLeft className="w-3 h-3" />
+              </div>
+            )}
+            {toast.type === 'news' && (
+              <div className="mt-1.5 text-[11px] font-bold text-amber-600 flex items-center gap-1 group-hover:translate-x-[-2px] transition-transform">
+                <span>انقر بالضغط لمشاهدة الخبر والتفاعل</span>
                 <ChevronLeft className="w-3 h-3" />
               </div>
             )}

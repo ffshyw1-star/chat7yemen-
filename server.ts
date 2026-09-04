@@ -5,8 +5,8 @@ import fs from "fs";
 import initSqlJs, { Database } from "sql.js";
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer as createViteServer } from "vite";
-import { INITIAL_USERS, INITIAL_MESSAGES, INITIAL_ROOMS, INITIAL_NOTIFICATIONS, INITIAL_SITE_SETTINGS, INITIAL_CUSTOM_EMOJIS } from "./src/data/initialData";
-import { Message, PrivateMessage, User, Room, IPModerationRecord, FriendRequest, Notification, SiteSettings, CustomEmojiItem } from "./src/types";
+import { INITIAL_USERS, INITIAL_MESSAGES, INITIAL_ROOMS, INITIAL_NOTIFICATIONS, INITIAL_SITE_SETTINGS, INITIAL_CUSTOM_EMOJIS, INITIAL_NEWS, INITIAL_WALL_POSTS } from "./src/data/initialData";
+import { Message, PrivateMessage, User, Room, IPModerationRecord, FriendRequest, Notification, SiteSettings, CustomEmojiItem, NewsPost, WallPost } from "./src/types";
 
 const app = express();
 const server = http.createServer(app);
@@ -65,6 +65,8 @@ let serverRooms: Room[] = [];
 let serverIPModerations: IPModerationRecord[] = [];
 let serverNotifications: Notification[] = [];
 let serverCustomEmojis: CustomEmojiItem[] = [];
+let serverNews: NewsPost[] = [...INITIAL_NEWS];
+let serverWallPosts: WallPost[] = [...INITIAL_WALL_POSTS];
 let serverSiteSettings: SiteSettings = { ...INITIAL_SITE_SETTINGS };
 
 // Helper to extract client real IP
@@ -115,6 +117,7 @@ function resetD1Database() {
       DROP TABLE IF EXISTS messages;
       DROP TABLE IF EXISTS private_messages;
       DROP TABLE IF EXISTS rooms;
+      DROP TABLE IF EXISTS news;
       DROP TABLE IF EXISTS wall_posts;
       DROP TABLE IF EXISTS reports;
       DROP TABLE IF EXISTS friend_requests;
@@ -145,6 +148,10 @@ function resetD1Database() {
         data TEXT
       );
       CREATE TABLE rooms (
+        id TEXT PRIMARY KEY,
+        data TEXT
+      );
+      CREATE TABLE news (
         id TEXT PRIMARY KEY,
         data TEXT
       );
@@ -188,6 +195,8 @@ function resetD1Database() {
     serverFriendRequests = [];
     serverIPModerations = [];
     serverNotifications = [...INITIAL_NOTIFICATIONS];
+    serverNews = [...INITIAL_NEWS];
+    serverWallPosts = [...INITIAL_WALL_POSTS];
 
     const uStmt = db.prepare("INSERT OR REPLACE INTO users (id, username, role, data) VALUES (?, ?, ?, ?)");
     serverUsers.forEach((u) => {
@@ -206,6 +215,18 @@ function resetD1Database() {
       rStmt.run([r.id, JSON.stringify(r)]);
     });
     rStmt.free();
+
+    const newsStmt = db.prepare("INSERT OR REPLACE INTO news (id, data) VALUES (?, ?)");
+    serverNews.forEach((n) => {
+      newsStmt.run([n.id, JSON.stringify(n)]);
+    });
+    newsStmt.free();
+
+    const wallStmt = db.prepare("INSERT OR REPLACE INTO wall_posts (id, data) VALUES (?, ?)");
+    serverWallPosts.forEach((w) => {
+      wallStmt.run([w.id, JSON.stringify(w)]);
+    });
+    wallStmt.free();
 
     const nStmt = db.prepare("INSERT OR REPLACE INTO notifications (id, userId, timestamp, data) VALUES (?, ?, ?, ?)");
     serverNotifications.forEach((n) => {
@@ -278,6 +299,10 @@ async function initD1Database() {
         id TEXT PRIMARY KEY,
         data TEXT
       );
+      CREATE TABLE IF NOT EXISTS news (
+        id TEXT PRIMARY KEY,
+        data TEXT
+      );
       CREATE TABLE IF NOT EXISTS wall_posts (
         id TEXT PRIMARY KEY,
         data TEXT
@@ -320,20 +345,77 @@ async function initD1Database() {
     let shouldReset = false;
     if (userRows.length > 0 && userRows[0].values.length > 0) {
       const loadedUsers: User[] = userRows[0].values.map((v) => JSON.parse(v[0] as string));
-      const hasCleanOwner = loadedUsers.some(u => u.role === 'owner' && u.username === 'المالك');
+      // Delete old owner with username 'المالك'
+      try {
+        db.run("DELETE FROM users WHERE username = 'المالك' OR id = 'user-owner-old'");
+      } catch (e) {}
+
+      const hasCleanOwner = loadedUsers.some(u => u.role === 'owner' && (u.username === 'Owner' || u.id === 'user-owner'));
       if (!hasCleanOwner) {
-        console.log("🧹 Detected stale database records. Performing clean reset...");
-        shouldReset = true;
+        console.log("🧹 Detected stale owner account. Recreating clean Owner account...");
+        const cleanOwner: User = {
+          id: 'user-owner',
+          username: 'Owner',
+          password: 'Owner@2026',
+          email: 'owner@chat.ye',
+          role: 'owner',
+          gender: 'male',
+          age: 28,
+          avatar: '/default_male.svg',
+          wallCover: 'https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?auto=format&fit=crop&w=1000&q=80',
+          statusMessage: '👑 Owner | مرحباً بكم في دردشة عربي المطورة',
+          bio: 'حساب المالك الرئيسي والمؤسس للدردشة. يسعدني تواجدكم جميعاً.',
+          coins: 1000000,
+          likes: 500,
+          likedBy: [],
+          country: 'اليمن',
+          countryFlag: '🇾🇪',
+          specialty: 'إدارة وتطوير 💻',
+          specialtyCategory: 'tech',
+          language: 'العربية 🇸🇦',
+          currentRoomId: 'room-general',
+          joinedDate: '26/08/2026',
+          joinedTimestamp: Date.now(),
+          lastSeen: 'الآن',
+          lastSeenTimestamp: Date.now(),
+          usernameColor: '#f59e0b',
+          fontColor: '#fbbf24',
+          fontSize: 16,
+          isStealth: false,
+          privatePrivacy: 'everyone',
+          onlineStatus: 'online',
+          ip: '197.220.12.89',
+          locationMap: 'صنعاء، اليمن',
+          friends: [],
+          ignores: []
+        };
+        serverUsers = [cleanOwner, ...loadedUsers.filter(u => u.username !== 'المالك' && u.id !== 'user-owner')];
+        saveUserToD1(cleanOwner);
+        saveD1ToDisk();
       } else {
         // Purge any mock/dummy users, strip user-system from friends, and retain only real accounts
-        const mockIds = ['user-1', 'user-2', 'user-3', 'user-4', 'user-5', 'user-6', 'user-7', 'user-8'];
+        const mockUserIds = ['user-katim', 'user-silva', 'user-raad', 'user-kibriya', 'user-jawbak', 'user-1', 'user-2', 'user-3', 'user-4', 'user-5', 'user-6', 'user-7', 'user-8'];
         serverUsers = loadedUsers
-          .filter(u => !mockIds.includes(u.id))
-          .map(u => ({
-            ...u,
-            friends: (u.friends || []).filter(fId => fId !== 'user-system' && fId !== 'system')
-          }));
-        mockIds.forEach(id => {
+          .filter(u => !mockUserIds.includes(u.id) && u.username !== 'المالك')
+          .map(u => {
+            const cleanJoinedDate = (!u.joinedDate || u.joinedDate === '01/01/2026') ? '26/08/2026' : u.joinedDate;
+            if (u.id === 'user-owner' || u.role === 'owner') {
+              return {
+                ...u,
+                username: 'Owner',
+                role: 'owner' as const,
+                statusMessage: '👑 Owner | مرحباً بكم في دردشة عربي المطورة',
+                joinedDate: cleanJoinedDate,
+                friends: (u.friends || []).filter(fId => fId !== 'user-system' && fId !== 'system')
+              };
+            }
+            return {
+              ...u,
+              joinedDate: cleanJoinedDate,
+              friends: (u.friends || []).filter(fId => fId !== 'user-system' && fId !== 'system')
+            };
+          });
+        mockUserIds.forEach(id => {
           try {
             db.run("DELETE FROM users WHERE id = ?", [id]);
           } catch (e) {}
@@ -357,17 +439,20 @@ async function initD1Database() {
     return;
   }
 
-  // 2. Messages
+  // 2. Messages - Purge any mock messages from screenshots or initial states
+  const mockMsgIds = ['msg-1', 'msg-2', 'msg-3', 'msg-4', 'msg-5', 'msg-6'];
+  const mockSenderIds = ['user-katim', 'user-silva', 'user-raad', 'user-kibriya', 'user-jawbak', 'user-1', 'user-2', 'user-3', 'user-4', 'user-5', 'user-6', 'user-7', 'user-8'];
+  try {
+    db.run(`DELETE FROM messages WHERE id IN ('msg-1', 'msg-2', 'msg-3', 'msg-4', 'msg-5', 'msg-6') OR senderId IN ('user-katim', 'user-silva', 'user-raad', 'user-kibriya', 'user-jawbak', 'user-1', 'user-2', 'user-3', 'user-4', 'user-5', 'user-6', 'user-7', 'user-8')`);
+  } catch (e) {}
+
   const msgRows = db.exec("SELECT data FROM messages");
   if (msgRows.length > 0 && msgRows[0].values.length > 0) {
-    serverMessages = msgRows[0].values.map((v) => JSON.parse(v[0] as string));
+    serverMessages = msgRows[0].values
+      .map((v) => JSON.parse(v[0] as string))
+      .filter((m: Message) => !mockMsgIds.includes(m.id) && !mockSenderIds.includes(m.senderId));
   } else {
-    serverMessages = [...INITIAL_MESSAGES];
-    const stmt = db.prepare("INSERT OR REPLACE INTO messages (id, roomId, senderId, timestamp, data) VALUES (?, ?, ?, ?, ?)");
-    serverMessages.forEach((m) => {
-      stmt.run([m.id, m.roomId, m.senderId, m.timestamp, JSON.stringify(m)]);
-    });
-    stmt.free();
+    serverMessages = [];
   }
 
   // 3. Private Messages
@@ -455,7 +540,69 @@ async function initD1Database() {
   });
   stmt.free();
 
+  // 10. News
+  const newsRows = db.exec("SELECT data FROM news");
+  if (newsRows.length > 0 && newsRows[0].values.length > 0) {
+    serverNews = newsRows[0].values.map((v) => JSON.parse(v[0] as string));
+  } else {
+    serverNews = [...INITIAL_NEWS];
+    const nStmt = db.prepare("INSERT OR REPLACE INTO news (id, data) VALUES (?, ?)");
+    serverNews.forEach((n) => {
+      nStmt.run([n.id, JSON.stringify(n)]);
+    });
+    nStmt.free();
+  }
+
+  // 11. Wall Posts
+  const wallRows = db.exec("SELECT data FROM wall_posts");
+  if (wallRows.length > 0 && wallRows[0].values.length > 0) {
+    serverWallPosts = wallRows[0].values.map((v) => JSON.parse(v[0] as string));
+  } else {
+    serverWallPosts = [...INITIAL_WALL_POSTS];
+  }
+
   saveD1ToDisk();
+}
+
+// Helper SQL Persistence functions for News & Wall Posts
+function saveNewsPostToD1(post: NewsPost) {
+  try {
+    const stmt = db.prepare("INSERT OR REPLACE INTO news (id, data) VALUES (?, ?)");
+    stmt.run([post.id, JSON.stringify(post)]);
+    stmt.free();
+    saveD1ToDisk();
+  } catch (e) {
+    console.error("D1 saveNewsPost error:", e);
+  }
+}
+
+function deleteNewsPostFromD1(newsId: string) {
+  try {
+    db.run("DELETE FROM news WHERE id = ?", [newsId]);
+    saveD1ToDisk();
+  } catch (e) {
+    console.error("D1 deleteNewsPost error:", e);
+  }
+}
+
+function saveWallPostToD1(post: WallPost) {
+  try {
+    const stmt = db.prepare("INSERT OR REPLACE INTO wall_posts (id, data) VALUES (?, ?)");
+    stmt.run([post.id, JSON.stringify(post)]);
+    stmt.free();
+    saveD1ToDisk();
+  } catch (e) {
+    console.error("D1 saveWallPost error:", e);
+  }
+}
+
+function deleteWallPostFromD1(postId: string) {
+  try {
+    db.run("DELETE FROM wall_posts WHERE id = ?", [postId]);
+    saveD1ToDisk();
+  } catch (e) {
+    console.error("D1 deleteWallPost error:", e);
+  }
 }
 
 // Helper SQL Persistence functions
@@ -717,6 +864,24 @@ app.post("/api/private-messages/send", (req, res) => {
   res.status(400).json({ success: false, error: "Invalid private message" });
 });
 
+app.post("/api/private/clear-user", (req, res) => {
+  const { userId } = req.body || {};
+  if (userId) {
+    serverPrivateMessages = serverPrivateMessages.filter(
+      pm => pm.senderId !== userId && pm.receiverId !== userId
+    );
+    try {
+      db.run("DELETE FROM private_messages WHERE senderId = ? OR receiverId = ?", [userId, userId]);
+      saveD1ToDisk();
+    } catch (e) {
+      console.error("Error clearing user PMs from D1 via REST:", e);
+    }
+    broadcast({ type: "SYNC_PRIVATE_MESSAGES", payload: serverPrivateMessages });
+    return res.json({ success: true });
+  }
+  res.status(400).json({ success: false, error: "Missing userId" });
+});
+
 app.get("/api/d1/notifications", (req, res) => {
   res.json({ notifications: serverNotifications });
 });
@@ -804,6 +969,10 @@ app.post("/api/users/update", (req, res) => {
 app.post("/api/users/delete", (req, res) => {
   const { userId } = req.body || {};
   if (userId) {
+    const target = serverUsers.find((u) => u.id === userId);
+    if (target && (target.role === 'owner' || target.id === 'user-owner' || target.is_super_admin)) {
+      return res.status(403).json({ success: false, error: "Cannot delete owner or Super Admin account" });
+    }
     serverUsers = serverUsers.filter((u) => u.id !== userId);
     try {
       db.run("DELETE FROM users WHERE id = ?", [userId]);
@@ -829,6 +998,60 @@ app.post("/api/settings/update", (req, res) => {
   }
   res.status(400).json({ success: false, error: "Invalid settings" });
 });
+
+// REST Endpoint to clean up inactive users based on owner settings
+app.post("/api/admin/cleanup-inactive-users", (req, res) => {
+  try {
+    const timeoutMinutes = Number(serverSiteSettings?.userInactivityTimeoutMinutes) || 15;
+    const cutoff = Date.now() - (timeoutMinutes * 60 * 1000);
+    let cleanedCount = 0;
+
+    serverUsers = serverUsers.map(u => {
+      if (u.onlineStatus === 'online' && u.lastSeenTimestamp && u.lastSeenTimestamp < cutoff) {
+        cleanedCount++;
+        return {
+          ...u,
+          onlineStatus: 'offline',
+          isOnline: false
+        };
+      }
+      return u;
+    });
+
+    if (cleanedCount > 0) {
+      serverUsers.forEach(saveUserToD1);
+      broadcast({ type: "SYNC_USERS", payload: serverUsers });
+    }
+
+    return res.json({ success: true, cleanedCount, timeoutMinutes });
+  } catch (err: any) {
+    console.error("Error during cleanup-inactive-users:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Hourly background scheduled cleanup for inactive users
+setInterval(() => {
+  try {
+    const timeoutMinutes = Number(serverSiteSettings?.userInactivityTimeoutMinutes) || 15;
+    const cutoff = Date.now() - (timeoutMinutes * 60 * 1000);
+    let count = 0;
+    serverUsers = serverUsers.map(u => {
+      if (u.onlineStatus === 'online' && u.lastSeenTimestamp && u.lastSeenTimestamp < cutoff) {
+        count++;
+        return { ...u, onlineStatus: 'offline', isOnline: false };
+      }
+      return u;
+    });
+    if (count > 0) {
+      serverUsers.forEach(saveUserToD1);
+      broadcast({ type: "SYNC_USERS", payload: serverUsers });
+      console.log(`[Scheduled Hourly Cleanup] Cleaned up ${count} inactive users.`);
+    }
+  } catch (e) {
+    console.error("Scheduled cleanup error:", e);
+  }
+}, 60 * 60 * 1000);
 
 // GET /sitemap.xml dynamic generator
 app.get("/sitemap.xml", (req, res) => {
@@ -983,6 +1206,8 @@ wss.on("connection", (ws: WebSocket) => {
         ipModerations: serverIPModerations,
         notifications: serverNotifications,
         customEmojis: serverCustomEmojis,
+        news: serverNews,
+        wallPosts: serverWallPosts,
         siteSettings: serverSiteSettings,
       },
     })
@@ -1037,6 +1262,18 @@ wss.on("connection", (ws: WebSocket) => {
         case "SEND_MESSAGE": {
           const msg: Message = payload;
           if (msg && !serverMessages.some((m) => m.id === msg.id)) {
+            const senderUserId = msg.senderId;
+            const sender = serverUsers.find((u) => u.id === senderUserId);
+            const targetRoom = serverRooms.find((r) => r.id === msg.roomId);
+            const isMutedInRoom = targetRoom && Array.isArray(targetRoom.mutedUsers) && targetRoom.mutedUsers.includes(senderUserId);
+            const isKickedFromRoom = targetRoom && Array.isArray(targetRoom.kickedUsers) && targetRoom.kickedUsers.includes(senderUserId);
+
+            // Block message if user is globally muted, room-muted, or kicked from the room
+            if (sender?.isMuted || isMutedInRoom || isKickedFromRoom) {
+              console.warn(`[MSG_BLOCKED] User ${senderUserId} is muted/kicked from room ${msg.roomId}`);
+              break;
+            }
+
             serverMessages.push(msg);
             saveMessageToD1(msg);
             broadcast({ type: "NEW_MESSAGE", payload: msg });
@@ -1156,6 +1393,88 @@ wss.on("connection", (ws: WebSocket) => {
           break;
         }
 
+        case "ROOM_KICK_EVENT": {
+          const { roomId, userId, targetRoomName, fallbackRoomId } = payload || {};
+          if (roomId && userId) {
+            const fallback = fallbackRoomId || 'room-general';
+            serverUsers = serverUsers.map(u => {
+              if (u.id === userId && (u.currentRoomId === roomId || !u.currentRoomId)) {
+                const updated = { ...u, currentRoomId: fallback };
+                saveUserToD1(updated);
+                return updated;
+              }
+              return u;
+            });
+            serverRooms = serverRooms.map(r => {
+              if (r.id === roomId) {
+                const currentKicked = Array.isArray(r.kickedUsers) ? r.kickedUsers : [];
+                if (!currentKicked.includes(userId)) {
+                  return { ...r, kickedUsers: [...currentKicked, userId] };
+                }
+              }
+              return r;
+            });
+            saveRoomsToD1(serverRooms);
+            broadcast({ type: "ROOM_KICKED", payload: { roomId, userId, targetRoomName, fallbackRoomId: fallback } });
+            broadcast({ type: "SYNC_ROOMS", payload: serverRooms });
+            broadcast({ type: "SYNC_USERS", payload: serverUsers });
+          }
+          break;
+        }
+
+        case "ROOM_MUTE_EVENT": {
+          const { roomId, userId, targetRoomName } = payload || {};
+          if (roomId && userId) {
+            serverRooms = serverRooms.map(r => {
+              if (r.id === roomId) {
+                const currentMuted = Array.isArray(r.mutedUsers) ? r.mutedUsers : [];
+                if (!currentMuted.includes(userId)) {
+                  return { ...r, mutedUsers: [...currentMuted, userId] };
+                }
+              }
+              return r;
+            });
+            saveRoomsToD1(serverRooms);
+            broadcast({ type: "ROOM_MUTED", payload: { roomId, userId, targetRoomName } });
+            broadcast({ type: "SYNC_ROOMS", payload: serverRooms });
+          }
+          break;
+        }
+
+        case "ROOM_UNMUTE_EVENT": {
+          const { roomId, userId } = payload || {};
+          if (roomId && userId) {
+            serverRooms = serverRooms.map(r => {
+              if (r.id === roomId) {
+                const currentMuted = Array.isArray(r.mutedUsers) ? r.mutedUsers : [];
+                return { ...r, mutedUsers: currentMuted.filter(uid => uid !== userId) };
+              }
+              return r;
+            });
+            saveRoomsToD1(serverRooms);
+            broadcast({ type: "ROOM_UNMUTED", payload: { roomId, userId } });
+            broadcast({ type: "SYNC_ROOMS", payload: serverRooms });
+          }
+          break;
+        }
+
+        case "ROOM_UNKICK_EVENT": {
+          const { roomId, userId } = payload || {};
+          if (roomId && userId) {
+            serverRooms = serverRooms.map(r => {
+              if (r.id === roomId) {
+                const currentKicked = Array.isArray(r.kickedUsers) ? r.kickedUsers : [];
+                return { ...r, kickedUsers: currentKicked.filter(uid => uid !== userId) };
+              }
+              return r;
+            });
+            saveRoomsToD1(serverRooms);
+            broadcast({ type: "ROOM_UNKICKED", payload: { roomId, userId } });
+            broadcast({ type: "SYNC_ROOMS", payload: serverRooms });
+          }
+          break;
+        }
+
         case "REACT_MESSAGE": {
           const { messageId, reactions } = payload || {};
           if (messageId && reactions) {
@@ -1182,6 +1501,23 @@ wss.on("connection", (ws: WebSocket) => {
               console.error("Error deleting PMs from D1:", e);
             }
             broadcast({ type: "PRIVATE_MESSAGES_DELETED", payload: { userId1, userId2 } });
+          }
+          break;
+        }
+
+        case "CLEAR_USER_PRIVATE_MESSAGES": {
+          const { userId } = payload || {};
+          if (userId) {
+            serverPrivateMessages = serverPrivateMessages.filter(
+              pm => pm.senderId !== userId && pm.receiverId !== userId
+            );
+            try {
+              db.run("DELETE FROM private_messages WHERE senderId = ? OR receiverId = ?", [userId, userId]);
+              saveD1ToDisk();
+            } catch (e) {
+              console.error("Error clearing user PMs from D1:", e);
+            }
+            broadcast({ type: "SYNC_PRIVATE_MESSAGES", payload: serverPrivateMessages });
           }
           break;
         }
@@ -1409,6 +1745,101 @@ wss.on("connection", (ws: WebSocket) => {
             serverSiteSettings = { ...serverSiteSettings, ...newSettings };
             saveSiteSettingsToD1(serverSiteSettings);
             broadcast({ type: "SYNC_SETTINGS", payload: serverSiteSettings });
+          }
+          break;
+        }
+
+        case "ADD_NEWS_POST": {
+          const post: NewsPost = payload;
+          if (post && post.id) {
+            serverNews = [post, ...serverNews.filter(n => n.id !== post.id)];
+            saveNewsPostToD1(post);
+            broadcast({ type: "SYNC_NEWS", payload: serverNews });
+            broadcast({ type: "NEW_NEWS_POST", payload: post });
+          }
+          break;
+        }
+
+        case "DELETE_NEWS_POST": {
+          const { newsId } = payload || {};
+          if (newsId) {
+            serverNews = serverNews.filter(n => n.id !== newsId);
+            deleteNewsPostFromD1(newsId);
+            broadcast({ type: "SYNC_NEWS", payload: serverNews });
+          }
+          break;
+        }
+
+        case "REACT_NEWS_POST": {
+          const { newsId, reactions } = payload || {};
+          if (newsId && reactions) {
+            serverNews = serverNews.map(n => n.id === newsId ? { ...n, reactions } : n);
+            const found = serverNews.find(n => n.id === newsId);
+            if (found) saveNewsPostToD1(found);
+            broadcast({ type: "SYNC_NEWS", payload: serverNews });
+          }
+          break;
+        }
+
+        case "ADD_NEWS_COMMENT": {
+          const { newsId, comment } = payload || {};
+          if (newsId && comment) {
+            serverNews = serverNews.map(n => {
+              if (n.id === newsId) {
+                return { ...n, comments: [...(n.comments || []), comment] };
+              }
+              return n;
+            });
+            const found = serverNews.find(n => n.id === newsId);
+            if (found) saveNewsPostToD1(found);
+            broadcast({ type: "SYNC_NEWS", payload: serverNews });
+          }
+          break;
+        }
+
+        case "ADD_WALL_POST": {
+          const post: WallPost = payload;
+          if (post && post.id) {
+            serverWallPosts = [post, ...serverWallPosts.filter(w => w.id !== post.id)];
+            saveWallPostToD1(post);
+            broadcast({ type: "SYNC_WALL_POSTS", payload: serverWallPosts });
+          }
+          break;
+        }
+
+        case "DELETE_WALL_POST": {
+          const { postId } = payload || {};
+          if (postId) {
+            serverWallPosts = serverWallPosts.filter(w => w.id !== postId);
+            deleteWallPostFromD1(postId);
+            broadcast({ type: "SYNC_WALL_POSTS", payload: serverWallPosts });
+          }
+          break;
+        }
+
+        case "REACT_WALL_POST": {
+          const { postId, reactions, likes } = payload || {};
+          if (postId && reactions) {
+            serverWallPosts = serverWallPosts.map(w => w.id === postId ? { ...w, reactions, likes: likes || [] } : w);
+            const found = serverWallPosts.find(w => w.id === postId);
+            if (found) saveWallPostToD1(found);
+            broadcast({ type: "SYNC_WALL_POSTS", payload: serverWallPosts });
+          }
+          break;
+        }
+
+        case "ADD_WALL_COMMENT": {
+          const { postId, comment } = payload || {};
+          if (postId && comment) {
+            serverWallPosts = serverWallPosts.map(w => {
+              if (w.id === postId) {
+                return { ...w, comments: [...(w.comments || []), comment] };
+              }
+              return w;
+            });
+            const found = serverWallPosts.find(w => w.id === postId);
+            if (found) saveWallPostToD1(found);
+            broadcast({ type: "SYNC_WALL_POSTS", payload: serverWallPosts });
           }
           break;
         }

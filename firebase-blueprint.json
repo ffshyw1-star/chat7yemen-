@@ -1,0 +1,116 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile with account details and settings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "username": { "type": "string", "maxLength": 64 },
+        "role": { "type": "string", "maxLength": 32 },
+        "gender": { "type": "string", "maxLength": 16 },
+        "age": { "type": "number" },
+        "country": { "type": "string", "maxLength": 64 },
+        "countryFlag": { "type": "string", "maxLength": 16 },
+        "avatar": { "type": "string", "maxLength": 100000 },
+        "bio": { "type": "string", "maxLength": 512 },
+        "statusMessage": { "type": "string", "maxLength": 256 },
+        "coins": { "type": "number" },
+        "likes": { "type": "number" },
+        "onlineStatus": { "type": "string", "maxLength": 32 },
+        "joinedDate": { "type": "string", "maxLength": 32 },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["username", "role"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Public chat messages in rooms",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "roomId": { "type": "string", "maxLength": 64 },
+        "senderId": { "type": "string", "maxLength": 128 },
+        "senderName": { "type": "string", "maxLength": 64 },
+        "senderAvatar": { "type": "string", "maxLength": 100000 },
+        "senderRole": { "type": "string", "maxLength": 32 },
+        "text": { "type": "string", "maxLength": 5000 },
+        "type": { "type": "string", "maxLength": 32 },
+        "mediaUrl": { "type": "string", "maxLength": 100000 },
+        "voiceDuration": { "type": "number" },
+        "timestamp": { "type": "string", "maxLength": 32 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["senderId", "senderName", "text"]
+    },
+    "PrivateMessage": {
+      "title": "PrivateMessage",
+      "description": "Direct one-on-one message between users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "senderId": { "type": "string", "maxLength": 128 },
+        "receiverId": { "type": "string", "maxLength": 128 },
+        "text": { "type": "string", "maxLength": 5000 },
+        "timestamp": { "type": "string", "maxLength": 32 },
+        "mediaUrl": { "type": "string", "maxLength": 100000 },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["senderId", "receiverId", "text"]
+    },
+    "RoomItem": {
+      "title": "RoomItem",
+      "description": "Chat room definition",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "name": { "type": "string", "maxLength": 100 },
+        "description": { "type": "string", "maxLength": 500 },
+        "isLocked": { "type": "boolean" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "SiteSettings": {
+      "title": "SiteSettings",
+      "description": "Global application configuration and permissions",
+      "type": "object",
+      "properties": {
+        "siteName": { "type": "string", "maxLength": 128 },
+        "onlinePresenceTimeoutHours": { "type": "number" },
+        "hideRoomSwitchNotifications": { "type": "boolean" },
+        "enableRegistration": { "type": "boolean" },
+        "enableGuestLogin": { "type": "boolean" },
+        "enableDirectChat": { "type": "boolean" },
+        "enableVoiceNotes": { "type": "boolean" },
+        "enableGifts": { "type": "boolean" },
+        "enableSocialWall": { "type": "boolean" },
+        "hideChatBackgroundForVisitorAndMember": { "type": "boolean" },
+        "updatedAt": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User accounts and profile storage"
+    },
+    "/messages/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "Public chat messages"
+    },
+    "/private_messages/{messageId}": {
+      "schema": "PrivateMessage",
+      "description": "Private messages between two users"
+    },
+    "/rooms/{roomId}": {
+      "schema": "RoomItem",
+      "description": "Active chat rooms"
+    },
+    "/settings/{settingId}": {
+      "schema": "SiteSettings",
+      "description": "Global site settings and moderation rules"
+    }
+  }
+}

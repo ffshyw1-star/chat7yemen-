@@ -1,4 +1,19 @@
-export type UserRole = 'visitor' | 'member' | 'vip' | 'moderator' | 'management' | 'admin' | 'owner';
+export type UserRole = 'visitor' | 'member' | 'vip' | 'moderator' | 'management' | 'admin' | 'owner' | 'system';
+
+export interface RoleBadgeConfig {
+  role: UserRole;
+  label: string;
+  iconType: 'emoji' | 'lucide' | 'image';
+  iconValue: string;
+  bgColor: string;
+  borderColor: string;
+  textColor?: string;
+  borderWidth?: number;
+  glow?: boolean;
+  glowColor?: string;
+}
+
+export type RoleBadgesMap = Partial<Record<UserRole, RoleBadgeConfig>>;
 
 export type RoomRole = 'none' | 'room_moderator' | 'room_supervisor' | 'room_owner';
 
@@ -8,7 +23,7 @@ export type OnlineStatus = 'online' | 'away' | 'busy' | 'offline';
 
 export type PrivatePrivacySetting = 'everyone' | 'members' | 'friends' | 'none';
 
-export type ThemeMode = 'dark' | 'light' | 'emerald' | 'sapphire' | 'rose' | 'purple';
+export type ThemeMode = 'default' | 'dark' | 'gray' | 'lite' | 'light' | 'emerald' | 'sapphire' | 'rose' | 'purple';
 
 export interface User {
   id: string;
@@ -30,6 +45,7 @@ export interface User {
   countryFlag?: string;
   hideCountry?: boolean;
   showCountryFlag?: boolean;
+  countryModified?: boolean;
   specialty?: string; // التخصص أو المجال، مثال: "تقنية وبرمجة 💻"
   specialtyCategory?: string; // فئة التخصص
   language?: string; // لغة المستخدم المفضلة، مثال: "العربية 🇸🇦"
@@ -46,6 +62,7 @@ export interface User {
   fontColor?: string;
   fontSize?: number;
   isStealth?: boolean; // Owner stealth mode
+  is_super_admin?: boolean; // Super Admin immunity flag
   privatePrivacy: PrivatePrivacySetting;
   onlineStatus: OnlineStatus;
   ip?: string;
@@ -63,6 +80,14 @@ export interface User {
   blockedUsers?: string[]; // user IDs blocked by this user
   deletionScheduledDate?: string;
   theme?: ThemeMode;
+  customRoleBadge?: RoleBadgeConfig;
+  chatTextColor?: string;
+  chatTextBgGradient?: string;
+  chatFontFamily?: string;
+  chatFontStyle?: string;
+  chatTextFontSize?: string;
+  chatTextWeight?: string;
+  chatIsNeon?: boolean;
 }
 
 export interface Message {
@@ -71,7 +96,7 @@ export interface Message {
   senderId: string;
   senderName: string;
   senderRole: UserRole;
-  senderGender: Gender;
+  senderGender?: Gender;
   senderAvatar?: string;
   senderUsernameColor?: string;
   senderUsernameFontSize?: string;
@@ -79,11 +104,17 @@ export interface Message {
   textColor?: string;
   textFontSize?: string;
   textWeight?: string;
+  fontFamily?: string;
+  textStyle?: string;
+  textBgGradient?: string;
+  isNeon?: boolean;
   type: 'text' | 'image' | 'voice' | 'youtube' | 'system';
   mediaUrl?: string;
   voiceDuration?: number; // seconds
   timestamp: string; // e.g. "17:15"
-  date: string; // e.g. "16/08/2026"
+  date?: string; // e.g. "16/08/2026"
+  createdAt?: string;
+  status?: string;
   reactions?: Record<string, string[]>; // emoji -> array of user IDs who reacted
   targetUserId?: string;
   targetUsername?: string;
@@ -109,6 +140,7 @@ export interface Room {
   roomType?: 'standard' | 'diamond' | 'admin';
   allowedRoles?: UserRole[]; // If set, only these user roles can enter
   customIcon?: 'globe' | 'diamond' | 'admin_star' | string;
+  iconUrl?: string; // Custom image/avatar URL for the room
   welcomeMessage?: string; // Custom automatic welcome greeting for this room
   autoWelcomeEnabled?: boolean; // Whether auto-welcome bot message is enabled
   mutedUsers?: string[]; // Array of muted user IDs in this room
@@ -187,6 +219,7 @@ export interface WallPost {
   content: string;
   imageUrl?: string;
   timestamp: string;
+  reactions?: { [emoji: string]: string[] }; // emoji -> array of userIds
   likes: string[]; // array of userIds
   comments: WallComment[];
 }
@@ -267,12 +300,81 @@ export interface AudioSettings {
   generalBroadcastSound?: boolean;
 }
 
+export interface BackupItem {
+  id: string;
+  name?: string;
+  date?: string;
+  createdAt?: string;
+  size?: string;
+  count?: string;
+  usersCount?: number;
+  roomsCount?: number;
+}
+
+export interface CustomRole {
+  id: string;
+  name: string;
+  emoji: string;
+  color: string;
+  permissions: string[];
+}
+
+export interface AuditLogEntry {
+  id: string;
+  timestamp: number;
+  adminName: string;
+  action: string;
+  details: string;
+  type: 'role_change' | 'login' | 'settings' | 'ban' | 'custom_role';
+}
+
+export interface BlockedDeviceItem {
+  id: string;
+  name: string;
+  token?: string;
+  username?: string;
+  targetUserId?: string;
+  date: string;
+  reason?: string;
+  actionBy?: string;
+}
+
+export interface BlockedBrowserItem {
+  id: string;
+  name: string;
+  fingerprint?: string;
+  username?: string;
+  targetUserId?: string;
+  date: string;
+  reason?: string;
+  actionBy?: string;
+}
+
+export interface BlockedCountryItem {
+  code: string;
+  name: string;
+  date: string;
+  reason?: string;
+  actionBy?: string;
+}
+
+export interface BlockedXBandItem {
+  range: string;
+  reason: string;
+  date: string;
+  actionBy?: string;
+}
+
 export interface SiteSettings {
   siteName: string;
   siteLogoEmoji: string;
+  landingTitle?: string;
+  landingSubtitle?: string;
+  customRoles?: CustomRole[];
+  adminAuditLogs?: AuditLogEntry[];
   timeZone: string;
   defaultLanguage: string;
-  defaultTheme: 'dark' | 'light';
+  defaultTheme: 'dark' | 'light' | ThemeMode;
   primaryColor: string;
   welcomePanoramaUrl: string;
   panoramaCarouselEnabled: boolean;
@@ -296,6 +398,15 @@ export interface SiteSettings {
   // Owner Presence & Room Switch Controls
   onlinePresenceTimeoutHours?: number; // 0 = instant, 6, 12, 24, 48, -1 = forever
   hideRoomSwitchNotifications?: boolean; // Hide room switch announcement messages
+  welcomeBotActive?: boolean;
+  welcomeBotName?: string;
+  welcomeBotMessage?: string;
+  welcomeBotIntervalSeconds?: number; // e.g., 60 seconds
+  botWelcomeEnabled?: boolean;
+  botWelcomeMessage?: string;
+  botWelcomeIntervalMinutes?: number;
+  userInactivityTimeoutMinutes?: number; // e.g., 15 minutes
+  announceUserEnterLeave?: boolean; // Toggles room entry/leave announcements in chat
   // Enhanced Anti-Flood & Moderation Features
   antiFloodEnabled?: boolean;
   floodMaxMessages?: number;
@@ -305,14 +416,46 @@ export interface SiteSettings {
   floodMuteDurationMinutes?: number;
   antiSpamLinks?: boolean;
   antiSpamCaps?: boolean;
-  guestChatMode?: 'allowed' | 'silent' | 'registered_only';
+  guestChatMode?: 'allowed' | 'silent' | 'registered_only' | 'read_only' | 'disabled';
   requireEmailVerification?: boolean;
   enableCookieBan?: boolean;
+  musicPlaylist?: { id: string; title: string; url: string; duration: string }[];
+  autoPlayBackgroundMusic?: boolean;
+  defaultMusicVolume?: number;
+  maxPublicMessageLength?: number;
+  maxPrivateMessageLength?: number;
+  maxUsernameLength?: number;
+  maxBioLength?: number;
+  maxStatusLength?: number;
+  enableProfilePhotoCheck?: boolean;
+  requireProfilePhotoForRoles?: string[];
+  allowMusicRequests?: boolean;
+  djPermissionRole?: 'owner' | 'admin' | 'vip' | 'all';
+  djAutoApproveSongs?: boolean;
+  customBadWordsList?: string[];
+  roleBadges?: RoleBadgesMap;
+  rolePermissions?: Record<string, string[]>;
+  disableUsernameChangeRoles?: UserRole[]; // List of roles forbidden from changing username
+  disableUsernameChangeAll?: boolean; // Global toggle to freeze username changes
+  enableRegistration?: boolean;
+  enableGuestLogin?: boolean;
+  enableDirectChat?: boolean;
+  enableVoiceNotes?: boolean;
+  enableGifts?: boolean;
+  enableSocialWall?: boolean;
+  hideChatBackgroundForVisitorAndMember?: boolean;
+  blockedDevices?: BlockedDeviceItem[];
+  blockedBrowsers?: BlockedBrowserItem[];
+  blockedCountries?: BlockedCountryItem[];
+  blockedXBands?: BlockedXBandItem[];
+  backups?: BackupItem[];
 }
 
 export interface IPModerationRecord {
   id: string;
   ip: string;
+  deviceId?: string;
+  browserFingerprint?: string;
   type: 'ban' | 'kick' | 'mute';
   reason: string;
   targetUserId?: string;
@@ -324,7 +467,7 @@ export interface IPModerationRecord {
 
 export interface ToastNotification {
   id: string;
-  type: 'private_message' | 'user_join' | 'info' | 'success';
+  type: 'private_message' | 'user_join' | 'info' | 'success' | 'warning' | 'error' | 'mention' | 'news';
   title: string;
   message: string;
   avatar?: string;

@@ -27,7 +27,7 @@ const BRUSH_SIZES = [
 ];
 
 export const DrawingCanvasModal: React.FC<DrawingCanvasModalProps> = ({ onClose }) => {
-  const { sendMessage } = useChat();
+  const { sendMessage, isMutedInCurrentRoom, currentUserCan, showTopBanner } = useChat();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [penColor, setPenColor] = useState('#000000');
@@ -112,6 +112,14 @@ export const DrawingCanvasModal: React.FC<DrawingCanvasModalProps> = ({ onClose 
   };
 
   const handleSendDrawing = () => {
+    if (isMutedInCurrentRoom) {
+      showTopBanner('🚫 عذراً، أنت مكتوم عن إرسال الرسومات في هذه الغرفة');
+      return;
+    }
+    if (!currentUserCan('send_canvas') && !currentUserCan('send_media')) {
+      showTopBanner('🚫 ليس لديك صلاحية إرسال الرسومات والكانفاس حسب رتبتك');
+      return;
+    }
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dataUrl = canvas.toDataURL('image/png');

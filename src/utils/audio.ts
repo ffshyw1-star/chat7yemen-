@@ -166,56 +166,126 @@ export function playChatSound(type: 'public' | 'private' | 'friend_request' | 'm
 }
 
 // Microphone voice recording helper
+export interface VoiceRecordingResult {
+  blobUrl: string;
+  base64: string;
+  durationSec: number;
+}
+
 export class VoiceRecorder {
   private mediaRecorder: MediaRecorder | null = null;
+  private stream: MediaStream | null = null;
   private audioChunks: Blob[] = [];
 
-  public async startRecording(): Promise<boolean> {
+  public async startRecording(): Promise<{ ok: boolean; error?: string }> {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      this.mediaRecorder = new MediaRecorder(stream);
+      if (typeof navigator === 'undefined' || !navigator?.mediaDevices?.getUserMedia) {
+        return { ok: false, error: 'المتصفح لا يدعم تسجيل الصوت أو يحظر الوصول للمايكروفون' };
+      }
+
+      this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      // Determine supported mimeType
+      const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus', ''];
+      let chosenMime = '';
+      if (typeof MediaRecorder !== 'undefined' && typeof MediaRecorder.isTypeSupported === 'function') {
+        for (const mime of mimeTypes) {
+          if (!mime || MediaRecorder.isTypeSupported(mime)) {
+            chosenMime = mime;
+            break;
+          }
+        }
+      }
+
+      this.mediaRecorder = chosenMime
+        ? new MediaRecorder(this.stream, { mimeType: chosenMime })
+        : new MediaRecorder(this.stream);
       this.audioChunks = [];
 
       this.mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
+        if (event.data && event.data.size > 0) {
           this.audioChunks.push(event.data);
         }
       };
 
-      this.mediaRecorder.start();
-      return true;
-    } catch (err) {
-      console.error('Microphone access error:', err);
-      return false;
+      this.mediaRecorder.start(250);
+      return { ok: true };
+    } catch (err: any) {
+      this.cleanup();
+      const errMsg =
+        err?.name === 'NotAllowedError' || err?.message?.includes('Permission denied')
+          ? 'تم رفض إذن الوصول للميكروفون. يرجى تفعيل إذن الميكروفون في المتصفح.'
+          : 'تعذر الوصول للميكروفون أو بدء التسجيل.';
+      console.warn('Microphone access handled:', err?.name || err?.message || err);
+      return { ok: false, error: errMsg };
     }
   }
 
-  public stopRecording(): Promise<{ blobUrl: string; base64: string; durationSec: number }> {
+  public stopRecording(): Promise<VoiceRecordingResult> {
     return new Promise((resolve, reject) => {
       if (!this.mediaRecorder) {
-        reject('No active media recorder');
+        this.cleanup();
+        reject(new Error('No active media recorder'));
         return;
       }
 
       const startTime = Date.now();
 
       this.mediaRecorder.onstop = () => {
-        const durationSec = Math.max(1, Math.round((Date.now() - startTime) / 1000));
-        const blob = new Blob(this.audioChunks, { type: 'audio/webm' });
-        const blobUrl = URL.createObjectURL(blob);
+        try {
+          const durationSec = Math.max(1, Math.round((Date.now() - startTime) / 1000));
+          const mimeType = this.mediaRecorder?.mimeType || 'audio/webm';
+          const blob = new Blob(this.audioChunks, { type: mimeType });
+          const blobUrl = URL.createObjectURL(blob);
 
-        const reader = new FileReader();
-        reader.readAsDataURL(blob);
-        reader.onloadend = () => {
-          const base64 = reader.result as string;
-          // stop all tracks
-          this.mediaRecorder?.stream.getTracks().forEach((track) => track.stop());
-          this.mediaRecorder = null;
-          resolve({ blobUrl, base64, durationSec });
-        };
+          const reader = new FileReader();
+          reader.readAsDataURL(blob);
+          reader.onloadend = () => {
+            const base64 = (reader.result as string) || '';
+            this.cleanup();
+            resolve({ blobUrl, base64, durationSec });
+          };
+          reader.onerror = () => {
+            this.cleanup();
+            reject(new Error('Failed to encode audio data'));
+          };
+        } catch (e) {
+          this.cleanup();
+          reject(e);
+        }
       };
 
-      this.mediaRecorder.stop();
+      if (this.mediaRecorder.state !== 'inactive') {
+        this.mediaRecorder.stop();
+      } else {
+        this.cleanup();
+        reject(new Error('MediaRecorder already inactive'));
+      }
     });
+  }
+
+  public cancelRecording(): void {
+    try {
+      if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+        this.mediaRecorder.stop();
+      }
+    } catch {
+      // ignore
+    } finally {
+      this.cleanup();
+    }
+  }
+
+  private cleanup(): void {
+    if (this.stream) {
+      try {
+        this.stream.getTracks().forEach((track) => track.stop());
+      } catch {
+        // ignore
+      }
+      this.stream = null;
+    }
+    this.mediaRecorder = null;
+    this.audioChunks = [];
   }
 }

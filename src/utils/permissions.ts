@@ -7,11 +7,13 @@ export const ROLE_LEVELS: Record<UserRole, number> = {
   moderator: 3,
   management: 4,
   admin: 5,
-  owner: 6,
+  system: 9,
+  owner: 10,
 };
 
 export const RANK_EMOJIS: Record<UserRole, string> = {
-  owner: '🏆',
+  owner: '👑',
+  system: '🤖',
   admin: '⭐',
   management: '⭐',
   moderator: '🛡️',
@@ -21,7 +23,8 @@ export const RANK_EMOJIS: Record<UserRole, string> = {
 };
 
 export const RANK_TITLES: Record<UserRole, string> = {
-  owner: 'مالك',
+  owner: 'مالك (صاحب الموقع)',
+  system: 'بوت آلي',
   admin: 'مدير عام (أدمن)',
   management: 'إدارة',
   moderator: 'مشرف',
@@ -29,6 +32,70 @@ export const RANK_TITLES: Record<UserRole, string> = {
   member: 'عضو مسجل',
   visitor: 'زائر',
 };
+
+export interface PermissionDefinition {
+  id: string;
+  name: string;
+  category: 'chat' | 'moderation' | 'customization' | 'rooms';
+}
+
+export const PERMISSIONS_LIST: PermissionDefinition[] = [
+  { id: 'send_text', name: 'إرسال الرسائل النصية', category: 'chat' },
+  { id: 'send_media', name: 'إرسال الصور والوسائط', category: 'chat' },
+  { id: 'send_voice', name: 'إرسال الرسائل الصوتية', category: 'chat' },
+  { id: 'send_canvas', name: 'استخدام لوحة الرسم', category: 'chat' },
+  { id: 'private_chat', name: 'محادثات الخاص', category: 'chat' },
+  { id: 'kick_user', name: 'طرد الأعضاء والزوار', category: 'moderation' },
+  { id: 'mute_user', name: 'كتم الأعضاء والزوار', category: 'moderation' },
+  { id: 'ban_user', name: 'حظر الحساب نهائياً', category: 'moderation' },
+  { id: 'ban_ip', name: 'حظر الآي بي والشبكة', category: 'moderation' },
+  { id: 'delete_messages', name: 'مسح رسائل الآخرين', category: 'moderation' },
+  { id: 'create_rooms', name: 'إنشاء وإدارة الغرف', category: 'rooms' },
+  { id: 'lock_rooms', name: 'قفل الغرف بكلمة سر', category: 'rooms' },
+  { id: 'use_dj', name: 'تشغيل DJ والمايك', category: 'rooms' },
+  { id: 'custom_font', name: 'تخصيص لون وحجم الخط', category: 'customization' },
+  { id: 'chat_background', name: 'تخصيص خلفية النص اللامعة (تبويب خلفية)', category: 'customization' },
+  { id: 'change_username', name: 'تغيير اسم المستخدم / النك نيم', category: 'customization' },
+  { id: 'stealth_mode', name: 'وضع التخفي (الشبح)', category: 'customization' },
+  { id: 'broadcast_alert', name: 'إرسال تنبيه عام', category: 'moderation' },
+];
+
+export const DEFAULT_PERMISSIONS: Record<string, string[]> = {
+  owner: PERMISSIONS_LIST.map(p => p.id),
+  system: PERMISSIONS_LIST.map(p => p.id),
+  management: PERMISSIONS_LIST.filter(p => p.id !== 'ban_ip').map(p => p.id),
+  admin: ['send_text', 'send_media', 'send_voice', 'send_canvas', 'private_chat', 'kick_user', 'mute_user', 'delete_messages', 'create_rooms', 'use_dj', 'custom_font', 'chat_background', 'change_username'],
+  moderator: ['send_text', 'send_media', 'send_voice', 'send_canvas', 'private_chat', 'kick_user', 'mute_user', 'delete_messages', 'custom_font', 'chat_background', 'change_username'],
+  vip: ['send_text', 'send_media', 'send_voice', 'send_canvas', 'private_chat', 'use_dj', 'custom_font', 'chat_background', 'change_username'],
+  member: ['send_text', 'send_media', 'send_voice', 'send_canvas', 'private_chat', 'custom_font', 'change_username'],
+  visitor: ['send_text', 'private_chat', 'change_username'],
+};
+
+export const hasRolePermission = (
+  role: UserRole | string | undefined | null,
+  permissionId: string,
+  customMatrix?: Record<string, string[]> | null
+): boolean => {
+  if (!role) return false;
+  if (role === 'owner') return true;
+  const matrix = customMatrix || DEFAULT_PERMISSIONS;
+  const list = matrix[role] || DEFAULT_PERMISSIONS[role];
+  if (Array.isArray(list)) {
+    return list.includes(permissionId);
+  }
+  return false;
+};
+
+
+/**
+ * Helper to check if a user is Owner (Site Owner)
+ */
+export const isSiteOwner = (user?: User | null | string): boolean => {
+  if (!user) return false;
+  if (typeof user === 'string') return user === 'user-owner' || user === 'owner' || user === 'site_owner';
+  return user.role === 'owner' || user.id === 'user-owner' || user.username.toLowerCase() === 'صاحب الموقع' || user.username.toLowerCase() === 'owner';
+};
+
 
 /**
  * Helper to check if a user is System
@@ -175,12 +242,12 @@ export const canEditPhotos = (actor?: User | null, target?: User | null): boolea
     return isSelf(actor, target) && actor.role !== 'visitor';
   }
   if (target.role === 'admin') {
-    return (isOwner(actor) || isSelf(actor, target)) && actor.role !== 'visitor';
+    return (isSiteOwner(actor) || isSelf(actor, target)) && actor.role !== 'visitor';
   }
   if (target.role === 'management') {
-    return (isAdminOrOwner(actor) || isSelf(actor, target)) && actor.role !== 'visitor';
+    return (isSiteOwner(actor) || isOwner(actor) || actor?.role === 'admin' || isSelf(actor, target)) && actor.role !== 'visitor';
   }
-  if (isSystemUser(target)) return isOwner(actor);
+  if (isSystemUser(target)) return isSiteOwner(actor);
   if (isSelf(actor, target)) {
     return actor.role !== 'visitor';
   }
@@ -191,9 +258,6 @@ export const canEditPhotos = (actor?: User | null, target?: User | null): boolea
  * Permissions: Can edit profile / status / account info
  * - Self if not visitor
  * - High-ranking staff (management+) editing lower ranks
- * - Owner profile CANNOT be edited by anyone else
- * - Admin profile CANNOT be edited by anyone except Owner or self
- * - Management profile CANNOT be edited by anyone except Owner, Admin, or self
  */
 export const canEditProfile = (actor?: User | null, target?: User | null): boolean => {
   if (!actor || !target) return false;
@@ -201,12 +265,12 @@ export const canEditProfile = (actor?: User | null, target?: User | null): boole
     return isSelf(actor, target) && actor.role !== 'visitor';
   }
   if (target.role === 'admin') {
-    return (isOwner(actor) || isSelf(actor, target)) && actor.role !== 'visitor';
+    return (isSiteOwner(actor) || isSelf(actor, target)) && actor.role !== 'visitor';
   }
   if (target.role === 'management') {
-    return (isAdminOrOwner(actor) || isSelf(actor, target)) && actor.role !== 'visitor';
+    return (isSiteOwner(actor) || isOwner(actor) || actor?.role === 'admin' || isSelf(actor, target)) && actor.role !== 'visitor';
   }
-  if (isSystemUser(target)) return isOwner(actor);
+  if (isSystemUser(target)) return isSiteOwner(actor);
   if (isSelf(actor, target)) {
     return actor.role !== 'visitor';
   }
@@ -215,17 +279,13 @@ export const canEditProfile = (actor?: User | null, target?: User | null): boole
 
 /**
  * Permissions: Can perform moderation actions (kick/mute/edit name)
- * - Staff (moderator or above) acting on non-self target with strictly lower rank
- * - NO ONE can perform mod actions on Owner
- * - NO ONE can perform mod actions on Admin except Owner
- * - NO ONE can perform mod actions on Management except Owner and Admin
  */
 export const canPerformModActions = (actor?: User | null, target?: User | null): boolean => {
   if (!actor || !target) return false;
   if (target.role === 'owner') return false;
   if (isSystemUser(target)) return false;
-  if (target.role === 'admin') return isOwner(actor);
-  if (target.role === 'management') return isAdminOrOwner(actor);
+  if (target.role === 'admin') return isSiteOwner(actor);
+  if (target.role === 'management') return isSiteOwner(actor) || isOwner(actor) || actor?.role === 'admin';
   if (isSelf(actor, target)) return false;
   return isStaff(actor) && isHigherRank(actor, target);
 };
@@ -238,17 +298,13 @@ export const canKick = canPerformModActions;
 
 /**
  * Permissions: Can ban user permanently
- * - Strictly Owner or Admin acting on lower rank
- * - NO ONE can ban Owner
- * - NO ONE can ban Admin except Owner
- * - NO ONE can ban Management except Owner and Admin
  */
 export const canBan = (actor?: User | null, target?: User | null): boolean => {
   if (!actor || !target) return false;
   if (target.role === 'owner') return false;
   if (isSystemUser(target)) return false;
-  if (target.role === 'admin') return isOwner(actor);
-  if (target.role === 'management') return isAdminOrOwner(actor);
+  if (target.role === 'admin') return isSiteOwner(actor);
+  if (target.role === 'management') return isSiteOwner(actor) || isOwner(actor) || actor?.role === 'admin';
   if (isSelf(actor, target)) return false;
   return isAdminOrOwner(actor) && isHigherRank(actor, target);
 };
@@ -302,7 +358,7 @@ export const canViewMemberRecordButton = (actor?: User | null, target?: User | n
  * - Strictly Owner
  */
 export const canViewConfidentialData = (actor?: User | null): boolean => {
-  return isOwner(actor);
+  return isSiteOwner(actor);
 };
 
 /**

@@ -21,7 +21,7 @@ export const PrivateChatModal: React.FC = () => {
     requestBlockConfirm,
     hiddenPrivateUserIds, hidePrivateConversation, clearAllPrivateConversations,
     audioSettings, updateAudioSettings, customEmojis,
-    openTextContextMenu, openImageContextMenu
+    openTextContextMenu, openImageContextMenu, showTopBanner
   } = useChat();
 
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -118,8 +118,12 @@ export const PrivateChatModal: React.FC = () => {
 
   const startVoice = async () => {
     recorderRef.current = new VoiceRecorder();
-    const ok = await recorderRef.current.startRecording();
-    if (ok) setIsRecording(true);
+    const result = await recorderRef.current.startRecording();
+    if (result.ok) {
+      setIsRecording(true);
+    } else {
+      showTopBanner?.(result.error || 'تعذر الوصول للميكروفون. يرجى تفعيل إذن الميكروفون في المتصفح.', 'error');
+    }
   };
 
   const stopVoice = async () => {
@@ -396,7 +400,20 @@ export const PrivateChatModal: React.FC = () => {
                         )}
 
                         <div
-                          className={`p-3 rounded-2xl text-xs shadow-md relative ${
+                          onContextMenu={(e) => {
+                            if (pm.type === 'text') {
+                              e.preventDefault();
+                              openTextContextMenu(pm.text, `رسالة خاصة`);
+                            }
+                          }}
+                          onTouchStart={() => {
+                            if (pm.type === 'text') {
+                              startLongPressText(pm.text, `رسالة خاصة`);
+                            }
+                          }}
+                          onTouchEnd={cancelLongPress}
+                          onTouchCancel={cancelLongPress}
+                          className={`p-3 rounded-2xl text-xs shadow-md relative cursor-pointer select-text ${
                             isMe
                               ? 'bg-[#222222] text-white border border-neutral-700/80 rounded-br-none'
                               : 'bg-[#00a2e8] text-white font-medium rounded-bl-none'
@@ -414,7 +431,15 @@ export const PrivateChatModal: React.FC = () => {
                             <img
                               src={pm.mediaUrl}
                               alt="مرفق"
-                              className="max-w-xs rounded-lg my-1 max-h-48 object-cover"
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                openImageContextMenu(pm.mediaUrl!, 'صورة في الخاص');
+                              }}
+                              onTouchStart={() => startLongPressImage(pm.mediaUrl!, 'صورة في الخاص')}
+                              onTouchEnd={cancelLongPress}
+                              onTouchCancel={cancelLongPress}
+                              className="max-w-xs rounded-lg my-1 max-h-48 object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                              referrerPolicy="no-referrer"
                             />
                           )}
 
@@ -596,7 +621,7 @@ export const PrivateChatModal: React.FC = () => {
                   className="w-8 h-8 rounded-full bg-slate-900 border border-slate-700 text-white flex items-center justify-center hover:bg-slate-800 cursor-pointer shrink-0"
                   title="إرسال"
                 >
-                  <Send className="w-4 h-4 rotate-180" />
+                  <Send className="w-4 h-4 text-white -translate-x-0.5" />
                 </button>
               </form>
             )}

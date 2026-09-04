@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useChat } from '../context/ChatContext';
 import { UserAvatar } from './UserAvatar';
+import { UsernameDisplay } from './UsernameDisplay';
 import { canPerformModActions, canBeIgnored } from '../utils/permissions';
-import { getUserFlagEmoji, getEnglishCountryName } from '../utils/geoip';
+import { getUserFlagEmoji, getArabicCountryName, getEnglishCountryName } from '../utils/geoip';
 import { toEnglishDigits } from '../utils/dateUtils';
 import {
   User as UserIcon, MessageSquare, Zap, X, VolumeX, Edit3, Check, CheckCircle2, ChevronDown, MicOff, Ban, Briefcase
@@ -217,22 +218,33 @@ export const UserCardModal: React.FC = () => {
             <div className="bg-[#072a32] text-white pt-6 pb-4 px-4 text-center relative flex flex-col items-center">
               
               {/* Avatar Container with white circular border */}
-              <div className="relative mb-2">
+              <div className="relative mb-2 flex items-center justify-center">
                 <UserAvatar
                   avatarUrl={target.avatar}
                   gender={target.gender}
                   role={target.role}
                   username={target.username}
-                  size="lg"
+                  size="xl"
                   showRankBadge={false}
-                  className="w-20 h-20 rounded-full border-2 border-white shadow-md object-cover bg-slate-800"
+                  className="rounded-full ring-2 ring-white/90 shadow-lg"
                 />
               </div>
 
-              {/* Username */}
-              <h3 className="text-white font-extrabold text-lg sm:text-xl tracking-tight flex items-center justify-center gap-1.5">
-                <span>{target.username}</span>
-              </h3>
+              {/* Username with responsive rank badge */}
+              <div className="my-1 flex items-center justify-center">
+                <UsernameDisplay
+                  username={target.username}
+                  role={target.role}
+                  showRankBadge={true}
+                  customRoleBadge={target.customRoleBadge}
+                  badgeSize="md"
+                  usernameColor={target.usernameColor || '#ffffff'}
+                  usernameBgGradient={target.usernameBgGradient}
+                  isNeon={target.isNeon}
+                  fontSize="18px"
+                  className="text-white text-lg font-extrabold"
+                />
+              </div>
 
               {/* Subtitle: سنة أنثى 20 / سنة ذكر 25 */}
               <p className="text-slate-200 font-bold text-xs sm:text-sm mt-0.5 opacity-90 dir-rtl text-center">
@@ -242,10 +254,10 @@ export const UserCardModal: React.FC = () => {
                 }
               </p>
 
-              {/* Country Flag Emoji (e.g. 🇩🇿, 🇵🇸, 🇾🇪) */}
-              {getUserFlagEmoji(target) && (
+              {/* Country Flag Only under Age & Gender (علم الدولة فقط بدون اسم البلد) */}
+              {!target.hideCountry && getUserFlagEmoji(target) && (
                 <div className="mt-1 flex items-center justify-center">
-                  <span className="text-2xl leading-none drop-shadow-md select-none" title={target.country || 'الدولة'}>
+                  <span className="text-xl sm:text-2xl leading-none select-none drop-shadow-xs" title={getArabicCountryName(target.country)}>
                     {getUserFlagEmoji(target)}
                   </span>
                 </div>

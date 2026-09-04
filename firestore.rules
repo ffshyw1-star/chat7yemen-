@@ -1,0 +1,74 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function existingData() {
+      return resource.data;
+    }
+
+    function incomingData() {
+      return request.resource.data;
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Test connection doc
+    match /test/{testId} {
+      allow read, write: if true;
+    }
+
+    // User accounts and profiles
+    match /users/{userId} {
+      allow read: if true;
+      // Prevent client from escalating role or modifying coins arbitrarily
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        isOwner(userId) ? (
+          // Users cannot update role or coins on their own
+          incomingData().role == existingData().role &&
+          incomingData().coins == existingData().coins
+        ) : true // Admins/system can update
+      );
+      allow delete: if isOwner(userId);
+    }
+
+    // Public room messages
+    match /messages/{messageId} {
+      allow read: if true;
+      allow create: if isSignedIn() && incomingData().senderId == request.auth.uid;
+      // Only sender or admin can update/delete message
+      allow update, delete: if isSignedIn() && (existingData().senderId == request.auth.uid);
+    }
+
+    // Private messages - strictly between sender and receiver
+    match /private_messages/{messageId} {
+      allow read: if isSignedIn() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid);
+      allow create: if isSignedIn() && incomingData().senderId == request.auth.uid;
+      allow update, delete: if isSignedIn() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid);
+    }
+
+    // Chat Rooms
+    match /rooms/{roomId} {
+      allow read: if true;
+      allow create, update, delete: if isSignedIn();
+    }
+
+    // Site Settings and Configuration
+    match /settings/{settingId} {
+      allow read: if true;
+      allow create, update: if isSignedIn();
+      allow delete: if false;
+    }
+  }
+}

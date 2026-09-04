@@ -21,6 +21,8 @@ import { KickedOverlayModal } from './KickedOverlayModal';
 import { OwnerDashboardModal } from './OwnerDashboardModal';
 import { LogoutConfirmModal } from './LogoutConfirmModal';
 import { RoomPasswordModal } from './RoomPasswordModal';
+import { GoogleChatModal } from './GoogleChatModal';
+import { GoogleDriveModal } from './GoogleDriveModal';
 import { TextContextMenuModal, ImageContextMenuModal } from './ContextMenuModals';
 
 export const ChatLayout: React.FC = () => {
@@ -29,21 +31,22 @@ export const ChatLayout: React.FC = () => {
     isOnlineListOpen, setIsOnlineListOpen, isRoomsListOpen, setIsRoomsListOpen, selectedUserForCard, selectedUserForProfile,
     isProfileSettingsOpen, isOwnerDashboardOpen, isStoreOpen, isSideMenuOpen, isPrivateChatOpen,
     isReportsOpen, isNotificationsOpen, isFriendRequestsOpen,
-    isRoomLogsOpen, isRoomSettingsOpen,
+    isRoomLogsOpen, isRoomSettingsOpen, isGoogleChatOpen, setIsGoogleChatOpen,
+    isGoogleDriveOpen, setIsGoogleDriveOpen,
     textContextMenu, closeTextContextMenu,
     imageContextMenu, closeImageContextMenu,
     showTopBanner
   } = useChat();
 
   return (
-    <div className={`h-screen w-screen bg-slate-950 text-slate-100 flex flex-col overflow-hidden select-none theme-${themeMode}`}>
+    <div className={`fixed inset-0 h-screen w-screen bg-slate-950 text-slate-100 flex flex-col overflow-hidden select-none theme-${themeMode}`}>
       {/* 1. Top Header Toolbar */}
       <ChatHeader />
 
       {/* 2. Middle Chat Area with Side Panels */}
-      <div className="flex-1 flex overflow-hidden relative">
+      <div className="flex-1 flex min-h-0 overflow-hidden relative">
         {/* Central Chat Messages Box */}
-        <div className="flex-1 flex flex-col min-w-0 h-full relative">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 h-full relative">
           <ChatMessages />
           <ChatInput />
         </div>
@@ -89,6 +92,8 @@ export const ChatLayout: React.FC = () => {
       <KickedOverlayModal />
       <LogoutConfirmModal />
       <RoomPasswordModal />
+      <GoogleChatModal isOpen={isGoogleChatOpen} onClose={() => setIsGoogleChatOpen(false)} />
+      <GoogleDriveModal isOpen={isGoogleDriveOpen} onClose={() => setIsGoogleDriveOpen(false)} />
 
       {/* Global Long-Press Context Menus for Text and Images */}
       <TextContextMenuModal

@@ -3,8 +3,9 @@ import { useChat } from '../context/ChatContext';
 import { UserAvatar } from './UserAvatar';
 import {
   Flag, Heart, UserPlus, Mail, ShoppingCart, Menu, Shield, LogOut,
-  User as UserIcon, Home, Bell, Settings, CheckCircle, Gauge
+  User as UserIcon, Home, Bell, Settings, CheckCircle, Gauge, MessageSquare
 } from 'lucide-react';
+import { t } from '../utils/translations';
 
 export const ChatHeader: React.FC = () => {
   const {
@@ -12,7 +13,7 @@ export const ChatHeader: React.FC = () => {
     reports, friendRequests, notifications, unreadPrivateCount, topBannerMessage,
     setSelectedUserForProfile, setIsStoreOpen,
     setIsSideMenuOpen, setIsReportsOpen, setIsNotificationsOpen,
-    setIsFriendRequestsOpen, setIsPrivateChatOpen, setIsRoomSettingsOpen, setIsOwnerDashboardOpen, setCurrentView, logout, setIsLogoutConfirmOpen,
+    setIsFriendRequestsOpen, setIsPrivateChatOpen, setIsRoomSettingsOpen, setIsOwnerDashboardOpen, setIsGoogleChatOpen, setCurrentView, logout, setIsLogoutConfirmOpen,
     toggleAdminStealth
   } = useChat();
 
@@ -26,7 +27,7 @@ export const ChatHeader: React.FC = () => {
   const myFriendRequestsCount = friendRequests.filter(fr => fr.receiverId === currentUser.id).length;
 
   return (
-    <header className="bg-slate-950 border-b border-slate-800/80 sticky top-0 z-30 shadow-md select-none">
+    <header className="app-chat-header bg-slate-950 border-b border-slate-800/80 sticky top-0 z-30 shadow-md select-none shrink-0">
       <div className="max-w-7xl mx-auto px-2 sm:px-4 py-2 flex items-center justify-between gap-1">
         
         {/* Right Side (DOM 1st in RTL): Avatar, Flag, Heart, Friend Requests, Mail */}
@@ -76,19 +77,7 @@ export const ChatHeader: React.FC = () => {
                   <Home className="w-4 h-4 text-[#00aeeF]" />
                 </button>
 
-                {/* 3. Owner Dashboard / Control Panel (Only for Owner) */}
-                {currentUser.role === 'owner' && (
-                  <button
-                    onClick={() => {
-                      setIsProfileMenuOpen(false);
-                      setIsOwnerDashboardOpen(true);
-                    }}
-                    className="w-full px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-between gap-3 border-b border-slate-100 cursor-pointer transition-colors"
-                  >
-                    <span>لوحة التحكم</span>
-                    <Gauge className="w-4 h-4 text-[#00aeeF]" />
-                  </button>
-                )}
+
 
                 {/* Room Settings for Management, Admin & Owner */}
                 {isManagementOrHigher && (
@@ -103,6 +92,21 @@ export const ChatHeader: React.FC = () => {
                     <Settings className="w-4 h-4 text-[#00aeeF]" />
                   </button>
                 )}
+
+                {/* Google Chat Integration */}
+                <button
+                  onClick={() => {
+                    setIsProfileMenuOpen(false);
+                    setIsGoogleChatOpen(true);
+                  }}
+                  className="w-full px-4 py-3 text-sm font-bold text-emerald-700 hover:bg-emerald-50 flex items-center justify-between gap-3 border-b border-slate-100 cursor-pointer transition-colors"
+                >
+                  <span className="flex items-center gap-1.5">
+                    Google Chat
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-bold">مساحات</span>
+                  </span>
+                  <MessageSquare className="w-4 h-4 text-emerald-600" />
+                </button>
 
                 {/* Stealth Mode (وضع الاختفاء) - للمالك فقط */}
                 {currentUser.role === 'owner' && (
@@ -135,14 +139,14 @@ export const ChatHeader: React.FC = () => {
             )}
           </div>
 
-          {/* White Flag Icon 🏳️ for Reports (Management & Mods Only: moderator, management, admin, owner) */}
+          {/* White Flag Icon 🏳️ for Reports */}
           {isModOrHigher && (
             <button
               onClick={() => setIsReportsOpen(true)}
-              className="relative p-2 rounded-xl text-white hover:bg-slate-900 transition-all cursor-pointer group"
+              className="header-action-btn relative p-2 rounded-xl text-white hover:bg-slate-800/80 transition-all cursor-pointer group"
               title={reports.length > 0 ? `البلاغات المعلقة للإدارة (${reports.length})` : 'صندوق البلاغات (الإدارة والرقابة)'}
             >
-              <Flag className="w-5 h-5 text-white fill-white drop-shadow-xs group-hover:scale-110 transition-transform" />
+              <Flag className="header-icon w-5 h-5 text-white fill-white drop-shadow-xs group-hover:scale-110 transition-transform" />
               {reports.length > 0 && (
                 <>
                   <span className="animate-ping absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-red-500 opacity-75"></span>
@@ -154,13 +158,13 @@ export const ChatHeader: React.FC = () => {
             </button>
           )}
 
-          {/* Likes & Notifications Icon 🤍 (القلب الأبيض) */}
+          {/* Likes & Notifications Icon 🤍 */}
           <button
             onClick={() => setIsNotificationsOpen(true)}
-            className="relative p-2 rounded-xl text-white hover:bg-slate-800/80 transition-colors cursor-pointer"
+            className="header-action-btn relative p-2 rounded-xl text-white hover:bg-slate-800/80 transition-colors cursor-pointer"
             title="الإعجابات والإشعارات"
           >
-            <Heart className="w-5 h-5 text-white fill-white stroke-[2]" />
+            <Heart className="header-icon w-5 h-5 text-white fill-white stroke-[2]" />
             {unreadNotifCount > 0 && (
               <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded-full flex items-center justify-center animate-pulse shadow-md border border-slate-950">
                 {unreadNotifCount}
@@ -172,10 +176,10 @@ export const ChatHeader: React.FC = () => {
           {currentUser.role !== 'visitor' && (
             <button
               onClick={() => setIsFriendRequestsOpen(true)}
-              className="relative p-2 rounded-xl text-white hover:bg-slate-900 transition-colors cursor-pointer"
+              className="header-action-btn relative p-2 rounded-xl text-white hover:bg-slate-800/80 transition-colors cursor-pointer"
               title="طلبات الصداقة"
             >
-              <UserPlus className={`w-5 h-5 transition-colors stroke-[2.2] ${myFriendRequestsCount > 0 ? 'text-emerald-400 animate-bounce' : 'text-white'}`} />
+              <UserPlus className={`header-icon w-5 h-5 transition-colors stroke-[2.2] ${myFriendRequestsCount > 0 ? 'text-emerald-400 animate-bounce' : 'text-white'}`} />
               {myFriendRequestsCount > 0 && (
                 <span className="absolute -top-1 -right-1 bg-emerald-600 text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded-full flex items-center justify-center animate-pulse shadow-md border border-slate-950">
                   {myFriendRequestsCount}
@@ -184,13 +188,13 @@ export const ChatHeader: React.FC = () => {
             </button>
           )}
 
-          {/* Private Messages Icon ✉️ matching Screenshot 1 */}
+          {/* Private Messages Icon ✉️ */}
           <button
             onClick={() => setIsPrivateChatOpen(true)}
-            className="relative p-1.5 sm:p-2 rounded-xl text-white hover:bg-slate-800/80 transition-all cursor-pointer group"
+            className="header-action-btn relative p-1.5 sm:p-2 rounded-xl text-white hover:bg-slate-800/80 transition-all cursor-pointer group"
             title="الرسائل الخاصة"
           >
-            <Mail className="w-5 h-5 text-white stroke-[2]" />
+            <Mail className="header-icon w-5 h-5 text-white stroke-[2]" />
             {unreadPrivateCount > 0 && (
               <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-black px-1.5 py-0.2 rounded-md min-w-[18px] flex items-center justify-center border border-slate-950 shadow-md animate-pulse">
                 {unreadPrivateCount}
@@ -201,10 +205,10 @@ export const ChatHeader: React.FC = () => {
 
         {/* Left Side (DOM 2nd in RTL): Store button, Side Menu Drawer Icon (☰) */}
         <div className="flex items-center gap-1 sm:gap-2">
-          {/* Store Button 🛒 with "Store." label as in screenshot 1 */}
+          {/* Store Button 🛒 with "Store." label */}
           <button
             onClick={() => setIsStoreOpen(true)}
-            className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white text-xs font-bold transition-colors cursor-pointer"
+            className="header-store-btn relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white text-xs font-bold transition-colors cursor-pointer"
             title="المتجر وشراء الرتب"
           >
             <ShoppingCart className="w-4 h-4 text-white fill-white" />
@@ -214,10 +218,10 @@ export const ChatHeader: React.FC = () => {
           {/* Menu Drawer Icon ☰ on Far Left */}
           <button
             onClick={() => setIsSideMenuOpen(true)}
-            className="p-2 rounded-xl text-slate-200 hover:text-amber-400 hover:bg-slate-800/80 transition-colors cursor-pointer"
+            className="header-action-btn p-2 rounded-xl text-slate-200 hover:text-amber-400 hover:bg-slate-800/80 transition-colors cursor-pointer"
             title="القائمة الجانبية"
           >
-            <Menu className="w-5 h-5" />
+            <Menu className="header-icon w-5 h-5 text-slate-200" />
           </button>
         </div>
 

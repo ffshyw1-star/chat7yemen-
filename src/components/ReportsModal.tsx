@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useChat } from '../context/ChatContext';
 import { Report, User } from '../types';
 import { UserAvatar } from './UserAvatar';
@@ -15,8 +15,25 @@ export const ReportsModal: React.FC = () => {
     deleteReport, moderatorAction, deleteMessage,
     setSelectedUserForCard, setSelectedUserForProfile,
     showTopBanner, audioSettings, updateAudioSettings,
-    setIsOnlineListOpen, setIsFriendRequestsOpen, setIsRoomsListOpen
+    setIsOnlineListOpen, setIsFriendRequestsOpen, setIsRoomsListOpen,
+    openTextContextMenu, openImageContextMenu
   } = useChat();
+
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const startLongPressText = (textMsg: string, title?: string) => {
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      openTextContextMenu(textMsg, title);
+    }, 450);
+  };
+
+  const cancelLongPress = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
 
   // Selected report for detail popup (Matching Image 2 / Detail view)
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
@@ -204,9 +221,19 @@ export const ReportsModal: React.FC = () => {
                   {/* Text Details Area (Aligned to the Right) */}
                   <div className="flex-1 min-w-0 space-y-0.5 text-right">
                     {/* Line 1: User Name (Orange for Tom33, Dark Slate for others) */}
-                    <p className={`text-base font-black truncate transition-colors ${
-                      isTom ? 'text-[#ea580c]' : 'text-slate-800 group-hover:text-sky-700'
-                    }`}>
+                    <p
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openTextContextMenu(rep.reportedUserName || rep.reporterName, `اسم المستخدم في البلاغ`);
+                      }}
+                      onTouchStart={() => startLongPressText(rep.reportedUserName || rep.reporterName, `اسم المستخدم في البلاغ`)}
+                      onTouchEnd={cancelLongPress}
+                      onTouchCancel={cancelLongPress}
+                      className={`text-base font-black truncate transition-colors select-text cursor-pointer ${
+                        isTom ? 'text-[#ea580c]' : 'text-slate-800 group-hover:text-sky-700'
+                      }`}
+                    >
                       {rep.reportedUserName || rep.reporterName}
                     </p>
 
@@ -216,7 +243,17 @@ export const ReportsModal: React.FC = () => {
                     </p>
 
                     {/* Line 3: Reason (السبب - محتوى غير مناسب / احتيال / كلام مسيء) */}
-                    <p className="text-xs text-slate-500 font-medium pt-0.5">
+                    <p
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openTextContextMenu(`السبب: ${rep.reason || 'محتوى غير مناسب'} - تفاصيل: ${rep.messageText || rep.details || ''}`, `تفاصيل البلاغ`);
+                      }}
+                      onTouchStart={() => startLongPressText(`السبب: ${rep.reason || 'محتوى غير مناسب'} - تفاصيل: ${rep.messageText || rep.details || ''}`, `تفاصيل البلاغ`)}
+                      onTouchEnd={cancelLongPress}
+                      onTouchCancel={cancelLongPress}
+                      className="text-xs text-slate-500 font-medium pt-0.5 select-text cursor-pointer"
+                    >
                       السبب - {rep.reason || 'محتوى غير مناسب'}
                     </p>
 
@@ -288,7 +325,16 @@ export const ReportsModal: React.FC = () => {
                     </div>
 
                     {/* Dark Rounded Chat Bubble */}
-                    <div className="bg-[#24272c] border border-slate-700/80 p-3.5 rounded-2xl max-w-[260px] text-xs sm:text-sm text-slate-100 font-medium leading-relaxed shadow-md text-right">
+                    <div
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        openTextContextMenu(selectedReport.messageText, `نص الرسالة المبلّغ عنها`);
+                      }}
+                      onTouchStart={() => startLongPressText(selectedReport.messageText, `نص الرسالة المبلّغ عنها`)}
+                      onTouchEnd={cancelLongPress}
+                      onTouchCancel={cancelLongPress}
+                      className="bg-[#24272c] border border-slate-700/80 p-3.5 rounded-2xl max-w-[260px] text-xs sm:text-sm text-slate-100 font-medium leading-relaxed shadow-md text-right select-text cursor-pointer"
+                    >
                       {selectedReport.messageText}
                     </div>
                   </div>
@@ -333,7 +379,16 @@ export const ReportsModal: React.FC = () => {
 
                   {/* Right Side: User Name and Photo */}
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-black text-white">
+                    <span
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        openTextContextMenu(selectedReport.reportedUserName, `اسم المستخدم`);
+                      }}
+                      onTouchStart={() => startLongPressText(selectedReport.reportedUserName, `اسم المستخدم`)}
+                      onTouchEnd={cancelLongPress}
+                      onTouchCancel={cancelLongPress}
+                      className="text-sm font-black text-white select-text cursor-pointer"
+                    >
                       {selectedReport.reportedUserName}
                     </span>
                     <UserAvatar
@@ -347,7 +402,16 @@ export const ReportsModal: React.FC = () => {
                 </div>
 
                 {/* Reported Message Content */}
-                <div className="bg-[#202225] border border-slate-800 p-3.5 rounded-2xl text-xs sm:text-sm text-slate-100 font-medium leading-relaxed max-h-36 overflow-y-auto custom-scrollbar text-right shadow-inner">
+                <div
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    openTextContextMenu(selectedReport.messageText, `محتوى المنشور المبلّغ عنه`);
+                  }}
+                  onTouchStart={() => startLongPressText(selectedReport.messageText, `محتوى المنشور المبلّغ عنه`)}
+                  onTouchEnd={cancelLongPress}
+                  onTouchCancel={cancelLongPress}
+                  className="bg-[#202225] border border-slate-800 p-3.5 rounded-2xl text-xs sm:text-sm text-slate-100 font-medium leading-relaxed max-h-36 overflow-y-auto custom-scrollbar text-right shadow-inner select-text cursor-pointer"
+                >
                   {selectedReport.messageText}
                 </div>
 

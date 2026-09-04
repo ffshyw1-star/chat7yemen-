@@ -7,6 +7,7 @@ import {
   Sparkles, Upload, Link, AlertCircle, RefreshCw, Briefcase, Globe
 } from 'lucide-react';
 import { SPECIALTIES_LIST, COUNTRIES_LIST, getCountryLanguage } from '../utils/geoip';
+import { applyLanguageSettings, getAppLanguage, SUPPORTED_LANGUAGES, t } from '../utils/translations';
 
 export interface DefaultAvatar {
   id: string;
@@ -81,7 +82,7 @@ interface ProfileEditorModalProps {
 export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
   onClose
 }) => {
-  const { currentUser, updateUserProfile } = useChat();
+  const { currentUser, updateUserProfile, currentUserCan } = useChat();
 
   const [username, setUsername] = useState(currentUser?.username || '');
   const [statusMessage, setStatusMessage] = useState(currentUser?.statusMessage || '');
@@ -93,7 +94,7 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
   const [specialty, setSpecialty] = useState<string>(currentUser?.specialty || '');
   const [country, setCountry] = useState<string>(currentUser?.country || 'اليمن');
   const [countryFlag, setCountryFlag] = useState<string>(currentUser?.countryFlag || '🇾🇪');
-  const [language, setLanguage] = useState<string>(currentUser?.language || 'العربية 🇸🇦');
+  const [language, setLanguage] = useState<string>(() => localStorage.getItem('selectedLang') || currentUser?.language || 'Arabic');
   const [hideCountry, setHideCountry] = useState<boolean>(currentUser?.hideCountry || false);
   const [usernameColor, setUsernameColor] = useState(currentUser?.usernameColor || '#f59e0b');
   const [usernameFontSize, setUsernameFontSize] = useState(currentUser?.usernameFontSize || '14px');
@@ -170,6 +171,22 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
       return;
     }
 
+    const previousLang = getAppLanguage();
+    let normalizedLang = 'Arabic';
+    const lLower = language.toLowerCase();
+    if (lLower.includes('english') || lLower.includes('انجليز')) normalizedLang = 'English';
+    else if (lLower.includes('francais') || lLower.includes('french') || lLower.includes('فرنس')) normalizedLang = 'Francais';
+    else if (lLower.includes('spanish') || lLower.includes('إسبان')) normalizedLang = 'Spanish';
+    else if (lLower.includes('german') || lLower.includes('ألمان')) normalizedLang = 'German';
+    else if (lLower.includes('turkish') || lLower.includes('ترك')) normalizedLang = 'Turkish';
+    else if (lLower.includes('russian') || lLower.includes('روس')) normalizedLang = 'Russian';
+    else if (lLower.includes('arabic') || lLower.includes('عرب')) normalizedLang = 'Arabic';
+    else if (SUPPORTED_LANGUAGES.includes(language as any)) normalizedLang = language;
+    else normalizedLang = language.trim() || 'Arabic';
+
+    localStorage.setItem('selectedLang', normalizedLang);
+    applyLanguageSettings(normalizedLang);
+
     updateUserProfile({
       username: username.trim(),
       statusMessage: statusMessage.trim(),
@@ -181,17 +198,21 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
       specialty: specialty.trim(),
       country,
       countryFlag,
-      language,
+      language: normalizedLang,
       hideCountry,
       usernameColor,
       usernameFontSize
     });
 
-    setSaveSuccess('تم حفظ الملف الشخصي والصور بنجاح في السيرفر ✨');
+    const isLangChanged = previousLang !== normalizedLang;
+    setSaveSuccess(isLangChanged ? 'تم حفظ الملف وتغيير لغة الموقع بنجاح! جاري التحديث...' : 'تم حفظ الملف الشخصي والصور بنجاح في السيرفر ✨');
     setTimeout(() => {
       setSaveSuccess('');
       if (onClose) onClose();
-    }, 1500);
+      if (isLangChanged) {
+        window.location.reload();
+      }
+    }, isLangChanged ? 800 : 1500);
   };
 
   return (
@@ -486,17 +507,30 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Display Name (اسم العرض) */}
             <div>
-              <label className="block text-xs font-bold text-slate-200 mb-1 flex items-center gap-1">
-                <User className="w-3.5 h-3.5 text-amber-400" />
-                <span>اسم العرض المستعار (Display Name):</span>
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-bold text-slate-200 flex items-center gap-1">
+                  <User className="w-3.5 h-3.5 text-amber-400" />
+                  <span>اسم العرض المستعار (Display Name):</span>
+                </label>
+                {!currentUserCan('change_username') && (
+                  <span className="text-[10px] text-amber-400 font-bold flex items-center gap-1 bg-amber-950/60 border border-amber-800/60 px-2 py-0.5 rounded-md">
+                    <Lock className="w-3 h-3" />
+                    موقوف لرتبتك
+                  </span>
+                )}
+              </div>
               <input
                 type="text"
                 required
+                disabled={!currentUserCan('change_username')}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="أدخل اسمك الجديد هنا..."
-                className="w-full bg-slate-950 border border-slate-700 focus:border-amber-500 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 font-bold focus:outline-none transition-colors"
+                className={`w-full border rounded-xl px-3.5 py-2.5 text-xs font-bold focus:outline-none transition-colors ${
+                  !currentUserCan('change_username')
+                    ? 'bg-slate-900/70 border-slate-800 text-slate-400 cursor-not-allowed'
+                    : 'bg-slate-950 border-slate-700 focus:border-amber-500 text-slate-100'
+                }`}
               />
             </div>
 
@@ -713,8 +747,8 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-slate-100 font-bold focus:outline-none focus:border-amber-500"
                 >
                   {COUNTRIES_LIST.map((c) => (
-                    <option key={c.name} value={c.name}>
-                      {c.flag} {c.name} ({c.englishName})
+                    <option key={c.code} value={c.englishName}>
+                      {c.flag} {c.englishName}
                     </option>
                   ))}
                 </select>
@@ -725,13 +759,27 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
                   <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                   <span>اللغة (Language):</span>
                 </label>
-                <input
-                  type="text"
+                <select
                   value={language}
                   onChange={(e) => setLanguage(e.target.value)}
-                  placeholder="مثال: العربية 🇸🇦 / English 🇺🇸"
                   className="w-full bg-slate-950 border border-slate-700 focus:border-amber-500 rounded-xl p-2.5 text-xs text-slate-100 font-bold focus:outline-none"
-                />
+                >
+                  <option value="Arabic">العربية (Arabic 🇸🇦)</option>
+                  <option value="English">English 🇺🇸</option>
+                  <option value="Francais">Français 🇫🇷</option>
+                  <option value="Spanish">Español 🇪🇸</option>
+                  <option value="German">Deutsch 🇩🇪</option>
+                  <option value="Turkish">Türkçe 🇹🇷</option>
+                  <option value="Russian">Русский 🇷🇺</option>
+                  <option value="Portuguese">Português 🇵🇹</option>
+                  <option value="Italian">Italiano 🇮🇹</option>
+                  <option value="Greek">Ελληνικά 🇬🇷</option>
+                  <option value="Hebrew">עברית 🇮🇱</option>
+                  <option value="Netherlands">Nederlands 🇳🇱</option>
+                  <option value="Bulgarian">Български 🇧🇬</option>
+                  <option value="Croatia">Hrvatski 🇭🇷</option>
+                  <option value="Romana">Română 🇷🇴</option>
+                </select>
               </div>
             </div>
 

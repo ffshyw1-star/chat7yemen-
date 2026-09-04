@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useChat } from '../context/ChatContext';
 import { Users, Home, Settings, Play, Volume2, User } from 'lucide-react';
+import { t } from '../utils/translations';
 
 export const BottomNav: React.FC = () => {
   const {
@@ -30,7 +31,7 @@ export const BottomNav: React.FC = () => {
   });
 
   return (
-    <footer className="bg-black text-white border-t border-slate-800 px-3 py-1.5 select-none z-20 shadow-2xl">
+    <footer className="shrink-0 bg-black text-white border-t border-slate-800 px-3 py-1.5 select-none z-20 shadow-2xl">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
         
         {/* Right Side (DOM 1st in RTL): Bottom Navigation Tabs (المتواجدين - الغرف - خيارات) */}
@@ -52,7 +53,7 @@ export const BottomNav: React.FC = () => {
                 {currentRoomOnlineUsers.length}
               </span>
             </div>
-            <span>المتواجدين</span>
+            <span>{t('nav.online', 'المتواجدين')}</span>
           </button>
 
           {/* Rooms (🏠 الغرف) */}
@@ -66,7 +67,7 @@ export const BottomNav: React.FC = () => {
             }`}
           >
             <Home className={`w-5 h-5 transition-colors ${isRoomsListOpen ? 'text-amber-400' : 'text-slate-300 group-hover:text-amber-400'}`} />
-            <span>الغرف</span>
+            <span>{t('nav.rooms', 'الغرف')}</span>
           </button>
 
           {/* Options / Settings (⚙️ خيارات) */}
@@ -75,7 +76,7 @@ export const BottomNav: React.FC = () => {
             className="flex flex-col items-center justify-center text-[11px] font-medium text-slate-300 hover:text-white transition-colors cursor-pointer group"
           >
             <Settings className="w-5 h-5 text-slate-300 group-hover:text-amber-400 transition-colors" />
-            <span>خيارات</span>
+            <span>{t('nav.options', 'خيارات')}</span>
           </button>
         </div>
 
@@ -90,7 +91,7 @@ export const BottomNav: React.FC = () => {
           </button>
 
           <div className="flex items-center gap-1.5 text-xs">
-            <span className="text-[11px] font-bold text-sky-400">محطة</span>
+            <span className="text-[11px] font-bold text-sky-400">{t('nav.station', 'محطة')}</span>
             <span className="text-[11px] font-semibold text-slate-200 truncate max-w-[100px] sm:max-w-[140px]">
               {currentRoom.name}
             </span>
