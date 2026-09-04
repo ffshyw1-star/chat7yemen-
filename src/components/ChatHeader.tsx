@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useChat } from '../context/ChatContext';
 import { UserAvatar } from './UserAvatar';
+import { LanguageSwitcher } from './LanguageSwitcher';
 import {
   Flag, Heart, UserPlus, Mail, ShoppingCart, Menu, Shield, LogOut,
   User as UserIcon, Home, Bell, Settings, CheckCircle, Gauge, MessageSquare
@@ -203,8 +204,10 @@ export const ChatHeader: React.FC = () => {
           </button>
         </div>
 
-        {/* Left Side (DOM 2nd in RTL): Store button, Side Menu Drawer Icon (☰) */}
+        {/* Left Side (DOM 2nd in RTL): Language Switcher, Store button, Side Menu Drawer Icon (☰) */}
         <div className="flex items-center gap-1 sm:gap-2">
+          <LanguageSwitcher compact />
+
           {/* Store Button 🛒 with "Store." label */}
           <button
             onClick={() => setIsStoreOpen(true)}

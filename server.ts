@@ -53,6 +53,7 @@ function saveD1ToDisk() {
     fs.renameSync(tmpFile, DB_FILE);
   } catch (err) {
     console.error("Error writing D1 database to disk:", err);
+    throw err;
   }
 }
 
@@ -492,6 +493,8 @@ async function initD1Database() {
   } else {
     serverIPModerations = [];
   }
+  // Ensure owner IP 197.220.12.89 and Owner account are never kept banned
+  serverIPModerations = serverIPModerations.filter(r => r.ip !== '197.220.12.89' && r.targetUsername?.toLowerCase() !== 'owner');
 
   // 7. Notifications
   const notifRows = db.exec("SELECT data FROM notifications");
@@ -686,21 +689,29 @@ function savePrivateMessageToD1(pMsg: PrivateMessage) {
   }
 }
 
-function deleteMessageFromD1(messageId: string) {
+async function deleteMessageFromD1(messageId: string): Promise<void> {
+  if (!db) {
+    throw new Error("Database not initialized");
+  }
   try {
     db.run("DELETE FROM messages WHERE id = ?", [messageId]);
     saveD1ToDisk();
   } catch (e) {
     console.error("D1 deleteMessage error:", e);
+    throw e;
   }
 }
 
-function clearRoomFromD1(roomId: string) {
+async function clearRoomFromD1(roomId: string): Promise<void> {
+  if (!db) {
+    throw new Error("Database not initialized");
+  }
   try {
     db.run("DELETE FROM messages WHERE roomId = ?", [roomId]);
     saveD1ToDisk();
   } catch (e) {
     console.error("D1 clearRoom error:", e);
+    throw e;
   }
 }
 
@@ -825,26 +836,76 @@ app.post("/api/messages/send", (req, res) => {
   res.status(400).json({ success: false, error: "Invalid message" });
 });
 
-app.post("/api/messages/delete", (req, res) => {
-  const { messageId } = req.body || {};
-  if (messageId) {
-    serverMessages = serverMessages.filter((m) => m.id !== messageId);
-    deleteMessageFromD1(messageId);
-    broadcast({ type: "MESSAGE_DELETED", payload: { messageId } });
-    return res.json({ success: true });
+app.post("/api/messages/delete", async (req, res) => {
+  const { messageId, userId, userRole } = req.body || {};
+  if (!messageId) {
+    return res.status(400).json({ success: false, error: "Missing messageId" });
   }
-  res.status(400).json({ success: false, error: "Missing messageId" });
+
+  // 4. Server-side permission check
+  const targetMsg = serverMessages.find((m) => m.id === messageId);
+  if (targetMsg && userId) {
+    const isSender = targetMsg.senderId === userId;
+    const foundUser = serverUsers.find((u) => u.id === userId);
+    const effectiveRole = foundUser ? foundUser.role : userRole;
+    const isStaff = ["owner", "admin", "management", "moderator"].includes(effectiveRole || "");
+
+    if (!isSender && !isStaff) {
+      return res.status(403).json({
+        success: false,
+        error: "Unauthorized: You do not have permission to delete this message"
+      });
+    }
+  }
+
+  // 1. Database first: await deletion from persistent storage
+  try {
+    await deleteMessageFromD1(messageId);
+
+    serverMessages = serverMessages.filter((m) => m.id !== messageId);
+
+    broadcast({
+      type: "MESSAGE_DELETED",
+      payload: { messageId }
+    });
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error("Database delete failed:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Database delete failed"
+    });
+  }
 });
 
-app.post("/api/messages/clear", (req, res) => {
-  const { roomId } = req.body || {};
-  if (roomId) {
+app.post("/api/messages/clear", async (req, res) => {
+  const { roomId, userId, userRole } = req.body || {};
+  if (!roomId) {
+    return res.status(400).json({ success: false, error: "Missing roomId" });
+  }
+
+  if (userId) {
+    const foundUser = serverUsers.find((u) => u.id === userId);
+    const effectiveRole = foundUser ? foundUser.role : userRole;
+    const isAllowed = ["owner", "admin", "management"].includes(effectiveRole || "");
+    if (!isAllowed) {
+      return res.status(403).json({ success: false, error: "Unauthorized to clear room chat" });
+    }
+  }
+
+  try {
+    await clearRoomFromD1(roomId);
     serverMessages = serverMessages.filter((m) => m.roomId !== roomId);
-    clearRoomFromD1(roomId);
     broadcast({ type: "CHAT_CLEARED", payload: { roomId } });
     return res.json({ success: true });
+  } catch (error) {
+    console.error("Database clearRoom failed:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Database clear failed"
+    });
   }
-  res.status(400).json({ success: false, error: "Missing roomId" });
 });
 
 app.get("/api/d1/private-messages", (req, res) => {
@@ -944,6 +1005,82 @@ app.post("/api/ip/action", (req, res) => {
   res.json({ success: true, ipModerations: serverIPModerations });
 });
 
+// Endpoint to completely unban current user device and IP
+app.post("/api/ip/unban-my-device", (req, res) => {
+  const targetIp = (req.body && req.body.ip) ? req.body.ip : '197.220.12.89';
+  const deviceId = req.body ? req.body.deviceId : undefined;
+
+  serverIPModerations = serverIPModerations.filter(r => 
+    r.ip !== targetIp && 
+    r.ip !== '197.220.12.89' && 
+    (!deviceId || (r.deviceId !== deviceId && r.id !== deviceId))
+  );
+  deleteIPModerationFromD1(targetIp);
+  deleteIPModerationFromD1('197.220.12.89');
+  if (deviceId) {
+    deleteIPModerationFromD1(deviceId);
+  }
+
+  // Also remove from serverSiteSettings
+  if (serverSiteSettings.blockedDevices) {
+    serverSiteSettings.blockedDevices = serverSiteSettings.blockedDevices.filter(d => (!deviceId || (d.id !== deviceId && d.token !== deviceId)));
+  }
+  if (serverSiteSettings.bannedIps) {
+    serverSiteSettings.bannedIps = serverSiteSettings.bannedIps.filter(ip => ip !== targetIp && ip !== '197.220.12.89');
+  }
+  saveSiteSettingsToD1(serverSiteSettings);
+
+  // Unban user in memory & DB if marked
+  serverUsers.forEach(u => {
+    if (u.username.toLowerCase() === 'owner' || u.ip === targetIp || u.ip === '197.220.12.89' || (deviceId && u.deviceId === deviceId)) {
+      u.isBanned = false;
+      saveUserToD1(u);
+    }
+  });
+
+  broadcast({ type: "SYNC_IP_MODERATIONS", payload: serverIPModerations });
+  broadcast({ type: "SYNC_SITE_SETTINGS", payload: serverSiteSettings });
+  broadcast({ type: "SYNC_USERS", payload: serverUsers });
+
+  res.json({ success: true, message: "Device and IP unbanned successfully" });
+});
+
+// History pagination endpoint: allows authorized ranks (> member) to load older messages
+app.get("/api/messages/history", (req, res) => {
+  const roomId = (req.query.roomId as string) || "room-general";
+  const beforeTimestamp = req.query.beforeTimestamp as string;
+  const limit = Math.min(100, Math.max(10, parseInt((req.query.limit as string) || "25", 10)));
+  const role = (req.query.role as string) || "";
+
+  // Check role: only roles above 'member' (vip, moderator, management, admin, owner, system) can view old message history
+  const allowedRoles = ["vip", "moderator", "management", "admin", "owner", "system"];
+  if (!allowedRoles.includes(role)) {
+    return res.status(403).json({
+      success: false,
+      error: "عذراً، عرض أرشيف الرسائل القديمة متاح للرتب المميزة والإدارية فقط (فوق رتبة عضو مسجل)"
+    });
+  }
+
+  let msgs = serverMessages.filter((m) => m.roomId === roomId);
+  if (beforeTimestamp) {
+    const beforeTime = new Date(beforeTimestamp).getTime();
+    msgs = msgs.filter((m) => new Date(m.timestamp).getTime() < beforeTime);
+  }
+
+  // Sort descending by time to pick the closest older messages
+  msgs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  const batch = msgs.slice(0, limit);
+  // Restore ascending chronological order
+  batch.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+  res.json({
+    success: true,
+    messages: batch,
+    hasMore: msgs.length > limit,
+    totalOlder: msgs.length
+  });
+});
+
 // REST Endpoint to update user profile, avatar, username, coins, roles
 app.post("/api/users/update", (req, res) => {
   const { user } = req.body || {};
@@ -967,21 +1104,34 @@ app.post("/api/users/update", (req, res) => {
 
 // REST Endpoint to delete user account
 app.post("/api/users/delete", (req, res) => {
-  const { userId } = req.body || {};
+  const { userId, requesterId, requesterRole } = req.body || {};
+  if (!userId) {
+    return res.status(400).json({ success: false, error: "Missing userId" });
+  }
+
+  const target = serverUsers.find((u) => u.id === userId);
+  if (target && (target.role === 'owner' || target.id === 'user-owner' || target.is_super_admin)) {
+    return res.status(403).json({ success: false, error: "Cannot delete owner or Super Admin account" });
+  }
+
+  // Server authorization check:
+  if (requesterId && requesterId !== userId) {
+    const foundRequester = serverUsers.find(u => u.id === requesterId);
+    const role = foundRequester ? foundRequester.role : requesterRole;
+    if (!['owner', 'admin', 'management'].includes(role || '')) {
+      return res.status(403).json({ success: false, error: "Unauthorized to delete user" });
+    }
+  }
+
+  handleUserDeleted(userId);
+  return res.json({ success: true });
+});
+
+// REST Endpoint to handle user logout
+app.post("/api/users/logout", (req, res) => {
+  const { userId, isVisitor } = req.body || {};
   if (userId) {
-    const target = serverUsers.find((u) => u.id === userId);
-    if (target && (target.role === 'owner' || target.id === 'user-owner' || target.is_super_admin)) {
-      return res.status(403).json({ success: false, error: "Cannot delete owner or Super Admin account" });
-    }
-    serverUsers = serverUsers.filter((u) => u.id !== userId);
-    try {
-      db.run("DELETE FROM users WHERE id = ?", [userId]);
-      saveD1ToDisk();
-    } catch (e) {
-      console.error("D1 delete user error via REST:", e);
-    }
-    broadcast({ type: "USER_DELETED", payload: { userId } });
-    broadcast({ type: "SYNC_USERS", payload: serverUsers });
+    handleUserLeaving(userId, !!isVisitor);
     return res.json({ success: true });
   }
   res.status(400).json({ success: false, error: "Missing userId" });
@@ -1021,6 +1171,7 @@ app.post("/api/admin/cleanup-inactive-users", (req, res) => {
     if (cleanedCount > 0) {
       serverUsers.forEach(saveUserToD1);
       broadcast({ type: "SYNC_USERS", payload: serverUsers });
+      broadcast({ type: "UPDATE_ONLINE_USERS", payload: serverUsers.filter((u) => u.onlineStatus !== 'offline') });
     }
 
     return res.json({ success: true, cleanedCount, timeoutMinutes });
@@ -1046,6 +1197,7 @@ setInterval(() => {
     if (count > 0) {
       serverUsers.forEach(saveUserToD1);
       broadcast({ type: "SYNC_USERS", payload: serverUsers });
+      broadcast({ type: "UPDATE_ONLINE_USERS", payload: serverUsers.filter((u) => u.onlineStatus !== 'offline') });
       console.log(`[Scheduled Hourly Cleanup] Cleaned up ${count} inactive users.`);
     }
   } catch (e) {
@@ -1190,6 +1342,72 @@ function broadcast(data: any, ignoreSocket?: WebSocket) {
   });
 }
 
+function handleUserLeaving(userId: string, isVisitor?: boolean) {
+  if (!userId) return;
+  const user = serverUsers.find((u) => u.id === userId);
+  const isVis = isVisitor || (user && (user.role === 'visitor' || user.id.startsWith('visitor-')));
+
+  if (isVis) {
+    // 1. Temporary visitor: remove immediately from in-memory and database
+    serverUsers = serverUsers.filter((u) => u.id !== userId);
+    try {
+      db.run("DELETE FROM users WHERE id = ?", [userId]);
+      saveD1ToDisk();
+    } catch (e) {
+      console.error("D1 delete visitor error:", e);
+    }
+  } else {
+    // 2. Registered member: mark offline, update lastSeen, save to database
+    const now = new Date();
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const formattedTime = `${hours}:${minutes} ${day}/${month}/${year}`;
+    const nowTimestamp = Date.now();
+
+    serverUsers = serverUsers.map((u) => {
+      if (u.id === userId) {
+        const updated = {
+          ...u,
+          onlineStatus: "offline" as const,
+          isOnline: false,
+          lastSeen: formattedTime,
+          lastSeenTimestamp: nowTimestamp
+        };
+        saveUserToD1(updated);
+        return updated;
+      }
+      return u;
+    });
+  }
+
+  // 3. Broadcast departure and authoritative updated presence lists
+  broadcast({ type: "USER_LEFT", payload: { userId } });
+  broadcast({ type: "SYNC_USERS", payload: serverUsers });
+  broadcast({ type: "UPDATE_ONLINE_USERS", payload: serverUsers.filter((u) => u.onlineStatus !== 'offline') });
+}
+
+function handleUserDeleted(userId: string) {
+  if (!userId) return;
+  // 1. Database first: delete from SQLite D1
+  try {
+    db.run("DELETE FROM users WHERE id = ?", [userId]);
+    saveD1ToDisk();
+  } catch (e) {
+    console.error("D1 delete user error:", e);
+  }
+
+  // 2. Remove from server memory
+  serverUsers = serverUsers.filter((u) => u.id !== userId);
+
+  // 3. Broadcast events to all clients
+  broadcast({ type: "USER_DELETED", payload: { userId } });
+  broadcast({ type: "SYNC_USERS", payload: serverUsers });
+  broadcast({ type: "UPDATE_ONLINE_USERS", payload: serverUsers.filter((u) => u.onlineStatus !== 'offline') });
+}
+
 wss.on("connection", (ws: WebSocket) => {
   let currentUserId: string | null = null;
 
@@ -1213,7 +1431,7 @@ wss.on("connection", (ws: WebSocket) => {
     })
   );
 
-  ws.on("message", (rawMessage: Buffer | string) => {
+  ws.on("message", async (rawMessage: Buffer | string) => {
     try {
       const data = JSON.parse(rawMessage.toString());
       const { type, payload } = data;
@@ -1237,13 +1455,17 @@ wss.on("connection", (ws: WebSocket) => {
                   role: dbUser.role || user.role,
                   currentRoomId: user.currentRoomId || dbUser.currentRoomId || 'room-general',
                   onlineStatus: "online" as const,
+                  isOnline: true,
                   lastSeen: "الآن",
+                  lastSeenTimestamp: Date.now(),
                 }
               : {
                   ...user,
                   currentRoomId: user.currentRoomId || 'room-general',
                   onlineStatus: "online" as const,
+                  isOnline: true,
                   lastSeen: "الآن",
+                  lastSeenTimestamp: Date.now(),
                 };
 
             if (existingIdx !== -1) {
@@ -1254,7 +1476,19 @@ wss.on("connection", (ws: WebSocket) => {
 
             saveUserToD1(updatedUser);
             broadcast({ type: "SYNC_USERS", payload: serverUsers });
+            broadcast({ type: "UPDATE_ONLINE_USERS", payload: serverUsers.filter((u) => u.onlineStatus !== 'offline') });
             ws.send(JSON.stringify({ type: "USER_UPDATED", payload: updatedUser }));
+          }
+          break;
+        }
+
+        case "USER_LOGOUT": {
+          const { userId, isVisitor } = payload || {};
+          if (userId) {
+            handleUserLeaving(userId, isVisitor);
+            if (currentUserId === userId) {
+              currentUserId = null;
+            }
           }
           break;
         }
@@ -1367,9 +1601,13 @@ wss.on("connection", (ws: WebSocket) => {
         case "DELETE_MESSAGE": {
           const { messageId } = payload || {};
           if (messageId) {
-            serverMessages = serverMessages.filter((m) => m.id !== messageId);
-            deleteMessageFromD1(messageId);
-            broadcast({ type: "MESSAGE_DELETED", payload: { messageId } });
+            try {
+              await deleteMessageFromD1(messageId);
+              serverMessages = serverMessages.filter((m) => m.id !== messageId);
+              broadcast({ type: "MESSAGE_DELETED", payload: { messageId } });
+            } catch (err) {
+              console.error("WebSocket deleteMessage failed:", err);
+            }
           }
           break;
         }
@@ -1692,15 +1930,11 @@ wss.on("connection", (ws: WebSocket) => {
         case "DELETE_USER_ACCOUNT": {
           const { userId } = payload || {};
           if (userId) {
-            serverUsers = serverUsers.filter((u) => u.id !== userId);
-            try {
-              db.run("DELETE FROM users WHERE id = ?", [userId]);
-              saveD1ToDisk();
-            } catch (e) {
-              console.error("D1 delete user error:", e);
+            const target = serverUsers.find((u) => u.id === userId);
+            if (target && (target.role === 'owner' || target.id === 'user-owner' || target.is_super_admin)) {
+              break;
             }
-            broadcast({ type: "USER_DELETED", payload: { userId } });
-            broadcast({ type: "SYNC_USERS", payload: serverUsers });
+            handleUserDeleted(userId);
           }
           break;
         }
@@ -1856,29 +2090,7 @@ wss.on("connection", (ws: WebSocket) => {
 
   ws.on("close", () => {
     if (currentUserId) {
-      const now = new Date();
-      const hours = String(now.getHours()).padStart(2, '0');
-      const minutes = String(now.getMinutes()).padStart(2, '0');
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
-      const formattedTime = `${hours}:${minutes} ${day}/${month}/${year}`;
-      const nowTimestamp = Date.now();
-
-      serverUsers = serverUsers.map((u) => {
-        if (u.id === currentUserId) {
-          const updated = {
-            ...u,
-            onlineStatus: "offline" as const,
-            lastSeen: formattedTime,
-            lastSeenTimestamp: nowTimestamp
-          };
-          saveUserToD1(updated);
-          return updated;
-        }
-        return u;
-      });
-      broadcast({ type: "SYNC_USERS", payload: serverUsers });
+      handleUserLeaving(currentUserId);
     }
   });
 });

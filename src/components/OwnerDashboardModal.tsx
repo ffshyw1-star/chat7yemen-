@@ -9,8 +9,9 @@ import {
   RefreshCw, Trash2, Edit, Plus, Monitor, AlertCircle, Radio, Lock, Unlock,
   Download, Upload, ExternalLink, Globe, Key, AlertTriangle, UserCheck,
   UserX, Sliders, Music, RadioTower, Database, Menu, Bell, Smile, Gem, Sparkles,
-  Flame, Heart, Gamepad2, Coffee, Trophy, Image, Activity, BarChart3
+  Flame, Heart, Gamepad2, Coffee, Trophy, Image, Activity, BarChart3, Layout
 } from 'lucide-react';
+import { LandingSettingsView } from './owner-dashboard/LandingSettingsView';
 import { DjView } from './owner-dashboard/DjView';
 import { PermissionsView } from './owner-dashboard/PermissionsView';
 import { ModulesView } from './owner-dashboard/ModulesView';
@@ -68,7 +69,7 @@ export const OwnerDashboardModal: React.FC = () => {
 
   // Navigation State
   const [activeSection, setActiveSection] = useState<string>('dashboard');
-  const [ownerSubTab, setOwnerSubTab] = useState<'features' | 'backup' | 'links' | 'gifts' | 'logins' | 'ads' | 'archive' | 'bans'>('backup');
+  const [ownerSubTab, setOwnerSubTab] = useState<'landing' | 'features' | 'backup' | 'links' | 'gifts' | 'logins' | 'ads' | 'archive' | 'bans'>('landing');
   const [blockSubFilter, setBlockSubFilter] = useState<'device' | 'browser' | 'country' | 'xband'>('device');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
@@ -284,6 +285,7 @@ export const OwnerDashboardModal: React.FC = () => {
     switch (activeSection) {
       case 'dashboard': return 'لوحة التحكم';
       case 'owner_settings': return 'اعدادات صاحب الموقع';
+      case 'landing_control': return 'إعدادات الواجهة الرئيسية';
       case 'system_settings': return 'اعدادات النظام';
       case 'members': return 'إدارة الأعضاء';
       case 'permissions': return 'الأذونات';
@@ -538,6 +540,20 @@ export const OwnerDashboardModal: React.FC = () => {
                   <Crown className="w-4 h-4 text-amber-500" />
                   <span>اعدادات صاحب الموقع</span>
                 </div>
+              </button>
+
+              {/* إعدادات الواجهة الرئيسية */}
+              <button
+                onClick={() => { setActiveSection('landing_control'); setIsMobileSidebarOpen(false); }}
+                className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
+                  activeSection === 'landing_control' ? 'bg-amber-50 text-amber-600 font-black border-r-4 border-amber-500' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Layout className="w-4 h-4 text-emerald-600" />
+                  <span>إعدادات الواجهة الرئيسية</span>
+                </div>
+                <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-full font-bold">تحكم</span>
               </button>
 
               {/* 3. اعدادات النظام */}
@@ -978,6 +994,7 @@ export const OwnerDashboardModal: React.FC = () => {
                 {/* Horizontal Sub-Tabs Bar matching Screenshot 2 & 3 */}
                 <div className="bg-white p-1 rounded-xl border border-slate-200 flex items-center gap-1 overflow-x-auto custom-scrollbar text-xs font-bold shadow-2xs">
                   {[
+                    { id: 'landing', label: 'الواجهة الرئيسية 🖥️' },
                     { id: 'features', label: 'تحكم المميزات' },
                     { id: 'backup', label: 'Backup' },
                     { id: 'links', label: 'روابط المواقع' },
@@ -1000,6 +1017,11 @@ export const OwnerDashboardModal: React.FC = () => {
                     </button>
                   ))}
                 </div>
+
+                {/* --- SUB-TAB: LANDING (الواجهة الرئيسية) --- */}
+                {ownerSubTab === 'landing' && (
+                  <LandingSettingsView showToast={showToast} />
+                )}
 
                 {/* --- SUB-TAB: BACKUP (Screenshot 2) --- */}
                 {ownerSubTab === 'backup' && (
@@ -1306,11 +1328,13 @@ export const OwnerDashboardModal: React.FC = () => {
                       {[
                         { key: 'enableRegistration', label: 'السماح بتسجيل العضويات الجديدة', desc: 'فتح باب تسجيل حسابات جديدة للأعضاء' },
                         { key: 'enableGuestLogin', label: 'السماح بدخول الزوار', desc: 'تمكين الزوار من الدخول المباشر' },
+                        { key: 'hideVisitorLogin', label: 'إخفاء زر دخول الزوار من الصفحة الرئيسية', desc: 'إخفاء زر (دخول الزوار) تماماً ومنع الدخول كزائر عبر الواجهة', isHideFlag: true },
+                        { key: 'hideRegisterLink', label: 'إخفاء رابط (لست مسجل لدينا؟ سجل الآن)', desc: 'إخفاء رابط التسجيل السريع أسفل أزرار الدخول بالصفحة الرئيسية', isHideFlag: true },
                         { key: 'enableDirectChat', label: 'المحادثات الخاصة', desc: 'تمكين الرسائل الخاصة بين الأعضاء' },
                         { key: 'enableVoiceNotes', label: 'التسجيلات الصوتية', desc: 'إمكانية إرسال رسائل صوتية في الغرف' },
                         { key: 'enableGifts', label: 'نظام الهدايا والمتجر', desc: 'إرسال هدايا وشراء الرتب بالكوينز' },
                         { key: 'enableSocialWall', label: 'الحائط العام والمنشورات', desc: 'السماح بنشر البوستات والصور' },
-                        { key: 'hideChatBackgroundForVisitorAndMember', label: 'إخفاء تبويب خلفية عن الزائر والعضو المسجل', desc: 'حظر واجهة الخلفيات اللامعة من الزوار والأعضاء واقتصارها على الرتب الإدارية والمميزة' },
+                        { key: 'hideChatBackgroundForVisitorAndMember', label: 'إخفاء تبويب خلفية عن الزائر والعضو المسجل', desc: 'حظر واجهة الخلفيات اللامعة من الزوار والأعضاء واقتصارها على الرتب الإدارية والمميزة', isHideFlag: true },
                       ].map((item: any) => (
                         <div key={item.key} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
                           <div>
@@ -1319,7 +1343,7 @@ export const OwnerDashboardModal: React.FC = () => {
                           </div>
                           <input
                             type="checkbox"
-                            checked={Boolean((settingsForm as any)[item.key] ?? true)}
+                            checked={item.isHideFlag ? Boolean((settingsForm as any)[item.key]) : Boolean((settingsForm as any)[item.key] ?? true)}
                             onChange={(e) => {
                               const updated = { ...settingsForm, [item.key]: e.target.checked };
                               setSettingsForm(updated);
@@ -1470,6 +1494,15 @@ export const OwnerDashboardModal: React.FC = () => {
                   </div>
                 )}
 
+              </div>
+            )}
+
+            {/* ===================================================================== */}
+            {/* VIEW: إعدادات الواجهة الرئيسية (Landing Page Settings) */}
+            {/* ===================================================================== */}
+            {activeSection === 'landing_control' && (
+              <div className="max-w-4xl mx-auto space-y-4">
+                <LandingSettingsView showToast={showToast} />
               </div>
             )}
 

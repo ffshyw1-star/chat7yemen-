@@ -65,6 +65,7 @@ export interface User {
   is_super_admin?: boolean; // Super Admin immunity flag
   privatePrivacy: PrivatePrivacySetting;
   onlineStatus: OnlineStatus;
+  isOnline?: boolean;
   ip?: string;
   locationMap?: string;
   previousAccount?: string;
@@ -370,6 +371,10 @@ export interface SiteSettings {
   siteLogoEmoji: string;
   landingTitle?: string;
   landingSubtitle?: string;
+  landingTitleEn?: string;
+  landingSubtitleEn?: string;
+  hideVisitorLogin?: boolean;
+  hideRegisterLink?: boolean;
   customRoles?: CustomRole[];
   adminAuditLogs?: AuditLogEntry[];
   timeZone: string;

@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useChat } from '../context/ChatContext';
 import { UserAvatar } from './UserAvatar';
+import { LanguageSwitcher } from './LanguageSwitcher';
 import { OnlineStatus, NewsPost, WallPost, User } from '../types';
 import { isStaff } from '../utils/permissions';
 import {
@@ -209,8 +210,8 @@ export const SideMenuModal: React.FC = () => {
       {activeSubView === 'menu' && (
         <div className="bg-white text-slate-900 w-72 sm:w-80 h-full flex flex-col shadow-2xl relative animate-in slide-in-from-left duration-200 border-r border-slate-200 dir-rtl">
           
-          {/* Header Close X */}
-          <div className="p-3 border-b border-slate-100 flex items-center justify-start">
+          {/* Header Close X and Language Switcher */}
+          <div className="p-3 border-b border-slate-100 flex items-center justify-between">
             <button
               onClick={() => setIsSideMenuOpen(false)}
               className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center cursor-pointer transition-colors"
@@ -218,6 +219,7 @@ export const SideMenuModal: React.FC = () => {
             >
               <X className="w-5 h-5 font-bold" />
             </button>
+            <LanguageSwitcher />
           </div>
 
           {/* Vertical Menu Options List Matching Screenshot Image 1 */}

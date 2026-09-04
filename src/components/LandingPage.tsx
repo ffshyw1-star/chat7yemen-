@@ -29,7 +29,7 @@ export const LandingPage: React.FC = () => {
   // Visitor login form fields
   const [visitorName, setVisitorName] = useState('');
   const [visitorAge, setVisitorAge] = useState<number | string>('العمر');
-  const [visitorGender, setVisitorGender] = useState<Gender>('male');
+  const [visitorGender, setVisitorGender] = useState<Gender | ''>('');
   const [visitorMode, setVisitorMode] = useState<'chat' | 'silent'>('chat');
   const [visitorError, setVisitorError] = useState('');
 
@@ -92,14 +92,42 @@ export const LandingPage: React.FC = () => {
       setVisitorError('🚫 هذا الجهاز محظور من الدخول كزائر');
       return;
     }
-    if (!visitorName.trim()) {
-      setVisitorError('الرجاء إدخال اسم الزائر');
+    if (siteSettings?.hideVisitorLogin) {
+      setVisitorError(isEnglish ? 'Guest login is currently disabled by administration' : '🚫 تم تعطيل دخول الزوار حالياً من قبل إدارة الموقع');
       return;
     }
-    const ageVal = visitorAge === 'العمر' ? 22 : visitorAge;
-    const res = loginAsVisitor(visitorName, ageVal, visitorGender);
+
+    const cleanName = visitorName.trim();
+    if (!cleanName) {
+      setVisitorError(isEnglish ? 'Please enter a nickname' : 'الرجاء إدخال اسم الزائر');
+      return;
+    }
+    if (cleanName.length < 2) {
+      setVisitorError(isEnglish ? 'Nickname must be at least 2 characters' : 'يجب أن يتكون اسم الزائر من حرفين على الأقل');
+      return;
+    }
+    const maxUserLen = siteSettings?.maxUsernameLength || 20;
+    if (cleanName.length > maxUserLen) {
+      setVisitorError(isEnglish ? `Nickname cannot exceed ${maxUserLen} characters` : `🚫 اسم الزائر يتجاوز الحد الأقصى المسموح به (${maxUserLen} حرفاً)`);
+      return;
+    }
+
+    // Mandatory Gender Check (ذكر، أنثى، آخر)
+    if (!visitorGender || (visitorGender !== 'male' && visitorGender !== 'female' && (visitorGender as string) !== 'other')) {
+      setVisitorError(isEnglish ? 'Please select your gender (Male, Female, Other)' : 'الرجاء تحديد الجنس (ذكر، أنثى، آخر) لإكمال الدخول');
+      return;
+    }
+
+    // Mandatory Age Check
+    if (visitorAge === 'العمر' || !visitorAge) {
+      setVisitorError(isEnglish ? 'Please select your age' : 'الرجاء تحديد العمر لإكمال الدخول كزائر');
+      return;
+    }
+
+    const ageVal = Number(visitorAge);
+    const res = loginAsVisitor(cleanName, ageVal, visitorGender as Gender);
     if (res && !res.success) {
-      setVisitorError(res.error || 'تعذر الدخول كزائر');
+      setVisitorError(res.error || (isEnglish ? 'Could not enter as guest' : 'تعذر الدخول كزائر'));
       return;
     }
     if (visitorMode === 'silent' || siteSettings.guestChatMode === 'silent') {
@@ -121,6 +149,12 @@ export const LandingPage: React.FC = () => {
       return;
     }
     setRegError('');
+
+    const maxUserLen = siteSettings?.maxUsernameLength || 20;
+    if (regName.trim().length > maxUserLen) {
+      setRegError(isEnglish ? `Username cannot exceed ${maxUserLen} characters` : `🚫 اسم المستخدم يتجاوز الحد الأقصى المسموح (${maxUserLen} حرفاً)`);
+      return;
+    }
 
     if (regPassword.length < 6) {
       setRegError('كلمة المرور قصيرة جداً، يجب أن تتكون من 6 خانات (أحرف أو أرقام) على الأقل للأمان 🔒');
@@ -290,12 +324,17 @@ export const LandingPage: React.FC = () => {
             </button>
 
             {/* BUTTON 2: دخول الزوار (Black Button -> Opens Visitor Modal) */}
-            <button
-              onClick={() => setActiveModal('visitor')}
-              className="w-full bg-[#131b26] hover:bg-[#0f172a] text-white font-black text-lg py-3.5 px-6 rounded-2xl shadow-lg hover:shadow-xl transition-all transform active:scale-95 flex items-center justify-center gap-2.5 cursor-pointer border border-slate-700/50"
-            >
-              <span>{isEnglish ? 'Guest Login' : 'دخول الزوار'}</span>
-            </button>
+            {!siteSettings?.hideVisitorLogin && (
+              <button
+                onClick={() => {
+                  setVisitorError('');
+                  setActiveModal('visitor');
+                }}
+                className="w-full bg-[#131b26] hover:bg-[#0f172a] text-white font-black text-lg py-3.5 px-6 rounded-2xl shadow-lg hover:shadow-xl transition-all transform active:scale-95 flex items-center justify-center gap-2.5 cursor-pointer border border-slate-700/50"
+              >
+                <span>{isEnglish ? 'Guest Login' : 'دخول الزوار'}</span>
+              </button>
+            )}
 
             {/* BUTTON 3: تسجيل سريع عبر Firebase Authentication */}
             <button
@@ -315,15 +354,17 @@ export const LandingPage: React.FC = () => {
           </div>
 
           {/* REGISTER LINK BELOW BUTTONS */}
-          <button
-            onClick={() => {
-              setRegError('');
-              setActiveModal('register');
-            }}
-            className="text-white text-sm font-extrabold hover:underline transition-all cursor-pointer opacity-90 hover:opacity-100 flex items-center gap-1 py-1 px-3 rounded-lg hover:bg-white/10"
-          >
-            <span>{isEnglish ? 'Not registered yet? Register now' : '. لست مسجل لدينا ؟ سجل الآن'}</span>
-          </button>
+          {!siteSettings?.hideRegisterLink && (
+            <button
+              onClick={() => {
+                setRegError('');
+                setActiveModal('register');
+              }}
+              className="text-white text-sm font-extrabold hover:underline transition-all cursor-pointer opacity-90 hover:opacity-100 flex items-center gap-1 py-1 px-3 rounded-lg hover:bg-white/10"
+            >
+              <span>{isEnglish ? 'Not registered yet? Register now' : '. لست مسجل لدينا ؟ سجل الآن'}</span>
+            </button>
+          )}
 
         </div>
       </main>
@@ -433,18 +474,25 @@ export const LandingPage: React.FC = () => {
               {activeModal === 'visitor' && (
                 <form onSubmit={handleVisitorSubmit} className="space-y-4">
                   {visitorError && (
-                    <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-lg">
-                      {visitorError}
+                    <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl flex items-center gap-2">
+                      <span className="shrink-0 text-base">⚠️</span>
+                      <span>{visitorError}</span>
                     </div>
                   )}
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                      {isEnglish ? 'Guest Nickname' : 'اسم المستخدم (زائر)'} <span className="text-rose-500">*</span>
-                    </label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-xs font-bold text-slate-700">
+                        {isEnglish ? 'Guest Nickname' : 'اسم المستخدم (زائر)'} <span className="text-rose-500">*</span>
+                      </label>
+                      <span className="text-[11px] font-semibold text-slate-400">
+                        {visitorName.length} / {siteSettings?.maxUsernameLength || 20}
+                      </span>
+                    </div>
                     <input
                       type="text"
                       value={visitorName}
+                      maxLength={siteSettings?.maxUsernameLength || 20}
                       onChange={(e) => {
                         setVisitorName(e.target.value);
                         if (visitorError) setVisitorError('');
@@ -456,93 +504,84 @@ export const LandingPage: React.FC = () => {
                     />
                   </div>
 
-                  {/* VISITOR MODE SELECTOR: CHAT OR SILENT */}
+                  {/* GENDER SELECTOR (ذكر / أنثى / آخر) - MANDATORY */}
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                      {isEnglish ? 'Guest Entry Mode' : 'نوع دخول الزائر'}
+                      {isEnglish ? 'Gender' : 'الجنس'} <span className="text-rose-500">*</span>
                     </label>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-3 gap-1.5">
                       <button
                         type="button"
-                        onClick={() => setVisitorMode('chat')}
-                        className={`p-2.5 rounded-lg border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                          visitorMode === 'chat'
-                            ? 'bg-[#00aeeF]/10 border-[#00aeeF] text-[#0284c7]'
+                        onClick={() => {
+                          setVisitorGender('male');
+                          if (visitorError) setVisitorError('');
+                        }}
+                        className={`py-2 px-1 rounded-lg border text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                          visitorGender === 'male'
+                            ? 'bg-sky-100 border-sky-500 text-sky-800 ring-2 ring-sky-500 font-black shadow-xs'
                             : 'bg-[#f4f5f7] border-slate-200 text-slate-600 hover:bg-slate-100'
                         }`}
                       >
-                        <MessageCircle className="w-3.5 h-3.5" />
-                        <span>{isEnglish ? '💬 Chat Enabled' : 'مسموح بالدردشة'}</span>
+                        <span>{isEnglish ? '👨 Male' : '👨 ذكر'}</span>
                       </button>
                       <button
                         type="button"
-                        onClick={() => setVisitorMode('silent')}
-                        className={`p-2.5 rounded-lg border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                          visitorMode === 'silent'
-                            ? 'bg-amber-50 border-amber-400 text-amber-800'
+                        onClick={() => {
+                          setVisitorGender('female');
+                          if (visitorError) setVisitorError('');
+                        }}
+                        className={`py-2 px-1 rounded-lg border text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                          visitorGender === 'female'
+                            ? 'bg-rose-100 border-rose-500 text-rose-800 ring-2 ring-rose-500 font-black shadow-xs'
                             : 'bg-[#f4f5f7] border-slate-200 text-slate-600 hover:bg-slate-100'
                         }`}
                       >
-                        <span>{isEnglish ? '🔇 Silent Mode' : '🔇 دخول صامت (مشاهدة)'}</span>
+                        <span>{isEnglish ? '👩 Female' : '👩 أنثى'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVisitorGender('other');
+                          if (visitorError) setVisitorError('');
+                        }}
+                        className={`py-2 px-1 rounded-lg border text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                          visitorGender === 'other'
+                            ? 'bg-purple-100 border-purple-500 text-purple-800 ring-2 ring-purple-500 font-black shadow-xs'
+                            : 'bg-[#f4f5f7] border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        <span>{isEnglish ? '⚧️ Other' : '⚧️ آخر'}</span>
                       </button>
                     </div>
                   </div>
 
-                  {/* TWO COLUMNS: GENDER & AGE */}
-                  <div className="grid grid-cols-2 gap-3">
-                    {/* GENDER SELECTOR */}
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                        {isEnglish ? 'Gender' : 'الجنس'} <span className="text-rose-500">*</span>
-                      </label>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setVisitorGender('male')}
-                          className={`py-2 px-1 rounded-lg border text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                            visitorGender === 'male'
-                              ? 'bg-sky-50 border-sky-500 text-sky-700 ring-1 ring-sky-500'
-                              : 'bg-[#f4f5f7] border-slate-200 text-slate-600 hover:bg-slate-100'
-                          }`}
-                        >
-                          <span>{isEnglish ? '👨 Male' : '👨 ذكر'}</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setVisitorGender('female')}
-                          className={`py-2 px-1 rounded-lg border text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                            visitorGender === 'female'
-                              ? 'bg-rose-50 border-rose-500 text-rose-700 ring-1 ring-rose-500'
-                              : 'bg-[#f4f5f7] border-slate-200 text-slate-600 hover:bg-slate-100'
-                          }`}
-                        >
-                          <span>{isEnglish ? '👩 Female' : '👩 أنثى'}</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* AGE DROPDOWN */}
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                        {isEnglish ? 'Age' : 'العمر'} <span className="text-rose-500">*</span>
-                      </label>
-                      <select
-                        value={visitorAge}
-                        onChange={(e) => setVisitorAge(e.target.value === 'العمر' || e.target.value === 'Age' ? 'العمر' : Number(e.target.value))}
-                        className="w-full bg-[#f4f5f7] border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-[#00aeeF] cursor-pointer"
-                      >
-                        <option value="العمر">{isEnglish ? 'Age (Select)' : 'العمر (اختر)'}</option>
-                        {ageOptions.map(age => (
-                          <option key={age} value={age}>{age} {isEnglish ? 'years' : 'سنة'}</option>
-                        ))}
-                      </select>
-                    </div>
+                  {/* AGE SELECTOR - MANDATORY */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      {isEnglish ? 'Age' : 'العمر'} <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={visitorAge}
+                      onChange={(e) => {
+                        setVisitorAge(e.target.value === 'العمر' || e.target.value === 'Age' ? 'العمر' : Number(e.target.value));
+                        if (visitorError) setVisitorError('');
+                      }}
+                      className={`w-full bg-[#f4f5f7] border rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-[#00aeeF] cursor-pointer ${
+                        visitorAge === 'العمر' ? 'border-slate-200 text-slate-400' : 'border-sky-400 font-bold text-sky-900 bg-sky-50/50'
+                      }`}
+                      required
+                    >
+                      <option value="العمر">{isEnglish ? 'Select Age (Required *)' : 'العمر (تحديد مطلوب *)'}</option>
+                      {ageOptions.map(age => (
+                        <option key={age} value={age}>{age} {isEnglish ? 'years' : 'سنة'}</option>
+                      ))}
+                    </select>
                   </div>
 
                   {/* CYAN SUBMIT BUTTON */}
                   <button
                     type="submit"
-                    className="w-full bg-[#00aeeF] hover:bg-[#0284c7] text-white font-extrabold text-base py-2.5 px-4 rounded-lg shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer mt-3"
+                    className="w-full bg-[#00aeeF] hover:bg-[#0284c7] text-white font-extrabold text-base py-2.5 px-4 rounded-lg shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer mt-3 active:scale-98"
                   >
                     <span>{isEnglish ? 'Enter Chat' : 'دخول الدردشة'}</span>
                     <LogIn className={`w-4 h-4 ${isRtl ? 'rotate-180' : 'rotate-0'}`} />
@@ -560,12 +599,18 @@ export const LandingPage: React.FC = () => {
                   )}
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      {isEnglish ? 'Username' : 'اسم المستخدم'}
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-bold text-slate-700">
+                        {isEnglish ? 'Username' : 'اسم المستخدم'}
+                      </label>
+                      <span className="text-[11px] font-semibold text-slate-400">
+                        {regName.length} / {siteSettings?.maxUsernameLength || 20}
+                      </span>
+                    </div>
                     <input
                       type="text"
                       value={regName}
+                      maxLength={siteSettings?.maxUsernameLength || 20}
                       onChange={(e) => setRegName(e.target.value)}
                       placeholder={isEnglish ? 'Your new username...' : 'اسمك الجديد...'}
                       className="w-full bg-[#f4f5f7] border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#00aeeF] transition-colors"

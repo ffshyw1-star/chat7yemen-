@@ -173,6 +173,18 @@ export const saveUserToFirestore = async (user: User): Promise<void> => {
   }
 };
 
+// 1b. Delete User Profile from Firestore
+export const deleteUserFromFirestore = async (userId: string): Promise<void> => {
+  if (!userId) return;
+  const path = `users/${userId}`;
+  try {
+    const userDocRef = doc(db, 'users', userId);
+    await deleteDoc(userDocRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+};
+
 // 2. Sync Chat Message with serverTimestamp
 export const saveMessageToFirestore = async (msg: Message): Promise<void> => {
   if (!msg || !msg.id) return;
@@ -196,6 +208,18 @@ export const saveMessageToFirestore = async (msg: Message): Promise<void> => {
     await setDoc(msgDocRef, cleanMsg);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
+  }
+};
+
+// 2b. Delete Chat Message from Firestore
+export const deleteMessageFromFirestore = async (messageId: string): Promise<void> => {
+  if (!messageId) return;
+  const path = `messages/${messageId}`;
+  try {
+    const msgDocRef = doc(db, 'messages', messageId);
+    await deleteDoc(msgDocRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
   }
 };
 

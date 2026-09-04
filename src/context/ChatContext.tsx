@@ -34,7 +34,9 @@ import {
 } from '../utils/browserNotifications';
 import {
   saveUserToFirestore,
+  deleteUserFromFirestore,
   saveMessageToFirestore,
+  deleteMessageFromFirestore,
   savePrivateMessageToFirestore,
   saveRoomToFirestore,
   saveSettingsToFirestore,
@@ -236,8 +238,8 @@ interface ChatContextType {
   clearModerationState: (userId: string) => void;
   toggleOwnerStealth: () => void;
   moderatorAction: (targetUserId: string, actionType: 'mute' | 'kick' | 'unmute' | 'unkick' | 'ban' | 'edit_name' | 'delete_account', durationMinutes?: number, reason?: string, newName?: string) => void;
-  deleteMessage: (messageId: string) => void;
-  clearChat: (roomId?: string) => void;
+  deleteMessage: (messageId: string) => void | Promise<void>;
+  clearChat: (roomId?: string) => void | Promise<void>;
   ownerUpdateUser: (userId: string, updates: Partial<User>) => void;
   ownerUpdateStorePrices: (vipPrice: number, modPrice: number) => void;
   ownerUpdateRoomName: (roomId: string, newName: string) => void;
@@ -457,25 +459,41 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const messagesRef = collection(db, 'messages');
       const unsubscribe = onSnapshot(messagesRef, (snapshot) => {
-        const cloudMsgs: Message[] = [];
-        snapshot.forEach((docSnap) => {
-          const d = docSnap.data();
-          if (d && d.id && d.text) {
-            cloudMsgs.push(d as Message);
+        const removedDocIds = new Set<string>();
+        snapshot.docChanges().forEach(change => {
+          if (change.type === 'removed') {
+            removedDocIds.add(change.doc.id);
           }
         });
-        if (cloudMsgs.length > 0) {
-          setMessages(prev => {
+
+        const cloudMsgs: Message[] = [];
+        snapshot.forEach((docSnap) => {
+          if (!removedDocIds.has(docSnap.id)) {
+            const d = docSnap.data();
+            if (d && d.id && d.text) {
+              cloudMsgs.push(d as Message);
+            }
+          }
+        });
+
+        setMessages(prev => {
+          let currentList = prev.filter(m => !removedDocIds.has(m.id));
+          if (cloudMsgs.length > 0) {
             const map = new Map<string, Message>();
-            prev.forEach(m => map.set(m.id, m));
-            cloudMsgs.forEach(m => map.set(m.id, m));
+            currentList.forEach(m => map.set(m.id, m));
+            cloudMsgs.forEach(m => {
+              if (!removedDocIds.has(m.id)) {
+                map.set(m.id, m);
+              }
+            });
             return Array.from(map.values()).sort((a, b) => {
               const tA = (a as any).createdAt || a.timestamp || '';
               const tB = (b as any).createdAt || b.timestamp || '';
               return tA > tB ? 1 : -1;
             });
-          });
-        }
+          }
+          return currentList;
+        });
       }, (error) => {
         handleFirestoreError(error, OperationType.GET, 'messages');
       });
@@ -490,20 +508,42 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const usersRef = collection(db, 'users');
       const unsubscribe = onSnapshot(usersRef, (snapshot) => {
-        const cloudUsers: User[] = [];
-        snapshot.forEach((docSnap) => {
-          const d = docSnap.data();
-          if (d && d.id && d.username) {
-            cloudUsers.push(d as User);
+        const removedUserIds = new Set<string>();
+        snapshot.docChanges().forEach(change => {
+          if (change.type === 'removed') {
+            removedUserIds.add(change.doc.id);
           }
         });
-        if (cloudUsers.length > 0) {
+
+        const cloudUsers: User[] = [];
+        snapshot.forEach((docSnap) => {
+          if (!removedUserIds.has(docSnap.id)) {
+            const d = docSnap.data();
+            if (d && d.id && d.username) {
+              cloudUsers.push(d as User);
+            }
+          }
+        });
+
+        if (removedUserIds.size > 0 || cloudUsers.length > 0) {
           setUsers(prev => {
+            // Remove deleted users from state
+            const filteredPrev = prev.filter(u => !removedUserIds.has(u.id));
             const map = new Map<string, User>();
-            prev.forEach(u => map.set(u.id, u));
+            filteredPrev.forEach(u => map.set(u.id, u));
             cloudUsers.forEach(u => {
-              const existing = map.get(u.id);
-              map.set(u.id, existing ? { ...existing, ...u } : u);
+              if (!removedUserIds.has(u.id)) {
+                const existing = map.get(u.id);
+                // Keep existing socket-driven onlineStatus and isOnline intact so stale db docs don't mark active users offline
+                map.set(u.id, existing ? {
+                  ...existing,
+                  ...u,
+                  onlineStatus: existing.onlineStatus,
+                  isOnline: existing.isOnline,
+                  lastSeen: existing.lastSeen,
+                  lastSeenTimestamp: existing.lastSeenTimestamp
+                } : u);
+              }
             });
             return Array.from(map.values());
           });
@@ -830,6 +870,13 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [siteSettings, setSiteSettings] = useState<SiteSettings>({
     siteName: 'شات اليمن المطور',
     siteLogoEmoji: '🇾🇪',
+    landingTitle: 'دردشة تعارف',
+    landingSubtitle: 'دردشة تعارف هو موقع تعارف شباب وبنات العرب محادثات عامة ومحادثات خاصة بدون تسجيل',
+    landingTitleEn: 'Taarof Chat',
+    landingSubtitleEn: 'Free online chat rooms for friends to meet and talk in public and private without registration',
+    hideVisitorLogin: false,
+    hideRegisterLink: false,
+    maxUsernameLength: 20,
     timeZone: 'Asia/Aden',
     defaultLanguage: 'العربية 🇸🇦',
     defaultTheme: 'dark',
@@ -1516,13 +1563,75 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
               case "SYNC_USERS": {
                 if (Array.isArray(payload)) {
                   const mockUserIds = ['user-katim', 'user-silva', 'user-raad', 'user-kibriya', 'user-jawbak', 'user-1', 'user-2', 'user-3', 'user-4', 'user-5', 'user-6', 'user-7', 'user-8'];
+                  const cleanUsers = payload
+                    .filter((u: User) => u && u.id && !mockUserIds.includes(u.id))
+                    .map((u: User) => ({
+                      ...u,
+                      friends: (u.friends || []).filter(fId => fId !== 'user-system' && fId !== 'system')
+                    }));
+
+                  // Server is the single source of truth: replace list directly to eliminate ghost users
+                  setUsers(cleanUsers);
+
+                  // Update currentUser if their record was updated in sync
+                  if (currentUser) {
+                    const me = cleanUsers.find(u => u.id === currentUser.id);
+                    if (me) {
+                      setCurrentUser(prev => prev ? { ...prev, ...me } : me);
+                    }
+                  }
+                }
+                break;
+              }
+
+              case "UPDATE_ONLINE_USERS": {
+                if (Array.isArray(payload)) {
+                  const mockUserIds = ['user-katim', 'user-silva', 'user-raad', 'user-kibriya', 'user-jawbak', 'user-1', 'user-2', 'user-3', 'user-4', 'user-5', 'user-6', 'user-7', 'user-8'];
+                  const onlineUserList = payload
+                    .filter((u: User) => u && u.id && !mockUserIds.includes(u.id));
+                  const onlineIds = new Set(onlineUserList.map(u => u.id));
+
                   setUsers(prev => {
-                    const userMap = new Map(prev.map(u => [u.id, u]));
-                    payload
-                      .filter((u: User) => !mockUserIds.includes(u.id))
-                      .forEach((u: User) => userMap.set(u.id, u));
-                    return Array.from(userMap.values());
+                    const map = new Map<string, User>();
+                    prev.forEach(u => {
+                      if (onlineIds.has(u.id)) {
+                        const onlineUser = onlineUserList.find(ou => ou.id === u.id);
+                        map.set(u.id, onlineUser ? {
+                          ...u,
+                          ...onlineUser,
+                          onlineStatus: onlineUser.onlineStatus || 'online',
+                          isOnline: true
+                        } : { ...u, onlineStatus: 'online', isOnline: true });
+                      } else {
+                        // Mark offline if not in online presence list (unless stealth owner)
+                        const isOffline = u.role !== 'owner' || !u.isStealth;
+                        map.set(u.id, isOffline ? { ...u, onlineStatus: 'offline', isOnline: false } : u);
+                      }
+                    });
+                    // Also include any newly connected online user that wasn't in prev yet
+                    onlineUserList.forEach(ou => {
+                      if (!map.has(ou.id)) {
+                        map.set(ou.id, { ...ou, onlineStatus: ou.onlineStatus || 'online', isOnline: true });
+                      }
+                    });
+                    return Array.from(map.values());
                   });
+                }
+                break;
+              }
+
+              case "USER_LEFT": {
+                const { userId } = payload || {};
+                if (userId) {
+                  setUsers(prev => prev
+                    .map(u => u.id === userId ? {
+                      ...u,
+                      onlineStatus: 'offline' as const,
+                      isOnline: false,
+                      lastSeen: 'الآن'
+                    } : u)
+                    .filter(u => !(u.id === userId && (u.role === 'visitor' || u.id.startsWith('visitor-'))))
+                  );
                 }
                 break;
               }
@@ -2360,6 +2469,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, error: `🚫 هذا الآي بي مطرود مؤقتاً كزائر حتى ${expTime}` };
     }
 
+    if (siteSettings?.hideVisitorLogin || siteSettings?.enableGuestLogin === false) {
+      return { success: false, error: '🚫 تم تعطيل دخول الزوار حالياً من قبل إدارة الموقع' };
+    }
+
     const cleanUsername = username.trim();
     if (!cleanUsername) {
       return { success: false, error: 'الرجاء إدخال اسم الزائر المطلوب' };
@@ -2372,6 +2485,14 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const maxUserLen = siteSettings?.maxUsernameLength || 20;
     if (cleanUsername.length > maxUserLen) {
       return { success: false, error: `🚫 اسم الزائر يتجاوز الحد الأقصى المسموح (${maxUserLen} حرف)` };
+    }
+
+    if (!gender || (gender !== 'male' && gender !== 'female' && (gender as string) !== 'other')) {
+      return { success: false, error: 'الرجاء تحديد الجنس (ذكر أو أنثى أو آخر) لإكمال الدخول' };
+    }
+
+    if (age === 'العمر' || !age) {
+      return { success: false, error: 'الرجاء تحديد العمر لإكمال الدخول كزائر' };
     }
 
     // 3. Strict Duplicate Username Check across all users (registered and active)
@@ -2430,7 +2551,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCurrentView('rooms');
     emitUserRoomJoinMessage(newVisitor, currentRoom.id);
     sendSocketEvent('JOIN_USER', { user: newVisitor });
-    saveUserToFirestore(newVisitor);
 
     if (isMutedFromIp) {
       showTopBanner(`⚠️ تنبيه: تم تطبيق كتم الآي بي التلقائي على حساب الزائر حتى انتهاء وقت الكتم.`);
@@ -2655,12 +2775,12 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Logout
   const logout = () => {
     if (currentUser) {
-      const userTag = getUserDisplayTag(currentUser);
+      const loggedOutUserId = currentUser.id;
+      const isVisitor = currentUser.role === 'visitor' || loggedOutUserId.startsWith('visitor-');
       const userRoomId = currentUser.currentRoomId || currentRoom?.id || 'room-general';
 
       // 1. Emit exit announcement message in room
       const now = new Date();
-      const isVisitor = currentUser.role === 'visitor';
       let exitText = '';
       if (isVisitor) {
         exitText = `غادر ${getUserDisplayTag(currentUser)}`;
@@ -2691,13 +2811,28 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       sendSocketEvent('SEND_MESSAGE', exitMsg);
 
       // 2. Clear private messages involving this user on logout
-      setPrivateMessages(prev => prev.filter(pm => pm.senderId !== currentUser.id && pm.receiverId !== currentUser.id));
-      sendSocketEvent('CLEAR_USER_PRIVATE_MESSAGES', { userId: currentUser.id });
+      setPrivateMessages(prev => prev.filter(pm => pm.senderId !== loggedOutUserId && pm.receiverId !== loggedOutUserId));
+      sendSocketEvent('CLEAR_USER_PRIVATE_MESSAGES', { userId: loggedOutUserId });
       fetch('/api/private/clear-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser.id })
+        body: JSON.stringify({ userId: loggedOutUserId })
       }).catch(err => console.warn('Failed to clear user private messages on backend:', err));
+
+      // 3. Immediately update local state so current client reflects departure
+      if (isVisitor) {
+        setUsers(prev => prev.filter(u => u.id !== loggedOutUserId));
+      } else {
+        setUsers(prev => prev.map(u => u.id === loggedOutUserId ? { ...u, onlineStatus: 'offline', isOnline: false, lastSeen: 'الآن' } : u));
+      }
+
+      // 4. Notify backend server via WebSocket and REST to update source-of-truth and broadcast
+      sendSocketEvent('USER_LOGOUT', { userId: loggedOutUserId, isVisitor });
+      fetch('/api/users/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: loggedOutUserId, isVisitor })
+      }).catch(err => console.warn('Failed to call /api/users/logout:', err));
     }
 
     setCurrentUser(null);
@@ -4169,12 +4304,17 @@ ${modsText}
         body: JSON.stringify({ user: updatedTargetUser })
       }).catch(err => console.warn('Failed to persist name change to D1:', err));
     } else if (actionType === 'delete_account') {
+      deleteUserFromFirestore(targetUserId).catch(err => console.warn('Failed to delete user from Firestore:', err));
       setUsers(prev => prev.filter(u => u.id !== targetUserId));
       sendSocketEvent('DELETE_USER_ACCOUNT', { userId: targetUserId });
       fetch('/api/users/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: targetUserId })
+        body: JSON.stringify({
+          userId: targetUserId,
+          requesterId: currentUser?.id,
+          requesterRole: currentUser?.role
+        })
       }).catch(err => console.warn('Failed to persist delete user to D1:', err));
     }
 
@@ -4359,33 +4499,66 @@ ${modsText}
     }
   };
 
-  // Delete message
-  const deleteMessage = (messageId: string) => {
+  // Delete message: Server & Database First -> WebSocket -> Local State
+  const deleteMessage = async (messageId: string) => {
+    if (!messageId || !currentUser) return;
     const targetMsg = messages.find(m => m.id === messageId);
-    if (targetMsg && currentUser) {
-      const msgSnippet = targetMsg.text ? targetMsg.text.substring(0, 35) : 'وسائط/صورة/صوت';
-      addRoomActivityLog(
-        targetMsg.roomId || currentRoom.id,
-        currentRoom.name,
-        currentUser.id,
-        currentUser.username,
-        currentUser.role,
-        'delete_message',
-        `حذف رسالة للمستخدم "${targetMsg.senderName}": [${msgSnippet}]`,
-        targetMsg.senderName
-      );
+
+    try {
+      // 1. Check permissions and delete on the server & database first
+      const response = await fetch('/api/messages/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messageId,
+          userId: currentUser.id,
+          userRole: currentUser.role
+        })
+      });
+
+      // 2. Do not treat delete as successful if response is not ok
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'فشل حذف الرسالة من الخادم');
+      }
+
+      const resJson = await response.json().catch(() => ({ success: true }));
+      if (!resJson.success) {
+        throw new Error(resJson.error || 'فشل حذف الرسالة');
+      }
+
+      // 3. Sync deletion to Firestore so it never returns on refresh
+      try {
+        await deleteMessageFromFirestore(messageId);
+      } catch (fErr) {
+        console.warn('Firestore delete sync error:', fErr);
+      }
+
+      // 4. Update local state upon confirmed success
+      setMessages(prev => prev.filter(m => m.id !== messageId));
+
+      // 5. Broadcast to room activity log
+      if (targetMsg) {
+        const msgSnippet = targetMsg.text ? targetMsg.text.substring(0, 35) : 'وسائط/صورة/صوت';
+        addRoomActivityLog(
+          targetMsg.roomId || currentRoom.id,
+          currentRoom.name,
+          currentUser.id,
+          currentUser.username,
+          currentUser.role,
+          'delete_message',
+          `حذف رسالة للمستخدم "${targetMsg.senderName}": [${msgSnippet}]`,
+          targetMsg.senderName
+        );
+      }
+    } catch (err: any) {
+      console.error('Delete message error:', err);
+      alert(err.message || 'حدث خطأ: تعذر حذف الرسالة');
     }
-    setMessages(prev => prev.filter(m => m.id !== messageId));
-    sendSocketEvent('DELETE_MESSAGE', { messageId });
-    fetch('/api/messages/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messageId })
-    }).catch(err => console.warn('Failed to persist delete message to D1:', err));
   };
 
   // Clear Room Public Messages (Command /Clear or Admin/Staff action)
-  const clearChat = (roomId?: string) => {
+  const clearChat = async (roomId?: string) => {
     if (!currentUser) return;
     const targetRoomId = roomId || currentRoom.id;
     const targetRoom = rooms.find(r => r.id === targetRoomId) || currentRoom;
@@ -4394,47 +4567,60 @@ ${modsText}
     const hasClearPermission = ['owner', 'admin', 'management'].includes(currentUser.role);
 
     if (hasClearPermission) {
-      // Clear for everyone in room & database & WebSocket
-      setMessages(prev => prev.filter(m => m.roomId !== targetRoomId));
-      sendSocketEvent('CLEAR_CHAT', { roomId: targetRoomId });
-      fetch('/api/messages/clear', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomId: targetRoomId })
-      }).catch(err => console.warn('Failed to persist clear chat to D1:', err));
+      try {
+        const response = await fetch('/api/messages/clear', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomId: targetRoomId,
+            userId: currentUser.id,
+            userRole: currentUser.role
+          })
+        });
 
-      addRoomActivityLog(
-        targetRoomId,
-        targetRoom.name,
-        currentUser.id,
-        currentUser.username,
-        currentUser.role,
-        'clear_chat',
-        `مسح محادثة الغرفة بالكامل عبر الأمر (/Clear) بواسطة ${currentUser.username}`,
-        'الجميع'
-      );
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error || 'فشل مسح المحادثة من الخادم');
+        }
 
-      // Post system announcement message to room
-      const now = new Date();
-      const timeStr = formatEnglishTime(now);
-      const dateStr = formatEnglishDate(now);
-      const sysMsg: Message = {
-        id: `sys-clear-${Date.now()}`,
-        roomId: targetRoomId,
-        senderId: 'user-system',
-        senderName: 'System',
-        senderRole: 'management',
-        senderGender: 'other',
-        senderAvatar: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=300&q=80',
-        text: `🧹 قام (${currentUser.username}) بمسح الدردشة العامة للغرفة بنجاح`,
-        type: 'text',
-        timestamp: timeStr,
-        date: dateStr
-      };
-      setMessages(prev => [...prev.filter(m => m.roomId !== targetRoomId), sysMsg]);
-      sendSocketEvent('SEND_MESSAGE', sysMsg);
+        setMessages(prev => prev.filter(m => m.roomId !== targetRoomId));
 
-      showTopBanner(`🧹 تم مسح محادثة غرفة (${targetRoom.name}) بنجاح`);
+        addRoomActivityLog(
+          targetRoomId,
+          targetRoom.name,
+          currentUser.id,
+          currentUser.username,
+          currentUser.role,
+          'clear_chat',
+          `مسح محادثة الغرفة بالكامل عبر الأمر (/Clear) بواسطة ${currentUser.username}`,
+          'الجميع'
+        );
+
+        // Post system announcement message to room
+        const now = new Date();
+        const timeStr = formatEnglishTime(now);
+        const dateStr = formatEnglishDate(now);
+        const sysMsg: Message = {
+          id: `sys-clear-${Date.now()}`,
+          roomId: targetRoomId,
+          senderId: 'user-system',
+          senderName: 'System',
+          senderRole: 'management',
+          senderGender: 'other',
+          senderAvatar: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=300&q=80',
+          text: `🧹 قام (${currentUser.username}) بمسح الدردشة العامة للغرفة بنجاح`,
+          type: 'text',
+          timestamp: timeStr,
+          date: dateStr
+        };
+        setMessages(prev => [...prev.filter(m => m.roomId !== targetRoomId), sysMsg]);
+        sendSocketEvent('SEND_MESSAGE', sysMsg);
+
+        showTopBanner(`🧹 تم مسح محادثة غرفة (${targetRoom.name}) بنجاح`);
+      } catch (err: any) {
+        console.error('Clear chat error:', err);
+        showTopBanner(`⚠️ فشل مسح المحادثة: ${err.message || 'خطأ في الخادم'}`);
+      }
     } else {
       // Moderator, Member, Visitor get an error message: حدث خطأ ما
       showTopBanner('⚠️ حدث خطأ ما: ليس لديك صلاحية تنفيذ هذا الأمر (متاح للمالك والإدارة فقط)');
@@ -5507,7 +5693,7 @@ ${modsText}
   };
 
   // Delete User Account (Owner action or user self delete)
-  const deleteUserAccount = (userId: string) => {
+  const deleteUserAccount = async (userId: string) => {
     const target = users.find(u => u.id === userId);
     if (!target) return;
 
@@ -5516,13 +5702,43 @@ ${modsText}
       return;
     }
 
-    setUsers(prev => prev.filter(u => u.id !== userId));
-    sendSocketEvent('DELETE_USER_ACCOUNT', { userId });
+    try {
+      // 1. Database first: delete from SQLite D1 via REST endpoint
+      const response = await fetch('/api/users/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          requesterId: currentUser?.id,
+          requesterRole: currentUser?.role
+        })
+      });
 
-    if (currentUser?.id === userId) {
-      logout();
-    } else {
-      showTopBanner(`🗑️ تم حذف حساب العضو "${target.username}" بنجاح`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'فشل حذف الحساب من قاعدة البيانات');
+      }
+
+      // 2. Remove document from Firestore to prevent onSnapshot resurrection
+      deleteUserFromFirestore(userId).catch(e => console.warn('Firestore delete user error:', e));
+
+      // 3. Remove user from local state
+      setUsers(prev => prev.filter(u => u.id !== userId));
+
+      // 4. Remove associated private conversations
+      setPrivateMessages(prev => prev.filter(pm => pm.senderId !== userId && pm.receiverId !== userId));
+
+      // 5. Broadcast to WebSocket
+      sendSocketEvent('DELETE_USER_ACCOUNT', { userId });
+
+      if (currentUser?.id === userId) {
+        logout();
+      } else {
+        showTopBanner(`🗑️ تم حذف حساب العضو "${target.username}" بنجاح`);
+      }
+    } catch (err: any) {
+      console.error("Failed to delete user:", err);
+      showTopBanner(`⚠️ خطأ أثناء حذف الحساب: ${err.message || 'حدث خطأ غير متوقع'}`);
     }
   };
 
