@@ -9,6 +9,7 @@ import { COUNTRIES_LIST, getCountryFlagByName, getArabicCountryName, getEnglishC
 import { formatEnglishDate } from '../utils/dateUtils';
 import { applyLanguageSettings, getAppLanguage, t } from '../utils/translations';
 import { RANK_TITLES } from '../utils/permissions';
+import { UserMembershipStatusCard } from './UserMembershipStatusCard';
 import {
   X, User, Shield, Volume2, Globe, Lock, Trash2, Check,
   Palette, Edit3, VolumeX, Camera, Upload, Link, RefreshCw, Volume1,
@@ -553,6 +554,7 @@ export const AccountSettingsModal: React.FC = () => {
   ];
 
   const fullMenuOptions = [
+    { id: 'membership_info', label: 'معلومات العضوية والرتبة', icon: ShieldCheck },
     { id: 'profile_data', label: 'تحرير البيانات', icon: UserCheck },
     { id: 'my_info', label: 'تحرير معلوماتي', icon: HelpCircle },
     { id: 'change_username', label: 'تغيير اسم المستخدم', icon: Edit3 },
@@ -810,24 +812,46 @@ export const AccountSettingsModal: React.FC = () => {
 
           {/* MENU LIST (When no sub-menu is active) - Image 2 & Image 3 */}
           {!activeSubMenu && (
-            <div className="divide-y divide-slate-100">
-              {menuOptions.map((opt) => {
-                const IconComponent = opt.icon;
-                return (
-                  <button
-                    key={opt.id}
-                    onClick={() => setActiveSubMenu(opt.id)}
-                    className="w-full flex items-center justify-between py-3.5 px-5 hover:bg-slate-50 active:bg-slate-100 transition-colors text-right cursor-pointer group"
-                  >
-                    <span className="text-slate-800 font-bold text-sm group-hover:text-[#0b333e] transition-colors">
-                      {opt.label}
-                    </span>
-                    <IconComponent className="w-5 h-5 text-slate-700 group-hover:text-[#0b333e] transition-colors shrink-0 mr-3" />
-                  </button>
-                );
-              })}
+            <div className="p-3 sm:p-4 space-y-3.5">
+              {/* User Membership & Rank Card (الرتبة، تاريخ الانتهاء، الأيام المتبقية، والحالة فعالة/منتهية) */}
+              <UserMembershipStatusCard 
+                user={currentUser} 
+                onUpgradeClick={() => setActiveSubMenu('membership_info')} 
+              />
+
+              <div className="divide-y divide-slate-100 bg-white rounded-2xl border border-slate-100/90 shadow-2xs overflow-hidden">
+                {menuOptions.map((opt) => {
+                  const IconComponent = opt.icon;
+                  return (
+                    <button
+                      key={opt.id}
+                      onClick={() => setActiveSubMenu(opt.id)}
+                      className="w-full flex items-center justify-between py-3.5 px-5 hover:bg-slate-50 active:bg-slate-100 transition-colors text-right cursor-pointer group"
+                    >
+                      <span className="text-slate-800 font-bold text-sm group-hover:text-[#0b333e] transition-colors">
+                        {opt.label}
+                      </span>
+                      <IconComponent className="w-5 h-5 text-slate-700 group-hover:text-[#0b333e] transition-colors shrink-0 mr-3" />
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
+
+          {/* SUB-MENU: تفاصيل العضوية والرتبة والسجل التاريخي */}
+          {activeSubMenu === 'membership_info' && (
+            <div className="p-4 sm:p-5 space-y-4 animate-in fade-in duration-150">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <h3 className="text-sm font-black text-[#0b333e] flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  <span>معلومات العضوية والرتبة الحالية والسجل التاريخي</span>
+                </h3>
+              </div>
+              <UserMembershipStatusCard user={currentUser} showFullDetails={true} />
+            </div>
+          )}
+
 
           {/* SUB-MENU 0: تسجيل حساب جديد للزائر (Visitor Registration) */}
           {activeSubMenu === 'register_account' && (

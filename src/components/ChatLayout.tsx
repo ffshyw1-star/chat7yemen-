@@ -23,6 +23,7 @@ import { LogoutConfirmModal } from './LogoutConfirmModal';
 import { RoomPasswordModal } from './RoomPasswordModal';
 import { GoogleChatModal } from './GoogleChatModal';
 import { GoogleDriveModal } from './GoogleDriveModal';
+import { RadioPlayerModal } from './RadioPlayerModal';
 import { TextContextMenuModal, ImageContextMenuModal } from './ContextMenuModals';
 
 export const ChatLayout: React.FC = () => {
@@ -94,6 +95,7 @@ export const ChatLayout: React.FC = () => {
       <RoomPasswordModal />
       <GoogleChatModal isOpen={isGoogleChatOpen} onClose={() => setIsGoogleChatOpen(false)} />
       <GoogleDriveModal isOpen={isGoogleDriveOpen} onClose={() => setIsGoogleDriveOpen(false)} />
+      <RadioPlayerModal />
 
       {/* Global Long-Press Context Menus for Text and Images */}
       <TextContextMenuModal

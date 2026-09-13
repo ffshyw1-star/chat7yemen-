@@ -58,8 +58,8 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
     switch (role) {
       case 'owner':
         return {
-          icon: <img src="/owner_badge.svg" alt="owner" className="w-full h-full object-cover rounded-full" />,
-          bg: 'bg-amber-500 border-amber-300',
+          icon: <img src="/owner.svg" alt="owner" className="w-full h-full object-contain p-0.5" />,
+          bg: 'bg-amber-950/80 border-amber-400 shadow-amber-500/30',
         };
       case 'system':
         return {

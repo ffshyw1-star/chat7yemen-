@@ -25,12 +25,43 @@ export type PrivatePrivacySetting = 'everyone' | 'members' | 'friends' | 'none';
 
 export type ThemeMode = 'default' | 'dark' | 'gray' | 'lite' | 'light' | 'emerald' | 'sapphire' | 'rose' | 'purple';
 
+export interface UserMembership {
+  rank: UserRole;
+  status: 'active' | 'expired';
+  startAt: number; // Server epoch timestamp in milliseconds
+  expiresAt: number | null; // Server epoch timestamp in milliseconds, or null if permanent
+  durationDays: number; // typically 30 days
+  assignedBy: 'store' | 'owner' | 'admin' | 'system';
+  assignedByUserId?: string;
+  assignedByUsername?: string;
+  permanent: boolean;
+}
+
+export interface MembershipHistoryItem {
+  id: string;
+  rank: UserRole;
+  startAt: number;
+  expiresAt: number | null;
+  durationDays: number;
+  assignedBy: 'store' | 'owner' | 'admin' | 'system';
+  assignedByUserId?: string;
+  assignedByUsername?: string;
+  permanent: boolean;
+  status: 'active' | 'expired' | 'replaced';
+  createdAt: number;
+}
+
 export interface User {
   id: string;
   username: string;
+  isPrimaryOwner?: boolean; // حقل مؤكد لصاحب الموقع الأساسي (غير قابل للخفض أو التعديل أو الحذف)
   password?: string;
+
+  passwordUpdatedAt?: number | string;
   email?: string;
   role: UserRole;
+  membership?: UserMembership;
+  membershipHistory?: MembershipHistoryItem[];
   roomRole?: RoomRole;
   gender: Gender;
   age: number | string; // 16-99 or 'عدم الإظهار'
@@ -67,6 +98,8 @@ export interface User {
   onlineStatus: OnlineStatus;
   isOnline?: boolean;
   ip?: string;
+  deviceId?: string;
+  browserFingerprint?: string;
   locationMap?: string;
   previousAccount?: string;
   otherAccounts?: string[];
@@ -91,6 +124,23 @@ export interface User {
   chatIsNeon?: boolean;
 }
 
+export interface RoomEvent {
+  id: string;
+  type: 'room_event';
+  eventType: 'join' | 'leave';
+  userId: string;
+  username: string;
+  text?: string;
+  rank: UserRole | string;
+  roomId: string;
+  avatar?: string;
+  gender?: Gender;
+  usernameColor?: string;
+  createdAt: number;
+  timestamp?: string;
+}
+
+
 export interface Message {
   id: string;
   roomId: string;
@@ -109,16 +159,31 @@ export interface Message {
   textStyle?: string;
   textBgGradient?: string;
   isNeon?: boolean;
-  type: 'text' | 'image' | 'voice' | 'youtube' | 'system';
+  type: 'text' | 'image' | 'voice' | 'youtube' | 'system' | 'room_event';
+  eventType?: 'join' | 'leave';
+  userId?: string;
+  username?: string;
+  rank?: UserRole | string;
   mediaUrl?: string;
   voiceDuration?: number; // seconds
   timestamp: string; // e.g. "17:15"
   date?: string; // e.g. "16/08/2026"
-  createdAt?: string;
+  createdAt?: number | string;
+  isServerEvent?: boolean;
   status?: string;
   reactions?: Record<string, string[]>; // emoji -> array of user IDs who reacted
   targetUserId?: string;
   targetUsername?: string;
+  replyToUserId?: string;
+  replyToUsername?: string;
+}
+
+export interface RadioStation {
+  id: string;
+  name: string;
+  description: string;
+  url: string;
+  category: string;
 }
 
 export interface RoomStaffMember {
@@ -147,6 +212,7 @@ export interface Room {
   mutedUsers?: string[]; // Array of muted user IDs in this room
   kickedUsers?: string[]; // Array of kicked/banned user IDs from this room
   roomStaff?: RoomStaffMember[]; // Array of honorary room staff (مشرف غرفة / مدير غرفة / مالك غرفة)
+  createdBy?: string; // ID of the user who created the room
 }
 
 export interface PrivateMessage {
@@ -449,11 +515,52 @@ export interface SiteSettings {
   enableGifts?: boolean;
   enableSocialWall?: boolean;
   hideChatBackgroundForVisitorAndMember?: boolean;
+  // Proxy / VPN / Tor & Abuse Detection Settings
+  enableProxyVpnDetection?: boolean;
+  blockProxyVpn?: boolean;
+  blockTor?: boolean;
+  blockDatacenterIp?: boolean;
   blockedDevices?: BlockedDeviceItem[];
   blockedBrowsers?: BlockedBrowserItem[];
   blockedCountries?: BlockedCountryItem[];
   blockedXBands?: BlockedXBandItem[];
   backups?: BackupItem[];
+}
+
+export interface GuestBanRecord {
+  id: string;
+  status: 'active' | 'expired' | 'revoked';
+  reason: string;
+  createdAt: number;
+  expiresAt?: number;
+  targetRoom?: string;
+  actionBy?: string;
+  identifiers: {
+    ip?: string;
+    deviceId?: string;
+    browserFingerprint?: string;
+    guestSessionId?: string;
+    username?: string;
+  };
+}
+
+export interface ProxyVpnInspectionStats {
+  isRunning: boolean;
+  proxyDetectedCount: number;
+  vpnDetectedCount: number;
+  torDetectedCount: number;
+  datacenterCount: number;
+  normalCount: number;
+  unknownCount: number;
+  recentChecks: Array<{
+    id: string;
+    timestamp: number;
+    ip: string;
+    indicator: 'Proxy detected' | 'VPN detected' | 'Tor detected' | 'Datacenter IP' | 'Normal connection' | 'Unknown';
+    actionTaken: 'allowed' | 'blocked';
+    username?: string;
+    reason?: string;
+  }>;
 }
 
 export interface IPModerationRecord {
@@ -513,4 +620,22 @@ export interface BlockConfirmState {
   } | null;
   actionType: BlockActionType;
   onConfirm?: () => void;
+}
+
+export function getEffectiveUserRole(user?: User | null, currentTime: number = Date.now()): UserRole {
+  if (!user) return 'visitor';
+  if (user.role === 'owner' || user.id === 'user-owner' || (user as any).is_super_admin) return 'owner';
+  if (user.membership) {
+    if (user.membership.permanent) {
+      return user.membership.rank || user.role;
+    }
+    if (user.membership.expiresAt && currentTime >= user.membership.expiresAt) {
+      return 'member';
+    }
+    if (user.membership.status === 'active') {
+      return user.membership.rank || user.role;
+    }
+    return 'member';
+  }
+  return user.role || 'member';
 }

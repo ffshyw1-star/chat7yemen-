@@ -221,16 +221,7 @@ export const TextFormatModal: React.FC<TextFormatModalProps> = ({
   const [showSavedNotification, setShowSavedNotification] = useState<boolean>(false);
 
   // Permissions for background tab
-  const isOwnerOrAdmin =
-    currentUser?.role === 'owner' ||
-    currentUser?.role === 'management' ||
-    currentUser?.role === 'admin' ||
-    currentUser?.role === 'moderator' ||
-    currentUser?.role === 'vip';
-
-  const isBgHiddenForVisitorMember = siteSettings?.hideChatBackgroundForVisitorAndMember !== false;
-  const hasBgRolePermission = hasRolePermission(currentUser?.role, 'chat_background', siteSettings?.rolePermissions);
-  const canAccessBackgroundTab = isOwnerOrAdmin || (!isBgHiddenForVisitorMember && hasBgRolePermission);
+  const canAccessBackgroundTab = currentUser?.role !== 'visitor' || hasRolePermission(currentUser?.role, 'chat_background', siteSettings?.rolePermissions);
 
   useEffect(() => {
     if (!canAccessBackgroundTab && activeTab === 'background') {
@@ -245,7 +236,7 @@ export const TextFormatModal: React.FC<TextFormatModalProps> = ({
   // Selected style object
   const currentStyleObj = FONT_STYLE_OPTIONS.find(s => s.id === selectedStyleOption) || FONT_STYLE_OPTIONS[0];
 
-  const handleSaveAndApply = () => {
+  const handleSaveAndApply = async () => {
     const weightVal = currentStyleObj.weight === 'heavy' ? '900' : currentStyleObj.weight === 'bold' ? 'bold' : 'normal';
     const styleVal = currentStyleObj.italic ? 'italic' : 'normal';
     const bgToSave = canAccessBackgroundTab ? (selectedBgGradient || undefined) : undefined;
@@ -270,9 +261,9 @@ export const TextFormatModal: React.FC<TextFormatModalProps> = ({
       console.error('Error saving format preferences in localStorage:', err);
     }
 
-    // 2. Update currentUser via updateUserProfile
+    // 2. Update currentUser via updateUserProfile (saves to Firestore & backend D1)
     if (currentUser) {
-      updateUserProfile({
+      await updateUserProfile({
         chatTextColor: selectedColor,
         chatTextBgGradient: bgToSave,
         chatFontFamily: fontToSave,
@@ -340,30 +331,51 @@ export const TextFormatModal: React.FC<TextFormatModalProps> = ({
         {/* Modal Body Container */}
         <div className="p-4 sm:p-5 flex flex-col flex-1 overflow-y-auto space-y-4">
           
-          {/* 1. Preview Box (عرض) */}
-          <div className="space-y-1">
-            <div className="text-right text-xs font-bold text-slate-700 pr-1">
-              عرض
+          {/* 1. Preview Box (عرض مربع الرسالة) */}
+          <div className="space-y-1.5">
+            <div className="text-right text-xs font-bold text-slate-700 pr-1 flex items-center justify-between">
+              <span>معاينة مربع الرسالة والنص</span>
+              {selectedBgGradient && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedBgGradient(null)}
+                  className="text-[11px] text-rose-600 hover:text-rose-700 font-bold cursor-pointer"
+                >
+                  إلغاء الخلفية ✕
+                </button>
+              )}
             </div>
-            <div className="bg-transparent py-4 px-3 flex items-center justify-center min-h-[55px] text-center border-b border-slate-200">
-              <span
+            <div className="bg-slate-100/70 p-3 sm:p-4 rounded-xl flex items-center justify-center min-h-[75px] text-center border border-slate-200">
+              <div
+                id="format-preview-message-box"
+                className="message-box transition-all select-text"
                 style={{
-                  fontFamily: currentFontObj.cssFamily !== 'inherit' ? currentFontObj.cssFamily : undefined,
-                  color: selectedColor,
-                  fontWeight: currentStyleObj.weight === 'heavy' ? 900 : currentStyleObj.weight === 'bold' ? 700 : 400,
-                  fontStyle: currentStyleObj.italic ? 'italic' : 'normal',
-                  background: selectedBgGradient || undefined,
-                  padding: selectedBgGradient ? '4px 14px' : undefined,
-                  borderRadius: selectedBgGradient ? '9999px' : undefined,
-                  display: selectedBgGradient ? 'inline-block' : undefined,
-                  textShadow: isNeon || activeTab === 'neon'
-                    ? `0 0 8px ${selectedColor}, 0 0 16px ${selectedColor}, 0 0 2px #000`
-                    : '0 1px 2px rgba(0,0,0,0.15)'
+                  backgroundColor: selectedBgGradient && !selectedBgGradient.startsWith('linear-gradient') ? selectedBgGradient : undefined,
+                  backgroundImage: selectedBgGradient && selectedBgGradient.startsWith('linear-gradient') ? selectedBgGradient : undefined,
+                  borderRadius: selectedBgGradient ? '12px' : undefined,
+                  padding: selectedBgGradient ? '8px 16px' : '3px 8px',
+                  border: selectedBgGradient ? '1px solid rgba(0,0,0,0.12)' : '1px dashed #cbd5e1',
+                  boxShadow: selectedBgGradient ? '0 2px 8px rgba(0,0,0,0.1)' : undefined,
+                  display: 'inline-block',
+                  maxWidth: '100%'
                 }}
-                className="text-base sm:text-lg select-text break-words transition-all"
               >
-                .Lorem ipsum dolor sit amet
-              </span>
+                <div
+                  id="format-preview-message-text"
+                  style={{
+                    color: selectedColor,
+                    fontFamily: currentFontObj.cssFamily !== 'inherit' ? currentFontObj.cssFamily : undefined,
+                    fontWeight: currentStyleObj.weight === 'heavy' ? 900 : currentStyleObj.weight === 'bold' ? 700 : 400,
+                    fontStyle: currentStyleObj.italic ? 'italic' : 'normal',
+                    textShadow: isNeon || activeTab === 'neon'
+                      ? `0 0 8px ${selectedColor}, 0 0 16px ${selectedColor}, 0 0 2px #000`
+                      : undefined
+                  }}
+                  className="message-text text-sm sm:text-base select-text break-words transition-all"
+                >
+                  .Lorem ipsum dolor sit amet
+                </div>
+              </div>
             </div>
           </div>
 

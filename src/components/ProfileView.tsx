@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useChat } from '../context/ChatContext';
 import { UserAvatar } from './UserAvatar';
 import { UsernameDisplay } from './UsernameDisplay';
+import { RoleBadge } from './RoleBadge';
 import { User, UserRole } from '../types';
 import {
   getRankEmoji,
@@ -19,8 +20,11 @@ import {
   canPerformModActions,
   canEditPhotos,
   canEditProfile,
-  formatLastSeenDateTime
+  formatLastSeenDateTime,
+  isPrimaryOwner,
+  isGrantedOwner
 } from '../utils/permissions';
+
 import { getEnglishCountryName, getArabicCountryName, getCountryFlagByName, getUserFlagEmoji } from '../utils/geoip';
 import { formatEnglishNumber, toEnglishDigits, formatEnglishDate } from '../utils/dateUtils';
 import {
@@ -71,7 +75,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     modLogs, users, rooms, setIsProfileSettingsOpen, setIsStoreOpen,
     setIsRoomSettingsOpen, setIsOwnerDashboardOpen, banList, ipModerations,
     moderatorAction, muteUserInRoom, unmuteUserInRoom, kickUserFromRoom, unkickUserFromRoom, showTopBanner,
-    updateUserRole, ownerUpdateUser, updateUserProfile, reportUserMessage
+    updateUserRole, ownerUpdateUser, adminChangeMemberPassword, updateUserProfile, reportUserMessage,
+    getMembershipStatus, cancelMembership
   } = useChat();
 
   const [activeTab, setActiveTab] = useState<'my_info' | 'friends' | 'system_info' | 'mute_log'>('my_info');
@@ -128,6 +133,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [showRankChangeModal, setShowRankChangeModal] = useState(false);
   const [showPasswordChangeModal, setShowPasswordChangeModal] = useState(false);
   const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [isPasswordSaving, setIsPasswordSaving] = useState(false);
 
   const initialTarget = user || selectedUserForProfile || currentUser;
   const target = users.find(u => u.id === initialTarget?.id) || initialTarget;
@@ -233,8 +239,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   // Handle direct role selection from dropdown (Owner only)
   const handleRoleSelectChange = (newRole: UserRole) => {
     if (!currentUser || currentUser.role !== 'owner') return;
-    if (target.id === 'user-owner' && currentUser.id !== 'user-owner') {
-      alert('🚫 لا يمكن تعديل أو تغيير رتبة المالك الرئيسي إلا بواسطة المالك الرئيسي الأصلي!');
+    if (isPrimaryOwner(target) || target.id === 'user-owner') {
+      alert('🚫 رتبة صاحب الموقع الأساسي (Primary Owner) محمية بشكل دائم ومطلق، ولا يمكن تغييرها أو خفضها لأي سبب!');
+      return;
+    }
+    if (newRole === 'owner' && !isPrimaryOwner(currentUser)) {
+      alert('🚫 صاحب الموقع الأساسي فقط من يملك صلاحية منح رتبة مالك لمستخدمين آخرين.');
+      return;
+    }
+    if (target.role === 'owner' && !isPrimaryOwner(currentUser)) {
+      alert('🚫 صاحب الموقع الأساسي فقط من يملك صلاحية تعديل أو خفض رتبة مالك آخر.');
       return;
     }
     updateUserRole(target.id, newRole);
@@ -244,8 +258,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     showTopBanner(`👑 تم تغيير رتبة العضو "${target.username}" إلى (${getRankTitle(newRole)})`);
   };
 
+
   // Name Change Handler with Role Permissions
-  const handleSaveNewName = () => {
+  const handleSaveNewName = async () => {
     if (!newNameInput.trim()) {
       alert('الرجاء كتابة اسم صحيح');
       return;
@@ -256,17 +271,25 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       return;
     }
 
+    let res: { success: boolean; error?: string };
     if (currentUser?.id === target.id) {
-      updateUserProfile({ username: trimmedName });
+      res = await updateUserProfile({ username: trimmedName });
     } else {
-      ownerUpdateUser(target.id, { username: trimmedName });
+      res = await ownerUpdateUser(target.id, { username: trimmedName });
     }
+
+    if (!res.success) {
+      showTopBanner(`❌ فشل تغيير الاسم: ${res.error || 'خطأ'}`);
+      alert(`❌ فشل تغيير الاسم: ${res.error || 'يرجى المحاولة مجدداً'}`);
+      return;
+    }
+
     setIsEditingName(false);
     showTopBanner(`✨ تم تغيير اسم العضو إلى (${trimmedName}) بنجاح وحفظه في السيرفر`);
   };
 
   // Username Color Handler
-  const handleSaveUsernameColor = (color: string) => {
+  const handleSaveUsernameColor = async (color: string) => {
     if (!currentUser) return;
     const canChange = checkIsOwner(currentUser) || checkIsManagementOrHigher(currentUser) || currentUser.id === target.id;
     if (!canChange) {
@@ -274,12 +297,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       return;
     }
     setSelectedNameColor(color);
+    let res: { success: boolean; error?: string };
     if (currentUser.id === target.id) {
-      updateUserProfile({ usernameColor: color });
+      res = await updateUserProfile({ usernameColor: color });
     } else {
-      ownerUpdateUser(target.id, { usernameColor: color });
+      res = await ownerUpdateUser(target.id, { usernameColor: color });
     }
-    showTopBanner(`🎨 تم تغيير وتطبيق لون اسم المستخدم (${target.username}) بنجاح`);
+    if (res.success) {
+      showTopBanner(`🎨 تم تغيير وتطبيق لون اسم المستخدم (${target.username}) بنجاح`);
+    } else {
+      showTopBanner(`❌ فشل حفظ لون الاسم: ${res.error || 'خطأ'}`);
+    }
   };
 
   // Photo Upload Handlers with Role Permissions
@@ -299,87 +327,127 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     wallInputRef.current?.click();
   };
 
-  const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (file.size > 8 * 1024 * 1024) {
+      alert('حجم الصورة كبير جداً! يُرجى اختيار صورة أقل من 8 ميجابايت.');
+      return;
+    }
+
     if (isSystemTarget) {
       if (!isOwner) {
         alert('🚫 المالك فقط من يملك الصلاحية لتعديل صورة حساب النظام (System)!');
         return;
       }
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        ownerUpdateUser(target.id || 'user-system', { avatar: result });
-        showTopBanner('📸 تم تحديث صورة System بنجاح وحفظها في السيرفر');
-      };
-      reader.readAsDataURL(file);
+      try {
+        const { compressAvatar } = await import('../utils/imageCompressor');
+        const compressed = await compressAvatar(file, 256, 0.85);
+        const res = await ownerUpdateUser(target.id || 'user-system', { avatar: compressed });
+        if (res.success) {
+          showTopBanner('📸 تم تحديث صورة System بنجاح وحفظها في السيرفر');
+        } else {
+          showTopBanner(`❌ فشل تحديث صورة System: ${res.error || 'خطأ'}`);
+        }
+      } catch (err: any) {
+        showTopBanner(`❌ خطأ في معالجة الصورة: ${err.message || 'خطأ'}`);
+      }
       e.target.value = '';
       return;
     }
+
     if (!canUserEditTargetPhotos) {
       alert('🚫 ليس لديك الصلاحية لتعديل الصورة الشخصية لهذا العضو بحسب الرتبة!');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
+
+    try {
+      const { compressAvatar } = await import('../utils/imageCompressor');
+      const compressed = await compressAvatar(file, 256, 0.85);
+
+      let res: { success: boolean; error?: string };
       if (currentUser?.id === target.id) {
-        updateUserProfile({ avatar: result });
+        res = await updateUserProfile({ avatar: compressed });
       } else {
-        ownerUpdateUser(target.id, { avatar: result });
+        res = await ownerUpdateUser(target.id, { avatar: compressed });
       }
-      showTopBanner('📸 تم رفع وتحديث الصورة الشخصية وحفظها في السيرفر');
-    };
-    reader.readAsDataURL(file);
+
+      if (res.success) {
+        showTopBanner('📸 تم رفع وتحديث الصورة الشخصية وحفظها في قاعدة البيانات بشكل دائم');
+      } else {
+        showTopBanner(`❌ فشل حفظ الصورة: ${res.error || 'خطأ'}`);
+        alert(`❌ فشل حفظ الصورة في قاعدة البيانات: ${res.error || 'يرجى المحاولة مجدداً'}`);
+      }
+    } catch (err: any) {
+      showTopBanner(`❌ خطأ في معالجة الصورة: ${err.message || 'خطأ'}`);
+    }
     e.target.value = '';
   };
 
-  const handleWallFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleWallFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!canUserEditTargetPhotos) {
       alert('🚫 ليس لديك الصلاحية لتعديل صورة الحائط لهذا العضو بحسب الرتبة!');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
+    try {
+      const { compressCover } = await import('../utils/imageCompressor');
+      const compressed = await compressCover(file, 800, 400, 0.8);
+
+      let res: { success: boolean; error?: string };
       if (currentUser?.id === target.id) {
-        updateUserProfile({ wallCover: result });
+        res = await updateUserProfile({ wallCover: compressed });
       } else {
-        ownerUpdateUser(target.id, { wallCover: result });
+        res = await ownerUpdateUser(target.id, { wallCover: compressed });
       }
-      showTopBanner('🌄 تم رفع وتحديث صورة الحائط وحفظها في السيرفر');
-    };
-    reader.readAsDataURL(file);
+
+      if (res.success) {
+        showTopBanner('🌄 تم رفع وتحديث صورة الحائط وحفظها في قاعدة البيانات');
+      } else {
+        showTopBanner(`❌ فشل حفظ صورة الحائط: ${res.error || 'خطأ'}`);
+      }
+    } catch (err: any) {
+      showTopBanner(`❌ خطأ في معالجة صورة الحائط: ${err.message || 'خطأ'}`);
+    }
     e.target.value = '';
   };
 
-  const handleRemoveAvatar = () => {
+  const handleRemoveAvatar = async () => {
     if (!canUserEditTargetPhotos) {
       showTopBanner('🚫 ليس لديك الصلاحية لحذف الصورة الشخصية لهذا العضو بحسب الرتبة!');
       return;
     }
+    let res: { success: boolean; error?: string };
     if (currentUser?.id === target.id) {
-      updateUserProfile({ avatar: '' });
+      res = await updateUserProfile({ avatar: '' });
     } else {
-      ownerUpdateUser(target.id, { avatar: '' });
+      res = await ownerUpdateUser(target.id, { avatar: '' });
     }
-    showTopBanner('❌ تم حذف الصورة الشخصية وحفظ التغيير في السيرفر');
+    if (res.success) {
+      showTopBanner('❌ تم حذف الصورة الشخصية وحفظ التغيير في السيرفر');
+    } else {
+      showTopBanner(`⚠️ فشل حذف الصورة: ${res.error || 'خطأ'}`);
+    }
   };
 
-  const handleRemoveWall = () => {
+  const handleRemoveWall = async () => {
     if (!canUserEditTargetPhotos) {
-      showTopBanner('🚫 ليس لديك الصلاحية لحذف صورة الغلاف لهذا العضو بحسب الرتبة!');
+      showTopBanner('🚫 ليس لديك الصلاحية لحذف صورة الحائط لهذا العضو بحسب الرتبة!');
       return;
     }
+    let res: { success: boolean; error?: string };
     if (currentUser?.id === target.id) {
-      updateUserProfile({ wallCover: '' });
+      res = await updateUserProfile({ wallCover: '' });
     } else {
-      ownerUpdateUser(target.id, { wallCover: '' });
+      res = await ownerUpdateUser(target.id, { wallCover: '' });
     }
-    showTopBanner('❌ تم حذف صورة الحائط وحفظ التغيير في السيرفر');
+    if (res.success) {
+      showTopBanner('❌ تم حذف صورة الحائط وحفظ التغيير في السيرفر');
+    } else {
+      showTopBanner(`⚠️ فشل حذف صورة الحائط: ${res.error || 'خطأ'}`);
+    }
   };
 
   const handleClose = () => {
@@ -1034,7 +1102,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                         >
                           <span className="font-extrabold text-xs text-amber-800 flex items-center gap-1">
                             <span>لوحة تحكم</span>
-                            <span>👑</span>
+                            <RoleBadge role="owner" size="xs" />
                           </span>
                           <Shield className="w-4 h-4 text-amber-600 shrink-0" />
                         </button>
@@ -1142,8 +1210,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 className="font-black text-base sm:text-lg drop-shadow-md"
               />
               {!isSystemTarget ? (
-                <span className="text-xs text-amber-300 bg-slate-950/80 px-2 py-0.5 rounded-lg border border-amber-500/40 font-bold flex items-center gap-1">
-                  <span className={getRankEmojiClass(target.role, target.username)}>{getRankEmoji(target.role, target.username)}</span>
+                <span className="text-xs text-amber-300 border-amber-500/40 bg-slate-950/80 px-2 py-0.5 rounded-lg border font-bold flex items-center gap-1.5">
+                  {target.role === 'owner' ? (
+                    <RoleBadge role="owner" customBadge={target.customRoleBadge} size="xs" />
+                  ) : (
+                    <span className={getRankEmojiClass(target.role, target.username)}>{getRankEmoji(target.role, target.username)}</span>
+                  )}
                   <span>{getRankTitle(target.role, target.username)}</span>
                 </span>
               ) : (
@@ -1438,6 +1510,57 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 {targetRoom?.name || 'غرفة اليمن'}
               </span>
             </div>
+
+            {/* Membership Details Card (بيانات العضوية والصلاحية) */}
+            {target.membership && (() => {
+              const mem = getMembershipStatus(target.membership);
+              return (
+                <div className="p-3 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 font-black text-xs text-amber-900">
+                      <span>🎖️ حالة العضوية:</span>
+                      <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black ${
+                        mem.isPermanent ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
+                        mem.isActive ? 'bg-amber-100 text-amber-900 border border-amber-300' :
+                        'bg-rose-100 text-rose-800 border border-rose-300'
+                      }`}>
+                        {mem.isPermanent ? 'دائمة ♾️' : mem.isActive ? 'نشطة 🟢' : 'منتهية ⚠️'}
+                      </span>
+                    </div>
+                    {currentUser?.role === 'owner' && mem.isActive && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!confirm(`هل أنت متأكد من إلغاء عضوية ${target.username} فوراً وإرجاعه لعضو مسجل؟`)) return;
+                          await cancelMembership(target.id);
+                        }}
+                        className="text-[10px] text-rose-700 bg-rose-100 hover:bg-rose-200 px-2 py-0.5 rounded-md font-bold cursor-pointer transition-colors"
+                      >
+                        إلغاء فوراً
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] text-slate-700 font-bold">
+                    <div>
+                      <span className="text-slate-400 font-normal">تاريخ البداية: </span>
+                      <span className="font-mono text-slate-800">{mem.formattedStart}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 font-normal">تاريخ الانتهاء: </span>
+                      <span className="font-mono text-slate-800">{mem.formattedExpires}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 font-normal">المدة المتبقية: </span>
+                      <span className="text-blue-600 font-black">{mem.remainingText}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 font-normal">المصدر: </span>
+                      <span className="text-slate-800 font-bold">{mem.sourceText}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* 8. Bio / Personal Note (معلوماتي) */}
             <div className="pt-1 space-y-1.5">
@@ -2132,9 +2255,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   >
                     <span>{target.username}</span>
                   </h3>
-                  <p className="text-slate-200 text-xs drop-shadow-xs truncate font-bold flex items-center gap-1">
+                  <p className="text-slate-200 text-xs drop-shadow-xs truncate font-bold flex items-center gap-1.5">
                     <span className="text-amber-300 font-extrabold">{getRankTitle(target.role, target.username)}</span>
-                    <span className={getRankEmojiClass(target.role, target.username)}>{getRankEmoji(target.role, target.username)}</span>
+                    {target.role === 'owner' ? (
+                      <RoleBadge role="owner" customBadge={target.customRoleBadge} size="xs" />
+                    ) : (
+                      <span className={getRankEmojiClass(target.role, target.username)}>{getRankEmoji(target.role, target.username)}</span>
+                    )}
                     <span className="text-slate-300">|</span>
                     <span>{target.statusMessage || target.bio || 'أهلاً وسهلاً بكم'}</span>
                   </p>
@@ -2261,8 +2388,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                           <span className="text-amber-500 text-base font-bold">🔑</span>
                           <span className="text-xs font-extrabold">تغيير باسورد العضو</span>
                         </div>
-                        <span className="text-[10px] bg-amber-100 text-amber-900 px-2 py-0.5 rounded-md font-bold">
-                          صلاحية المالك فقط 👑
+                        <span className="text-[10px] bg-sky-100 text-sky-900 px-2 py-0.5 rounded-md font-bold flex items-center gap-1">
+                          <span>صلاحية المالك فقط</span>
+                          <RoleBadge role="owner" size="xs" />
                         </span>
                       </button>
                     </div>
@@ -2594,44 +2722,65 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
             {/* Vertical Ranks List from Visitor to Owner */}
             <div className="p-3 sm:p-4 space-y-1.5 max-h-[70vh] overflow-y-auto">
-              <p className="text-[11px] text-slate-500 font-bold mb-2">
-                اختر رتبة لتطبيقها فوراً على العضو ({target.username}):
-              </p>
+              {isPrimaryOwner(target) || target.id === 'user-owner' ? (
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-center space-y-2">
+                  <div className="text-2xl">👑</div>
+                  <div className="font-black text-sm text-amber-900">صاحب الموقع الأساسي (Primary Owner)</div>
+                  <p className="text-xs text-amber-800 leading-relaxed">
+                    رتبة صاحب الموقع الأساسي محمية بشكل دائم ومطلق، ولا يمكن لأي مستخدم أو مشرف أو إدارة أو مالك آخر خفضها أو تعديلها بأي شكل.
+                  </p>
+                </div>
+              ) : target.role === 'owner' && !isPrimaryOwner(currentUser) ? (
+                <div className="p-4 bg-slate-100 border border-slate-200 rounded-xl text-center space-y-2">
+                  <div className="text-2xl">🛡️</div>
+                  <div className="font-black text-sm text-slate-800">رتبة مالك (Owner)</div>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    صاحب الموقع الأساسي فقط هو المخول بتعديل أو خفض رتبة المالكين الآخرين.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-[11px] text-slate-500 font-bold mb-2">
+                    اختر رتبة لتطبيقها فوراً على العضو ({target.username}):
+                  </p>
 
-              {(['visitor', 'member', 'vip', 'moderator', 'management', 'admin', 'owner'] as UserRole[]).map((r) => {
-                const isCurrent = target.role === r;
-                return (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => {
-                      handleRoleSelectChange(r);
-                      setShowRankChangeModal(false);
-                    }}
-                    className={`w-full p-3 rounded-xl flex items-center justify-between transition-all cursor-pointer border text-right ${
-                      isCurrent
-                        ? 'bg-amber-500 text-slate-950 border-amber-600 font-black shadow-xs'
-                        : 'bg-slate-50 hover:bg-amber-50/60 text-slate-800 border-slate-200 hover:border-amber-300 font-bold'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className={`text-base ${getRankEmojiClass(r, target.username)}`}>
-                        {getRankEmoji(r, target.username)}
-                      </span>
-                      <span className="text-xs font-extrabold">{getRankTitle(r, target.username)}</span>
-                    </div>
-                    {isCurrent ? (
-                      <span className="text-[10px] bg-slate-950 text-amber-400 px-2 py-0.5 rounded-full font-black">
-                        الحالية ✓
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-slate-400 font-medium">
-                        تطبيق فوري ⚡
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+                  {(['visitor', 'member', 'vip', 'moderator', 'management', 'admin', ...(isPrimaryOwner(currentUser) ? ['owner' as UserRole] : [])] as UserRole[]).map((r) => {
+                    const isCurrent = target.role === r;
+                    return (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => {
+                          handleRoleSelectChange(r);
+                          setShowRankChangeModal(false);
+                        }}
+                        className={`w-full p-3 rounded-xl flex items-center justify-between transition-all cursor-pointer border text-right ${
+                          isCurrent
+                            ? 'bg-amber-500 text-slate-950 border-amber-600 font-black shadow-xs'
+                            : 'bg-slate-50 hover:bg-amber-50/60 text-slate-800 border-slate-200 hover:border-amber-300 font-bold'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className={`text-base ${getRankEmojiClass(r, target.username)}`}>
+                            {getRankEmoji(r, target.username)}
+                          </span>
+                          <span className="text-xs font-extrabold">{getRankTitle(r, target.username)}</span>
+                        </div>
+                        {isCurrent ? (
+                          <span className="text-[10px] bg-slate-950 text-amber-400 px-2 py-0.5 rounded-full font-black">
+                            الحالية ✓
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 font-medium">
+                            تطبيق فوري ⚡
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </>
+              )}
+
 
               <div className="pt-2">
                 <button
@@ -2698,23 +2847,38 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <div className="flex items-center justify-start gap-2.5 pt-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    if (!newPasswordInput.trim()) {
+                  disabled={isPasswordSaving}
+                  onClick={async () => {
+                    const pass = newPasswordInput.trim();
+                    if (!pass) {
                       alert('الرجاء كتابة كلمة مرور صالحة');
                       return;
                     }
-                    ownerUpdateUser(target.id, { password: newPasswordInput.trim() });
+                    if (pass.length < 3) {
+                      alert('كلمة المرور يجب أن تكون 3 أحرف على الأقل');
+                      return;
+                    }
+                    setIsPasswordSaving(true);
+                    const res = await adminChangeMemberPassword(target.id, pass);
+                    setIsPasswordSaving(false);
+                    if (!res.success) {
+                      alert(`❌ فشل تغيير كلمة المرور: ${res.error || 'خطأ في الخادم'}`);
+                      showTopBanner(`❌ فشل تغيير كلمة المرور: ${res.error || 'خطأ'}`);
+                      return;
+                    }
                     setShowPasswordChangeModal(false);
-                    showTopBanner(`🔑 تم تغيير باسورد العضو (${target.username}) بنجاح`);
+                    setNewPasswordInput('');
+                    showTopBanner(`🔑 تم تغيير وتشفير كلمة مرور العضو (${target.username}) بنجاح عبر السيرفر الآمن`);
                   }}
-                  className="bg-[#0284c7] hover:bg-[#0369a1] active:scale-95 text-white font-black text-xs px-5 py-2.5 rounded-xl transition-all cursor-pointer shadow-md flex items-center gap-1.5"
+                  className="bg-[#0284c7] hover:bg-[#0369a1] active:scale-95 text-white font-black text-xs px-5 py-2.5 rounded-xl transition-all cursor-pointer shadow-md flex items-center gap-1.5 disabled:opacity-60"
                 >
                   <Save className="w-4 h-4" />
-                  <span>حفظ</span>
+                  <span>{isPasswordSaving ? 'جاري الحفظ...' : 'حفظ'}</span>
                 </button>
 
                 <button
                   type="button"
+                  disabled={isPasswordSaving}
                   onClick={() => setShowPasswordChangeModal(false)}
                   className="bg-[#002f34] hover:bg-[#001f24] active:scale-95 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition-all cursor-pointer"
                 >

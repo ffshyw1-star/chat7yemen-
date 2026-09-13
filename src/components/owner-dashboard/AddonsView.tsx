@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useChat } from '../../context/ChatContext';
 import {
-  Code, Bot, Save, Sliders, Webhook, Eye, Play, Bell, UserX, CheckCircle2, AlertCircle, RefreshCw
+  Code, Bot, Save, Sliders, Webhook, Eye, Play, Bell, UserX, CheckCircle2, AlertCircle, RefreshCw,
+  Loader2
 } from 'lucide-react';
 
 export const AddonsView: React.FC<{ showToast: (msg: string) => void }> = ({ showToast }) => {
   const { siteSettings, updateSiteSettings, sendBotWelcomeMessage, cleanupInactiveUsers } = useChat();
+
+  const [isSaving, setIsSaving] = useState(false);
+  const [isTogglingBot, setIsTogglingBot] = useState(false);
 
   const [customCss, setCustomCss] = useState(
     (siteSettings as any)?.customCss || '/* Custom Owner CSS */\n.custom-glow { filter: drop-shadow(0 0 8px rgba(234, 179, 8, 0.4)); }'
@@ -49,11 +53,20 @@ export const AddonsView: React.FC<{ showToast: (msg: string) => void }> = ({ sho
     }
   }, [siteSettings]);
 
-  const handleInstantToggleBot = () => {
+  const handleInstantToggleBot = async () => {
+    if (isSaving || isTogglingBot) return;
     const nextVal = !welcomeBotActive;
-    setWelcomeBotActive(nextVal);
-    updateSiteSettings({ welcomeBotActive: nextVal } as any);
-    showToast(nextVal ? 'تم تفعيل بوت الترحيب فورياً 🟢' : 'تم تعطيل بوت الترحيب فورياً 🔴');
+    setIsTogglingBot(true);
+    try {
+      await updateSiteSettings({ welcomeBotActive: nextVal } as any);
+      setWelcomeBotActive(nextVal);
+      showToast(nextVal ? 'تم تفعيل بوت الترحيب فورياً 🟢' : 'تم تعطيل بوت الترحيب فورياً 🔴');
+    } catch (err) {
+      console.error('Failed to toggle welcome bot:', err);
+      showToast('⚠️ فشل تحديث حالة البوت في قاعدة البيانات');
+    } finally {
+      setIsTogglingBot(false);
+    }
   };
 
   const handleTestSendBot = () => {
@@ -70,20 +83,29 @@ export const AddonsView: React.FC<{ showToast: (msg: string) => void }> = ({ sho
     }
   };
 
-  const handleSaveAddons = (e: React.FormEvent) => {
+  const handleSaveAddons = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateSiteSettings({
-      customCss,
-      customJs,
-      welcomeBotActive,
-      welcomeBotName,
-      welcomeBotMessage: welcomeMessage,
-      webhookUrl,
-      welcomeBotIntervalSeconds: Number(welcomeBotIntervalSeconds),
-      userInactivityTimeoutMinutes: Number(inactivityTimeoutMinutes),
-      announceUserEnterLeave,
-    } as any);
-    showToast('تم حفظ وتطبيق إضافات البوت وأوقات الخمول في قاعدة البيانات والسيرفر بنجاح 💾');
+    if (isSaving || isTogglingBot) return;
+    setIsSaving(true);
+    try {
+      await updateSiteSettings({
+        customCss,
+        customJs,
+        welcomeBotActive,
+        welcomeBotName,
+        welcomeBotMessage: welcomeMessage,
+        webhookUrl,
+        welcomeBotIntervalSeconds: Number(welcomeBotIntervalSeconds),
+        userInactivityTimeoutMinutes: Number(inactivityTimeoutMinutes),
+        announceUserEnterLeave,
+      } as any);
+      showToast('تم حفظ وتطبيق إضافات البوت وأوقات الخمول في قاعدة البيانات والسيرفر بنجاح 💾');
+    } catch (err) {
+      console.error('Failed to save addons:', err);
+      showToast('⚠️ حدث خطأ أثناء حفظ الإضافات في قاعدة البيانات');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Preview formatted text
@@ -105,11 +127,12 @@ export const AddonsView: React.FC<{ showToast: (msg: string) => void }> = ({ sho
 
         <button
           type="button"
+          disabled={isSaving || isTogglingBot}
           onClick={handleSaveAddons}
-          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg cursor-pointer shadow-xs flex items-center gap-1.5 transition-colors"
+          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg cursor-pointer shadow-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <Save className="w-3.5 h-3.5" />
-          <span>حفظ وتفعيل الإعدادات 💾</span>
+          {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+          <span>{isSaving ? 'جاري الحفظ...' : 'حفظ وتفعيل الإعدادات 💾'}</span>
         </button>
       </div>
 
@@ -128,15 +151,21 @@ export const AddonsView: React.FC<{ showToast: (msg: string) => void }> = ({ sho
             {/* Instant Toggle Button */}
             <button
               type="button"
+              disabled={isSaving || isTogglingBot}
               onClick={handleInstantToggleBot}
-              className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border ${
+              className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border disabled:opacity-50 disabled:cursor-not-allowed ${
                 welcomeBotActive
                   ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
                   : 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
               }`}
               title="انقر لتفعيل أو تعطيل البوت فورياً"
             >
-              {welcomeBotActive ? (
+              {isTogglingBot ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>جاري التحديث...</span>
+                </>
+              ) : welcomeBotActive ? (
                 <>
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   <span>البوت نشط 🟢 (انقر للإيقاف)</span>

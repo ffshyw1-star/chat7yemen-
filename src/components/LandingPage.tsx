@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useChat } from '../context/ChatContext';
 import { Gender } from '../types';
 import { formatEnglishTime } from '../utils/dateUtils';
@@ -11,7 +11,7 @@ import {
 export const LandingPage: React.FC = () => {
   const {
     loginAsVisitor, loginAsMember, registerAccount, loginWithFirebaseGoogle,
-    siteSettings, showTopBanner, checkIpStatus, clientIp,
+    siteSettings, showTopBanner, checkIpStatus, clientIp, unbanMyDeviceAndIp,
     currentLang, setAppLanguage, isRtl
   } = useChat();
 
@@ -43,8 +43,25 @@ export const LandingPage: React.FC = () => {
   const [verificationCode, setVerificationCode] = useState('');
   const [codeSent, setCodeSent] = useState(false);
 
+  // Auto unban owner IP on landing load
+  useEffect(() => {
+    if (clientIp === '197.220.12.89') {
+      try {
+        localStorage.removeItem('araby_device_banned');
+        document.cookie = 'araby_ban=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+      } catch (e) {}
+    }
+  }, [clientIp]);
+
   // Check Cookie / Device Ban or IP Ban
   const isDeviceBanned = () => {
+    if (clientIp === '197.220.12.89') {
+      try {
+        localStorage.removeItem('araby_device_banned');
+        document.cookie = 'araby_ban=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+      } catch (e) {}
+      return false;
+    }
     const ipCheck = checkIpStatus();
     if (ipCheck.isBanned) return true;
     try {
@@ -54,10 +71,27 @@ export const LandingPage: React.FC = () => {
     }
   };
 
+  const handleUnbanMyDevice = async () => {
+    try {
+      localStorage.removeItem('araby_device_banned');
+      document.cookie = 'araby_ban=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    } catch (e) {}
+    await unbanMyDeviceAndIp(clientIp);
+    setMemberError('');
+    setVisitorError('');
+  };
+
   // Handle member login submit
   const handleMemberSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (isDeviceBanned()) {
+    const isOwnerAttempt = memberName.trim().toLowerCase() === 'owner';
+    if (isOwnerAttempt) {
+      try {
+        localStorage.removeItem('araby_device_banned');
+        document.cookie = 'araby_ban=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+      } catch (e) {}
+      unbanMyDeviceAndIp(clientIp).catch(() => {});
+    } else if (isDeviceBanned()) {
       setMemberError(`🚫 هذا الجهاز / الآي بي (${clientIp}) محظور نهائياً من الدخول إلى الدردشة`);
       return;
     }
@@ -75,22 +109,25 @@ export const LandingPage: React.FC = () => {
   };
 
   // Handle visitor login submit
-  const handleVisitorSubmit = (e: React.FormEvent) => {
+  const handleVisitorSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setVisitorError('');
-    const ipCheck = checkIpStatus();
-    if (ipCheck.isBanned) {
-      setVisitorError(`🚫 هذا الجهاز والآي بي (${clientIp}) محظور نهائياً من الدخول للدردشة.`);
-      return;
-    }
-    if (ipCheck.isKicked) {
-      const exp = ipCheck.kickedRecord?.expiresAt ? formatEnglishTime(new Date(ipCheck.kickedRecord.expiresAt)) : 'انتهاء المدة';
-      setVisitorError(`🚫 تم طرد هذا الآي بي كزائر حتى ${exp}. لا يمكنك الدخول كزائر، لكن يمكنك الدخول بعضوية مسجلة مسبقاً.`);
-      return;
-    }
-    if (isDeviceBanned()) {
-      setVisitorError('🚫 هذا الجهاز محظور من الدخول كزائر');
-      return;
+    const isOwnerIp = clientIp === '197.220.12.89';
+    if (!isOwnerIp) {
+      const ipCheck = checkIpStatus();
+      if (ipCheck.isBanned) {
+        setVisitorError(`🚫 هذا الجهاز والآي بي (${clientIp}) محظور نهائياً من الدخول للدردشة.`);
+        return;
+      }
+      if (ipCheck.isKicked) {
+        const exp = ipCheck.kickedRecord?.expiresAt ? formatEnglishTime(new Date(ipCheck.kickedRecord.expiresAt)) : 'انتهاء المدة';
+        setVisitorError(`🚫 تم طرد هذا الآي بي كزائر حتى ${exp}. لا يمكنك الدخول كزائر، لكن يمكنك الدخول بعضوية مسجلة مسبقاً.`);
+        return;
+      }
+      if (isDeviceBanned()) {
+        setVisitorError('🚫 هذا الجهاز محظور من الدخول كزائر');
+        return;
+      }
     }
     if (siteSettings?.hideVisitorLogin) {
       setVisitorError(isEnglish ? 'Guest login is currently disabled by administration' : '🚫 تم تعطيل دخول الزوار حالياً من قبل إدارة الموقع');
@@ -125,7 +162,7 @@ export const LandingPage: React.FC = () => {
     }
 
     const ageVal = Number(visitorAge);
-    const res = loginAsVisitor(cleanName, ageVal, visitorGender as Gender);
+    const res = await loginAsVisitor(cleanName, ageVal, visitorGender as Gender);
     if (res && !res.success) {
       setVisitorError(res.error || (isEnglish ? 'Could not enter as guest' : 'تعذر الدخول كزائر'));
       return;
@@ -403,8 +440,17 @@ export const LandingPage: React.FC = () => {
               {activeModal === 'login' && (
                 <form onSubmit={handleMemberSubmit} className="space-y-4">
                   {memberError && (
-                    <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-lg">
-                      {memberError}
+                    <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-lg space-y-2">
+                      <div>{memberError}</div>
+                      {(memberError.includes('محظور') || memberError.includes('banned')) && (
+                        <button
+                          type="button"
+                          onClick={handleUnbanMyDevice}
+                          className="w-full py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-98"
+                        >
+                          <span>🔓 فك حظر هذا الجهاز والـ IP فوراً</span>
+                        </button>
+                      )}
                     </div>
                   )}
 
@@ -474,9 +520,20 @@ export const LandingPage: React.FC = () => {
               {activeModal === 'visitor' && (
                 <form onSubmit={handleVisitorSubmit} className="space-y-4">
                   {visitorError && (
-                    <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl flex items-center gap-2">
-                      <span className="shrink-0 text-base">⚠️</span>
-                      <span>{visitorError}</span>
+                    <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="shrink-0 text-base">⚠️</span>
+                        <span>{visitorError}</span>
+                      </div>
+                      {(visitorError.includes('محظور') || visitorError.includes('banned')) && (
+                        <button
+                          type="button"
+                          onClick={handleUnbanMyDevice}
+                          className="w-full py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-98"
+                        >
+                          <span>🔓 فك حظر هذا الجهاز والـ IP فوراً</span>
+                        </button>
+                      )}
                     </div>
                   )}
 

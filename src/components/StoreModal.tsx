@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
 import { useChat } from '../context/ChatContext';
-import { X, ShoppingCart, UserPlus, Info, Coins, Clock } from 'lucide-react';
+import { X, ShoppingCart, UserPlus, Info, Coins, Clock, ShieldCheck, Sparkles } from 'lucide-react';
 
 export const StoreModal: React.FC = () => {
   const {
-    setIsStoreOpen, storeItems, currentUser, setCurrentView, showTopBanner, updateUserProfile
+    setIsStoreOpen, storeItems, currentUser, setCurrentView, showTopBanner, buyRank, getMembershipStatus
   } = useChat();
 
   const [activeTab, setActiveTab] = useState<'vip' | 'admin'>('vip');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
 
   if (!currentUser) return null;
 
@@ -17,62 +18,33 @@ export const StoreModal: React.FC = () => {
     ? storeItems.find(i => i.role === 'vip') || storeItems[0]
     : storeItems.find(i => i.role === 'moderator') || storeItems[1] || storeItems[0];
 
-  const handleBuy = () => {
+  const targetRole = activeTab === 'vip' ? 'vip' : 'moderator';
+  const memStatus = getMembershipStatus(currentUser.membership);
+
+  const handleBuy = async () => {
     setErrorMessage(null);
     setSuccessMessage(null);
+    setIsProcessing(true);
 
-    if (activeTab === 'vip') {
-      // 1. Visitor check
-      if (currentUser.role === 'visitor') {
-        setErrorMessage('قم في تسجيل عضوية لاجل شراء رتبة');
-        return;
+    try {
+      const res = await buyRank(targetRole);
+      if (!res.success) {
+        // Match exact error phrases per user requirements
+        if (currentUser.role === 'visitor') {
+          setErrorMessage('قم في تسجيل عضوية لاجل شراء رتبة');
+        } else if (['moderator', 'management', 'admin', 'owner'].includes(currentUser.role) && targetRole === 'vip') {
+          setErrorMessage('عضويتك الحالية اعلى من هذه العضوية');
+        } else {
+          setErrorMessage(res.message || 'خطأ في الأمر');
+        }
+      } else {
+        setSuccessMessage(res.message);
+        showTopBanner(res.message);
       }
-
-      // 2. Higher role check (moderator, management, admin, owner)
-      const higherRoles = ['moderator', 'management', 'admin', 'owner'];
-      if (higherRoles.includes(currentUser.role)) {
-        setErrorMessage('عضويتك الحالية اعلى من هذه العضوية');
-        return;
-      }
-
-      // 3. Already VIP check
-      if (currentUser.role === 'vip') {
-        setErrorMessage('خطأ في الأمر');
-        return;
-      }
-
-      // 4. Insufficient coins for member
-      const price = currentItem?.price || 150;
-      if (currentUser.coins < price) {
-        setErrorMessage('خطأ في الأمر');
-        return;
-      }
-
-      // 5. Successful purchase for registered member with enough coins
-      const newCoins = currentUser.coins - price;
-      updateUserProfile({ coins: newCoins, role: 'vip' });
-      setSuccessMessage('تهانينا! تم شراء رتبة مميز بنجاح وترقية حسابك 💎');
-      showTopBanner('تهانينا! تم شراء رتبة مميز بنجاح');
-      return;
-    }
-
-    // For Admin / Moderator memberships:
-    if (activeTab === 'admin') {
-      if (currentUser.role === 'visitor') {
-        setErrorMessage('قم في تسجيل عضوية لاجل شراء رتبة');
-        return;
-      }
-      if (['management', 'admin', 'owner'].includes(currentUser.role)) {
-        setErrorMessage('عضويتك الحالية اعلى من هذه العضوية');
-        return;
-      }
-      const price = currentItem?.price || 500;
-      if (currentUser.coins < price) {
-        setErrorMessage('خطأ في الأمر');
-        return;
-      }
-      alert('تم إرسال طلب شراء الرتبة الإدارية للإدارة والمالك للموافقة عليها 🛡️');
-      setSuccessMessage('تم تقديم طلبك للإدارة للمراجعة والموافقة.');
+    } catch (e: any) {
+      setErrorMessage(e?.message || 'خطأ في الاتصال بالخادم');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -211,17 +183,26 @@ export const StoreModal: React.FC = () => {
             {/* Row 4: Duration Box */}
             <div className="bg-[#cbd5e1] text-[#0f172a] p-3 rounded-xl text-center text-xs sm:text-sm font-black shadow-xs flex items-center justify-center gap-1.5">
               <Clock className="w-4 h-4 text-slate-800" />
-              <span>مدة بقاء العضوية : 1 شهر</span>
+              <span>مدة بقاء العضوية : 1 شهر (30 يوماً بالتحديد)</span>
             </div>
+
+            {/* Current Active Membership Status if active */}
+            {memStatus.isActive && (
+              <div className="bg-amber-500/15 border border-amber-400/40 text-amber-300 p-2.5 rounded-xl text-center text-xs font-black flex items-center justify-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" />
+                <span>عضويتك الحالية: {memStatus.remainingText}</span>
+              </div>
+            )}
 
             {/* Row 5: Buy Now Button (Green Pill Button) */}
             <div className="pt-2">
               <button
                 onClick={handleBuy}
-                className="w-full bg-[#70a800] hover:bg-[#82b440] active:scale-[0.98] text-white font-black text-base sm:text-lg py-3 px-4 rounded-xl shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2"
+                disabled={isProcessing}
+                className="w-full bg-[#70a800] hover:bg-[#82b440] disabled:opacity-60 active:scale-[0.98] text-white font-black text-base sm:text-lg py-3 px-4 rounded-xl shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2"
               >
                 <ShoppingCart className="w-5 h-5 fill-white text-white" />
-                <span>شراء الان</span>
+                <span>{isProcessing ? 'جاري المعالجة...' : 'شراء الان'}</span>
               </button>
             </div>
 

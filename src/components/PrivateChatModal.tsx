@@ -135,20 +135,20 @@ export const PrivateChatModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200">
-      <div className="bg-[#0B1328] text-white border border-slate-800 rounded-3xl w-full max-w-md h-[85vh] flex flex-col overflow-hidden shadow-2xl relative select-none">
+    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200">
+      <div className="bg-black text-white border border-zinc-800 rounded-3xl w-full max-w-md h-[85vh] flex flex-col overflow-hidden shadow-2xl relative select-none">
         
         {/* Header Bar */}
         {!activePrivateUserId ? (
-          /* List Header matching user request & Screenshot 2 */
-          <div className="bg-[#0B252E] px-4 py-3 border-b border-[#081d24] flex items-center justify-between select-none">
+          /* List Header matching black layout */
+          <div className="bg-black px-4 py-3 border-b border-zinc-800 flex items-center justify-between select-none">
             {/* Left side (RTL end): Exit/Close Button (✖) */}
             <button
               onClick={() => {
                 setIsPrivateChatOpen(false);
                 setActivePrivateUserId(null);
               }}
-              className="w-8 h-8 rounded-full bg-slate-800/60 hover:bg-red-600/80 text-white flex items-center justify-center transition-colors cursor-pointer"
+              className="w-8 h-8 rounded-full bg-zinc-900 hover:bg-red-600/80 text-white flex items-center justify-center transition-colors cursor-pointer"
               title="إغلاق القائمة"
             >
               <X className="w-5 h-5 stroke-[2.5]" />
@@ -167,7 +167,7 @@ export const PrivateChatModal: React.FC = () => {
 
               <button
                 onClick={() => setIsPrivateSettingsOpen(true)}
-                className="w-7 h-7 rounded-lg text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                className="w-7 h-7 rounded-lg text-zinc-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
                 title="إعدادات الخاص"
               >
                 <Settings className="w-4 h-4" />
@@ -176,7 +176,7 @@ export const PrivateChatModal: React.FC = () => {
           </div>
         ) : (
           /* Active Chat Header - Controls on left (✖ ⚙ ➖), User Info on right */
-          <div className="bg-[#0B1328] px-4 py-2.5 border-b border-slate-800 flex items-center justify-between relative">
+          <div className="bg-black px-4 py-2.5 border-b border-zinc-800 flex items-center justify-between relative">
             
             {/* Header Control Buttons on Left (✖ ⚙ ➖) */}
             <div className="flex items-center gap-2">
@@ -187,16 +187,16 @@ export const PrivateChatModal: React.FC = () => {
                   setIsPrivateChatOpen(false);
                   setActivePrivateUserId(null);
                 }}
-                className="w-7 h-7 rounded-lg bg-slate-800/80 hover:bg-red-600/80 text-white flex items-center justify-center transition-colors cursor-pointer"
+                className="w-7 h-7 rounded-lg bg-zinc-900 hover:bg-red-600/80 text-white flex items-center justify-center transition-colors cursor-pointer"
                 title="إغلاق المحادثة الخاصة الخروج"
               >
                 <X className="w-4 h-4" />
               </button>
 
-              {/* Settings / Options Gear Button (⚙): Toggles popup menu matching Screenshot 2 */}
+              {/* Settings / Options Gear Button (⚙): Toggles popup menu */}
               <button
                 onClick={() => setIsGearMenuOpen(!isGearMenuOpen)}
-                className="w-7 h-7 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-200 flex items-center justify-center transition-colors cursor-pointer"
+                className="w-7 h-7 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-200 flex items-center justify-center transition-colors cursor-pointer"
                 title="خيارات المحادثة والإعدادات"
               >
                 <Settings className="w-4 h-4" />
@@ -205,15 +205,15 @@ export const PrivateChatModal: React.FC = () => {
               {/* Back to List Button (➖) */}
               <button
                 onClick={() => setActivePrivateUserId(null)}
-                className="w-7 h-7 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-200 flex items-center justify-center transition-colors cursor-pointer"
+                className="w-7 h-7 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-200 flex items-center justify-center transition-colors cursor-pointer"
                 title="تصغير / الرجوع للقائمة"
               >
                 <Minus className="w-4 h-4" />
               </button>
 
-              {/* Header Gear Popover Menu matching Screenshot 2 */}
+              {/* Header Gear Popover Menu */}
               {isGearMenuOpen && (
-                <div className="absolute left-2 top-11 w-48 bg-white text-slate-900 border border-slate-200 rounded-xl shadow-2xl z-50 py-1 font-extrabold text-xs animate-in fade-in zoom-in-95 duration-100">
+                <div className="absolute left-2 top-11 w-48 bg-white text-slate-900 border border-zinc-200 rounded-xl shadow-2xl z-50 py-1 font-extrabold text-xs animate-in fade-in zoom-in-95 duration-100">
                   
                   {/* 1. تجاهل */}
                   <button
@@ -295,16 +295,16 @@ export const PrivateChatModal: React.FC = () => {
 
         {/* Content Body */}
         {!activePrivateUserId ? (
-          /* Vertical List of Conversations / Users - Light Canvas matching Screenshot 2 */
-          <div className="flex-1 overflow-y-auto p-3 space-y-2.5 bg-[#f0f4f7] custom-scrollbar dir-rtl">
+          /* Vertical List of Conversations / Users - Black Layout with White Cards inside */
+          <div className="flex-1 overflow-y-auto p-3 space-y-2.5 bg-black custom-scrollbar dir-rtl">
             {displayUserIds.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 px-4 text-center space-y-3">
-                <div className="w-12 h-12 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center border border-slate-300">
+                <div className="w-12 h-12 rounded-full bg-zinc-900 text-zinc-400 flex items-center justify-center border border-zinc-800">
                   <MessageSquare className="w-6 h-6" />
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-slate-700">لا توجد رسائل خاصة حالياً</p>
-                  <p className="text-xs text-slate-500 mt-1">عند تلقي أو إرسال أي رسالة خاصة ستظهر المحادثة هنا.</p>
+                  <p className="text-sm font-bold text-zinc-300">لا توجد رسائل خاصة حالياً</p>
+                  <p className="text-xs text-zinc-500 mt-1">عند تلقي أو إرسال أي رسالة خاصة ستظهر المحادثة هنا.</p>
                 </div>
               </div>
             ) : (
@@ -325,7 +325,7 @@ export const PrivateChatModal: React.FC = () => {
                   <div
                     key={userId}
                     onClick={() => setActivePrivateUserId(userId)}
-                    className="p-3 bg-white text-slate-900 hover:bg-slate-50/90 border border-slate-200/90 rounded-2xl flex items-center justify-between cursor-pointer transition-all shadow-2xs group"
+                    className="p-3.5 bg-white text-slate-900 hover:bg-zinc-100 border border-zinc-200 rounded-2xl flex items-center justify-between cursor-pointer transition-all shadow-md group"
                   >
                     {/* Left side (RTL end): X Button to hide user + Unread count badge */}
                     <div className="flex items-center gap-2.5">
@@ -334,7 +334,7 @@ export const PrivateChatModal: React.FC = () => {
                           e.stopPropagation();
                           hidePrivateConversation(partner.id);
                         }}
-                        className="p-1 rounded-lg hover:bg-red-50 text-[#334155] hover:text-red-600 transition-colors cursor-pointer"
+                        className="p-1 rounded-lg hover:bg-zinc-100 text-[#334155] hover:text-red-600 transition-colors cursor-pointer"
                         title="إخفاء من القائمة"
                       >
                         <X className="w-4 h-4 stroke-[2.5]" />
@@ -371,10 +371,10 @@ export const PrivateChatModal: React.FC = () => {
             )}
           </div>
         ) : (
-          /* Direct Message Chat View */
-          <div className="flex-1 flex flex-col justify-between overflow-hidden bg-[#090d16]">
+          /* Direct Message Chat View - Black Canvas */
+          <div className="flex-1 flex flex-col justify-between overflow-hidden bg-black">
             {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-black">
               {chatMessages.length === 0 ? (
                 <div className="text-center text-slate-500 py-12 text-xs">
                   ابدأ المحادثة الخاصة مع <span className="text-white font-bold">{targetUser?.username}</span>...
@@ -416,7 +416,7 @@ export const PrivateChatModal: React.FC = () => {
                           className={`p-3 rounded-2xl text-xs shadow-md relative cursor-pointer select-text ${
                             isMe
                               ? 'bg-[#222222] text-white border border-neutral-700/80 rounded-br-none'
-                              : 'bg-[#00a2e8] text-white font-medium rounded-bl-none'
+                              : 'bg-white text-slate-950 font-bold rounded-bl-none border border-zinc-200 shadow-sm'
                           }`}
                         >
                           {pm.type === 'text' && (
@@ -445,8 +445,8 @@ export const PrivateChatModal: React.FC = () => {
 
                           {pm.type === 'voice' && (
                             <div className="flex items-center gap-2">
-                              <Volume2 className="w-4 h-4 text-amber-300" />
-                              <span>رسالة صوتية</span>
+                              <Volume2 className="w-4 h-4 text-amber-500" />
+                              <span className={isMe ? 'text-white' : 'text-slate-900'}>رسالة صوتية</span>
                             </div>
                           )}
 
@@ -473,7 +473,7 @@ export const PrivateChatModal: React.FC = () => {
                       </div>
 
                       {/* Timestamp displayed below message bubble */}
-                      <span className="text-[9px] text-slate-500 mt-1 dir-ltr font-mono px-1">
+                      <span className="text-[9px] text-zinc-400 mt-1 dir-ltr font-mono px-1">
                         {toEnglishDigits(pm.timestamp)}
                       </span>
                     </div>
@@ -490,14 +490,14 @@ export const PrivateChatModal: React.FC = () => {
             ) : (
               <form
                 onSubmit={handleSend}
-                className="p-2.5 bg-[#0d1628] border-t border-slate-800 flex items-center gap-2"
+                className="p-2.5 bg-black border-t border-zinc-800 flex items-center gap-2"
               >
                 {/* Left Action Icons (+ image) */}
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="p-1.5 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                    className="p-1.5 text-zinc-400 hover:text-white transition-colors cursor-pointer"
                     title="إرسال صورة"
                   >
                     <ImageIcon className="w-4 h-4" />
@@ -513,7 +513,7 @@ export const PrivateChatModal: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setIsEmojiOpen(!isEmojiOpen)}
-                    className="p-1.5 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                    className="p-1.5 text-zinc-400 hover:text-white transition-colors cursor-pointer"
                     title="إيموجي وسمايلات"
                   >
                     <Smile className="w-4 h-4" />
@@ -587,13 +587,13 @@ export const PrivateChatModal: React.FC = () => {
                   </div>
                 )}
 
-                {/* Rounded Pill Text Input */}
+                {/* Rounded Pill Text Input - White field inside black layout */}
                 <input
                   type="text"
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   placeholder="اكتب هنا ..."
-                  className="flex-1 bg-slate-100 text-slate-900 placeholder-slate-500 rounded-full px-4 py-2 text-xs font-semibold focus:outline-none"
+                  className="flex-1 bg-white text-black placeholder-zinc-500 rounded-full px-4 py-2.5 text-xs font-bold focus:outline-none border border-zinc-300 shadow-xs"
                 />
 
                 {/* Mic & Send Buttons */}
@@ -609,7 +609,7 @@ export const PrivateChatModal: React.FC = () => {
                   <button
                     type="button"
                     onClick={startVoice}
-                    className="p-1.5 text-slate-400 hover:text-amber-400 transition-colors cursor-pointer shrink-0"
+                    className="p-1.5 text-zinc-400 hover:text-amber-400 transition-colors cursor-pointer shrink-0"
                     title="تسجيل صوتي"
                   >
                     <Mic className="w-4 h-4" />
@@ -618,7 +618,7 @@ export const PrivateChatModal: React.FC = () => {
 
                 <button
                   type="submit"
-                  className="w-8 h-8 rounded-full bg-slate-900 border border-slate-700 text-white flex items-center justify-center hover:bg-slate-800 cursor-pointer shrink-0"
+                  className="w-8 h-8 rounded-full bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white flex items-center justify-center cursor-pointer shrink-0"
                   title="إرسال"
                 >
                   <Send className="w-4 h-4 text-white -translate-x-0.5" />
@@ -639,13 +639,13 @@ export const PrivateChatModal: React.FC = () => {
 
       {/* Private Settings Options Modal */}
       {isPrivateSettingsOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 dir-rtl">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden text-slate-900 border border-slate-200">
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150 dir-rtl">
+          <div className="bg-black rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden text-white border border-zinc-800">
             
-            <div className="bg-[#0b333e] px-4 py-3 flex items-center justify-between text-white">
+            <div className="bg-black px-4 py-3 flex items-center justify-between text-white border-b border-zinc-800">
               <button
                 onClick={() => setIsPrivateSettingsOpen(false)}
-                className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center text-white cursor-pointer"
+                className="w-7 h-7 rounded-lg hover:bg-zinc-800 flex items-center justify-center text-white cursor-pointer"
               >
                 <X className="w-5 h-5 font-bold" />
               </button>
@@ -663,12 +663,12 @@ export const PrivateChatModal: React.FC = () => {
                 }}
                 className={`w-full p-3.5 rounded-xl border flex items-center justify-between transition-all cursor-pointer ${
                   currentUser.privatePrivacy === 'everyone'
-                    ? 'bg-sky-50 border-sky-500 text-sky-700 shadow-xs'
-                    : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                    ? 'bg-sky-950/70 border-sky-500 text-sky-300 shadow-xs'
+                    : 'bg-zinc-900 border-zinc-800 text-zinc-200 hover:bg-zinc-800'
                 }`}
               >
                 <span>تشغيل للجميع</span>
-                {currentUser.privatePrivacy === 'everyone' && <Check className="w-4 h-4 text-sky-600 font-black" />}
+                {currentUser.privatePrivacy === 'everyone' && <Check className="w-4 h-4 text-sky-400 font-black" />}
               </button>
 
               {/* Option 2: للأعضاء */}
@@ -680,12 +680,12 @@ export const PrivateChatModal: React.FC = () => {
                 }}
                 className={`w-full p-3.5 rounded-xl border flex items-center justify-between transition-all cursor-pointer ${
                   currentUser.privatePrivacy === 'members'
-                    ? 'bg-sky-50 border-sky-500 text-sky-700 shadow-xs'
-                    : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                    ? 'bg-sky-950/70 border-sky-500 text-sky-300 shadow-xs'
+                    : 'bg-zinc-900 border-zinc-800 text-zinc-200 hover:bg-zinc-800'
                 }`}
               >
                 <span>للأعضاء</span>
-                {currentUser.privatePrivacy === 'members' && <Check className="w-4 h-4 text-sky-600 font-black" />}
+                {currentUser.privatePrivacy === 'members' && <Check className="w-4 h-4 text-sky-400 font-black" />}
               </button>
 
               {/* Option 3: للأصدقاء فقط (Hidden for Visitor rank!) */}
@@ -698,12 +698,12 @@ export const PrivateChatModal: React.FC = () => {
                   }}
                   className={`w-full p-3.5 rounded-xl border flex items-center justify-between transition-all cursor-pointer ${
                     currentUser.privatePrivacy === 'friends'
-                      ? 'bg-sky-50 border-sky-500 text-sky-700 shadow-xs'
-                      : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                      ? 'bg-sky-950/70 border-sky-500 text-sky-300 shadow-xs'
+                      : 'bg-zinc-900 border-zinc-800 text-zinc-200 hover:bg-zinc-800'
                   }`}
                 >
                   <span>للأصدقاء فقط</span>
-                  {currentUser.privatePrivacy === 'friends' && <Check className="w-4 h-4 text-sky-600 font-black" />}
+                  {currentUser.privatePrivacy === 'friends' && <Check className="w-4 h-4 text-sky-400 font-black" />}
                 </button>
               )}
 
@@ -716,29 +716,29 @@ export const PrivateChatModal: React.FC = () => {
                 }}
                 className={`w-full p-3.5 rounded-xl border flex items-center justify-between transition-all cursor-pointer ${
                   currentUser.privatePrivacy === 'none'
-                    ? 'bg-red-50 border-red-500 text-red-700 shadow-xs'
-                    : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                    ? 'bg-red-950/70 border-red-500 text-red-300 shadow-xs'
+                    : 'bg-zinc-900 border-zinc-800 text-zinc-200 hover:bg-zinc-800'
                 }`}
               >
                 <span>إيقاف عن الجميع</span>
-                {currentUser.privatePrivacy === 'none' && <Check className="w-4 h-4 text-red-600 font-black" />}
+                {currentUser.privatePrivacy === 'none' && <Check className="w-4 h-4 text-red-400 font-black" />}
               </button>
 
               {/* Sound Notification for Private Messages */}
-              <div className="pt-2 border-t border-slate-100 mt-2">
-                <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-200">
+              <div className="pt-2 border-t border-zinc-800 mt-2">
+                <div className="flex items-center justify-between bg-zinc-900 p-3 rounded-xl border border-zinc-800">
                   <div className="flex items-center gap-2">
-                    <Bell className="w-4 h-4 text-[#0b333e]" />
-                    <span className="text-xs font-bold text-slate-800">التنبيه الصوتي للرسائل</span>
+                    <Bell className="w-4 h-4 text-amber-400" />
+                    <span className="text-xs font-bold text-zinc-200">التنبيه الصوتي للرسائل</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <button
                       type="button"
                       onClick={() => playChatSound('private')}
-                      className="px-2 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                      className="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer"
                       title="تجربة صوت التنبيه"
                     >
-                      <Volume1 className="w-3 h-3 text-[#0b333e]" />
+                      <Volume1 className="w-3 h-3 text-amber-400" />
                       <span>تجربة</span>
                     </button>
                     <button
@@ -746,8 +746,8 @@ export const PrivateChatModal: React.FC = () => {
                       onClick={() => updateAudioSettings({ privateSound: !(audioSettings?.privateSound !== false) })}
                       className={`px-2.5 py-1 rounded-lg text-[11px] font-black transition-all cursor-pointer ${
                         audioSettings?.privateSound !== false
-                          ? 'bg-[#0b333e] text-white shadow-xs'
-                          : 'bg-slate-200 text-slate-600'
+                          ? 'bg-amber-500 text-slate-950 shadow-xs'
+                          : 'bg-zinc-800 text-zinc-400'
                       }`}
                     >
                       {audioSettings?.privateSound !== false ? 'مفعل 🔊' : 'معطل 🔇'}

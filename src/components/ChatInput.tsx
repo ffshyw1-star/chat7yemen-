@@ -4,7 +4,8 @@ import { VoiceRecorder } from '../utils/audio';
 import { canSendMediaInPublic, getYouTubeVideoId } from '../utils/permissions';
 import {
   Send, Mic, Smile, Plus, Image as ImageIcon, X, Square, Youtube, Upload, Video,
-  Paperclip, FileText, Music, PenTool, Palette, Check, Search, Type, Camera, HardDrive
+  Paperclip, FileText, Music, PenTool, Palette, Check, Search, Type, Camera, HardDrive,
+  Loader2, Trash2
 } from 'lucide-react';
 import { DrawingCanvasModal } from './DrawingCanvasModal';
 import { ActionChoiceModal } from './ActionChoiceModal';
@@ -50,8 +51,9 @@ const FONT_WEIGHTS = [
 
 export const ChatInput: React.FC = () => {
   const {
-    currentUser, currentRoom, sendMessage, inputInsertedUsername, setInputInsertedUsername, sendTypingStatus,
-    customEmojis, setIsOwnerDashboardOpen, setIsGoogleDriveOpen, showTopBanner, currentUserCan
+    currentUser, currentRoom, users, sendMessage, inputInsertedUsername, setInputInsertedUsername,
+    targetedUserForMessage, setTargetedUserForMessage, sendTypingStatus,
+    customEmojis, setIsOwnerDashboardOpen, setIsGoogleDriveOpen, showTopBanner, currentUserCan, siteSettings
   } = useChat();
 
   const isMutedInCurrentRoom = Boolean(
@@ -63,6 +65,14 @@ export const ChatInput: React.FC = () => {
 
   const [text, setText] = useState('');
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Focus input whenever a user is targeted from room events
+  useEffect(() => {
+    if (targetedUserForMessage && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [targetedUserForMessage]);
 
   const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (isMutedInCurrentRoom) return;
@@ -94,29 +104,96 @@ export const ChatInput: React.FC = () => {
   const videoCameraInputRef = useRef<HTMLInputElement | null>(null);
 
   // Text Formatting & Color States
-  const [selectedTextColor, setSelectedTextColor] = useState<string>('#000000');
-  const [selectedFontSize, setSelectedFontSize] = useState<string>('14px');
-  const [selectedFontWeight, setSelectedFontWeight] = useState<string>('normal');
+  const [selectedTextColor, setSelectedTextColor] = useState<string>(currentUser?.chatTextColor || '#000000');
+  const [selectedFontSize, setSelectedFontSize] = useState<string>(currentUser?.chatTextFontSize || '14px');
+  const [selectedFontWeight, setSelectedFontWeight] = useState<string>(currentUser?.chatTextWeight || 'normal');
+
+  // Sync format states whenever currentUser updates
+  useEffect(() => {
+    if (currentUser?.chatTextColor) {
+      setSelectedTextColor(currentUser.chatTextColor);
+    }
+    if (currentUser?.chatTextFontSize) {
+      setSelectedFontSize(currentUser.chatTextFontSize);
+    }
+    if (currentUser?.chatTextWeight) {
+      setSelectedFontWeight(currentUser.chatTextWeight);
+    }
+  }, [currentUser?.chatTextColor, currentUser?.chatTextFontSize, currentUser?.chatTextWeight]);
 
   // Voice recording state
   const [isRecording, setIsRecording] = useState(false);
+  const [isSendingVoice, setIsSendingVoice] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingSecondsRef = useRef<number>(0);
+  const recordingStartTimeRef = useRef<number>(0);
   const [recordedAudio, setRecordedAudio] = useState<{ blobUrl: string; base64: string; durationSec: number } | null>(null);
   const recorderRef = useRef<VoiceRecorder | null>(null);
+
+  // Clean up recording on unmount
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      if (recorderRef.current) recorderRef.current.cancelRecording();
+    };
+  }, []);
 
   // Insert emoji or emoticon tag into input
   const handleInsertEmoji = (emojiTag: string) => {
     setText((prev) => (prev ? `${prev} ${emojiTag} ` : `${emojiTag} `));
   };
 
-  // If username or sticker tag was clicked in main chat, append it to input field
+  // If a username was selected, target the user AND insert @username directly into "اكتب هنا" input box
   useEffect(() => {
     if (inputInsertedUsername) {
-      setText((prev) => (prev ? `${prev} ${inputInsertedUsername} ` : `${inputInsertedUsername} `));
+      const found = (users || []).find(u => u.username.toLowerCase() === inputInsertedUsername.toLowerCase());
+      setTargetedUserForMessage({
+        userId: found?.id || `user-${inputInsertedUsername}`,
+        username: inputInsertedUsername,
+        role: found?.role,
+        avatar: found?.avatar
+      });
+      // Place the username into the "اكتب هنا" input box
+      setText((prev) => {
+        const prefix = `@${inputInsertedUsername} `;
+        if (prev.startsWith(prefix)) return prev;
+        return `${prefix}${prev.trimStart()}`;
+      });
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 50);
       setInputInsertedUsername(null);
     }
-  }, [inputInsertedUsername, setInputInsertedUsername]);
+  }, [inputInsertedUsername, setInputInsertedUsername, users, setTargetedUserForMessage]);
+
+  // Listen to external username insert events
+  useEffect(() => {
+    const handleInsertUser = (e: Event) => {
+      const customEvent = e as CustomEvent<{ username: string }>;
+      const uname = customEvent.detail?.username;
+      if (uname) {
+        const found = (users || []).find(u => u.username.toLowerCase() === uname.toLowerCase());
+        setTargetedUserForMessage({
+          userId: found?.id || `user-${uname}`,
+          username: uname,
+          role: found?.role,
+          avatar: found?.avatar
+        });
+        setText((prev) => {
+          const prefix = `@${uname} `;
+          if (prev.startsWith(prefix)) return prev;
+          return `${prefix}${prev.trimStart()}`;
+        });
+        setTimeout(() => {
+          inputRef.current?.focus();
+        }, 50);
+      }
+    };
+    window.addEventListener('insert-username-to-input', handleInsertUser);
+    return () => window.removeEventListener('insert-username-to-input', handleInsertUser);
+  }, [users, setTargetedUserForMessage]);
+
 
   // Listen to sticker clicks from chat messages
   useEffect(() => {
@@ -235,61 +312,153 @@ export const ChatInput: React.FC = () => {
 
     if (!text.trim()) return;
 
-    sendMessage(text.trim(), 'text', undefined, undefined, {
-      color: currentUser?.chatTextColor || (selectedTextColor !== '#000000' ? selectedTextColor : undefined),
-      fontSize: currentUser?.chatTextFontSize || selectedFontSize,
-      fontWeight: currentUser?.chatTextWeight || selectedFontWeight,
-      fontFamily: currentUser?.chatFontFamily,
-      fontStyle: currentUser?.chatFontStyle,
-      bgGradient: currentUser?.chatTextBgGradient,
-      isNeon: currentUser?.chatIsNeon
-    });
+    const trimmed = text.trim();
+
+    sendMessage(
+      trimmed,
+      'text',
+      undefined,
+      undefined,
+      {
+        color: currentUser?.chatTextColor || (selectedTextColor !== '#000000' ? selectedTextColor : undefined),
+        fontSize: currentUser?.chatTextFontSize || selectedFontSize,
+        fontWeight: currentUser?.chatTextWeight || selectedFontWeight,
+        fontFamily: currentUser?.chatFontFamily,
+        fontStyle: currentUser?.chatFontStyle,
+        bgGradient: currentUser?.chatTextBgGradient,
+        isNeon: currentUser?.chatIsNeon
+      },
+      targetedUserForMessage ? { id: targetedUserForMessage.userId, username: targetedUserForMessage.username } : undefined
+    );
 
     setText('');
+    setTargetedUserForMessage(null);
     setIsEmojiOpen(false);
   };
 
   // Start voice recording
   const startVoiceRecording = async () => {
+    if (isSendingVoice || isRecording) return;
+
     if (isMutedInCurrentRoom) {
       showTopBanner('🚫 عذراً، أنت مكتوم عن المشاركة الصوتية في هذه الغرفة');
+      return;
+    }
+    if (siteSettings?.enableVoiceNotes === false || (siteSettings as any)?.modulesState?.voice === false) {
+      showTopBanner('🔒 الرسائل الصوتية معطلة حالياً في الموقع');
       return;
     }
     if (!currentUserCan('send_voice')) {
       showTopBanner('🚫 ليس لديك صلاحية إرسال الرسائل الصوتية حسب رتبتك');
       return;
     }
-    recorderRef.current = new VoiceRecorder();
-    const result = await recorderRef.current.startRecording();
-    if (result.ok) {
-      setIsRecording(true);
-      setRecordingSeconds(0);
-      setRecordedAudio(null);
-      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingSeconds((prev) => prev + 1);
-      }, 1000);
-    } else {
-      showTopBanner(result.error || 'تعذر الوصول للميكروفون. يرجى تفعيل إذن الميكروفون في المتصفح.', 'error');
+
+    try {
+      recorderRef.current = new VoiceRecorder();
+      const result = await recorderRef.current.startRecording();
+      if (result.ok) {
+        setIsRecording(true);
+        setIsSendingVoice(false);
+        setRecordingSeconds(0);
+        recordingSecondsRef.current = 0;
+        recordingStartTimeRef.current = Date.now();
+
+        if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = setInterval(() => {
+          const elapsed = Math.floor((Date.now() - recordingStartTimeRef.current) / 1000);
+          recordingSecondsRef.current = elapsed;
+          setRecordingSeconds(elapsed);
+
+          // Auto stop and send at 120 seconds limit
+          if (elapsed >= 120) {
+            if (recordingTimerRef.current) {
+              clearInterval(recordingTimerRef.current);
+              recordingTimerRef.current = null;
+            }
+            showTopBanner('⏱️ تم بلوغ الحد الأقصى للتسجيل (120 ثانية) وجارٍ الإرسال...');
+            handleFinishAndSendVoice();
+          }
+        }, 500);
+      } else {
+        showTopBanner(result.error || 'تعذر الوصول للميكروفون. يرجى تفعيل إذن الميكروفون في المتصفح.', 'error');
+      }
+    } catch (err: any) {
+      console.error('Error starting voice recording:', err);
+      showTopBanner('تعذر بدء التسجيل الصوتي.');
     }
   };
 
-  // Stop voice recording
-  const stopVoiceRecording = async () => {
+  // Finish and send recording to public chat
+  const handleFinishAndSendVoice = async () => {
+    if (isSendingVoice) return;
+
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = null;
     }
-    if (recorderRef.current && isRecording) {
-      try {
-        const audioData = await recorderRef.current.stopRecording();
-        setRecordedAudio(audioData);
-      } catch (err) {
-        console.error('Recording stop error:', err);
-      } finally {
-        setIsRecording(false);
+
+    const currentDuration = recordingSecondsRef.current;
+
+    // Validate duration: strictly 1 to 120 seconds
+    if (currentDuration < 1) {
+      if (recorderRef.current) {
+        recorderRef.current.cancelRecording();
       }
+      setIsRecording(false);
+      setRecordingSeconds(0);
+      recordingSecondsRef.current = 0;
+      showTopBanner('⚠️ مدة التسجيل الصوتي قصيرة جداً (أقل من ثانية واحدة). مسموح تسجيل الصوت من ثانية إلى 120 ثانية فقط.');
+      return;
     }
+
+    // Enter sending state: show rotating spinner in the circle until sent
+    setIsRecording(false);
+    setIsSendingVoice(true);
+
+    try {
+      if (!recorderRef.current) {
+        throw new Error('مسجل الصوت غير متوفر');
+      }
+
+      const audioData = await recorderRef.current.stopRecording();
+      const finalDuration = Math.min(120, Math.max(1, audioData.durationSec || currentDuration));
+
+      if (isMutedInCurrentRoom) {
+        showTopBanner('🚫 عذراً، أنت مكتوم عن المشاركة الصوتية في هذه الغرفة');
+        return;
+      }
+      if (!currentUserCan('send_voice')) {
+        showTopBanner('🚫 ليس لديك صلاحية إرسال الرسائل الصوتية حسب رتبتك');
+        return;
+      }
+
+      // Send to public chat and wait for it to be persisted
+      await sendMessage('رسالة صوتية 🎙️', 'voice', audioData.base64, finalDuration);
+    } catch (err: any) {
+      console.error('Recording stop/send error:', err);
+      showTopBanner(`❌ تعذر إرسال التسجيل: ${err?.message || 'خطأ غير متوقع'}`);
+    } finally {
+      setIsSendingVoice(false);
+      setIsRecording(false);
+      setRecordingSeconds(0);
+      recordingSecondsRef.current = 0;
+    }
+  };
+
+  // Cancel voice recording without sending
+  const cancelVoiceRecording = () => {
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    if (recorderRef.current) {
+      recorderRef.current.cancelRecording();
+    }
+    setIsRecording(false);
+    setIsSendingVoice(false);
+    setRecordingSeconds(0);
+    recordingSecondsRef.current = 0;
+    showTopBanner('تم إلغاء التسجيل الصوتي 🗑️');
   };
 
   const openCameraHandler = (mode: 'photo' | 'video' = 'photo') => {
@@ -334,31 +503,60 @@ export const ChatInput: React.FC = () => {
         onSelectSticker={handleInsertEmoji}
       />
 
-      {/* Popover for Plus (➕) Attachments Menu - Exact layout as Screenshot 2 */}
+      {/* Popover for Plus (➕) Attachments Menu - 6 Essential Tools */}
       {isMediaOpen && (
         <div
           id="plus-action-menu"
-          dir="ltr"
-          className="absolute bottom-full left-1 sm:left-2 mb-2 bg-white border border-slate-200/90 rounded-2xl shadow-xl p-1.5 z-30 animate-in fade-in slide-in-from-bottom-2 duration-150"
+          dir="rtl"
+          className="absolute bottom-full left-1 sm:left-2 mb-2 bg-white border border-slate-200/90 rounded-2xl shadow-2xl p-2.5 z-40 animate-in fade-in slide-in-from-bottom-2 duration-150 w-[270px] sm:w-[300px]"
         >
-          {/* 4 ROUND COLORFUL BUTTONS MATCHING SCREENSHOT 2 */}
-          <div className="flex flex-row items-center gap-2 px-1 py-0.5" dir="ltr">
-            
-            {/* 1. Cloud Upload Circle Button (سهم سحابي أزرق سماوي - يفتح اختيار إجراء كما في الصورة 3) */}
+          <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-slate-100 px-1">
+            <span className="text-xs font-black text-slate-800">أدوات إضافية</span>
             <button
-              id="cloud-upload-btn"
+              type="button"
+              onClick={() => setIsMediaOpen(false)}
+              className="text-slate-400 hover:text-slate-700 p-0.5 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            {/* 1. الكاميرا 📷 */}
+            <button
+              id="camera-open-btn"
               type="button"
               onClick={() => {
                 setIsMediaOpen(false);
-                setIsActionChoiceOpen(true);
+                cameraInputRef.current?.click();
               }}
-              className="w-10 h-10 rounded-full bg-[#38bdf8] hover:bg-[#0284c7] text-white flex items-center justify-center shadow-md transition-transform hover:scale-105 active:scale-95 cursor-pointer"
-              title="السهم السحابي - اختيار إجراء (وسائط، مسجل، كاميرا) ☁️"
+              className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 transition-all hover:scale-102 active:scale-95 cursor-pointer group"
+              title="التقاط صورة بالكاميرا 📷"
             >
-              <Upload className="w-5 h-5 text-white stroke-[2.4]" />
+              <div className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mb-1 group-hover:bg-emerald-100 transition-colors">
+                <Camera className="w-5 h-5" />
+              </div>
+              <span className="text-[11px] font-bold">الكاميرا</span>
             </button>
 
-            {/* 2. Text Note / Formatting Circle Button (دفتر الملاحظات والتنسيق - يفتح نافذة تنسيق النصوص والألوان والخلفيات اللامعة) */}
+            {/* 2. الوسائط والملفات 🖼️ */}
+            <button
+              id="media-upload-btn"
+              type="button"
+              onClick={() => {
+                setIsMediaOpen(false);
+                fileInputRef.current?.click();
+              }}
+              className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 transition-all hover:scale-102 active:scale-95 cursor-pointer group"
+              title="رفع صور وملفات صوتية 🖼️"
+            >
+              <div className="w-9 h-9 rounded-full bg-sky-50 text-sky-600 flex items-center justify-center mb-1 group-hover:bg-sky-100 transition-colors">
+                <ImageIcon className="w-5 h-5" />
+              </div>
+              <span className="text-[11px] font-bold">الوسائط</span>
+            </button>
+
+            {/* 3. خلفية ولون الرسالة 🎨 */}
             <button
               id="text-format-btn"
               type="button"
@@ -366,13 +564,16 @@ export const ChatInput: React.FC = () => {
                 setIsMediaOpen(false);
                 setIsTextFormatModalOpen(true);
               }}
-              className="w-10 h-10 rounded-full bg-[#0284c7] hover:bg-[#0369a1] text-white flex items-center justify-center shadow-md transition-transform hover:scale-105 active:scale-95 cursor-pointer"
-              title="تنسيق النصوص والألوان وحجم وعرض الخط والخلفيات اللامعة 📝"
+              className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 transition-all hover:scale-102 active:scale-95 cursor-pointer group"
+              title="تنسيق لون ومربع الرسالة والخلفيات اللامعة 🎨"
             >
-              <FileText className="w-5 h-5 text-white stroke-[2.4]" />
+              <div className="w-9 h-9 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mb-1 group-hover:bg-amber-100 transition-colors">
+                <Palette className="w-5 h-5" />
+              </div>
+              <span className="text-[11px] font-bold">خلفية ولون</span>
             </button>
 
-            {/* 3. Paint Palette Circle Button (لوحة الألوان والرسم) */}
+            {/* 4. لوحة الرسم والتخطيط 📝 */}
             <button
               id="drawing-palette-btn"
               type="button"
@@ -380,13 +581,16 @@ export const ChatInput: React.FC = () => {
                 setIsMediaOpen(false);
                 setIsDrawingModalOpen(true);
               }}
-              className="w-10 h-10 rounded-full bg-[#fce7f3] hover:bg-[#fbcfe8] flex items-center justify-center shadow-md transition-transform hover:scale-105 active:scale-95 cursor-pointer border border-pink-200"
-              title="فتح لوحة الرسم والتخطيط 🎨"
+              className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 transition-all hover:scale-102 active:scale-95 cursor-pointer group"
+              title="لوحة الرسم والتخطيط 📝"
             >
-              <Palette className="w-5 h-5 text-pink-600 stroke-[2.4]" />
+              <div className="w-9 h-9 rounded-full bg-pink-50 text-pink-600 flex items-center justify-center mb-1 group-hover:bg-pink-100 transition-colors">
+                <PenTool className="w-5 h-5" />
+              </div>
+              <span className="text-[11px] font-bold">لوحة الرسم</span>
             </button>
 
-            {/* 4. YouTube Button (يوتيوب - يفتح نافذة YouTube كما في الصورة 4) */}
+            {/* 5. يوتيوب 📺 */}
             <button
               id="youtube-open-btn"
               type="button"
@@ -394,15 +598,16 @@ export const ChatInput: React.FC = () => {
                 setIsMediaOpen(false);
                 setIsYouTubeModalOpen(true);
               }}
-              className="w-12 h-10 rounded-xl bg-white hover:bg-red-50 border border-slate-200/90 flex items-center justify-center shadow-md transition-transform hover:scale-105 active:scale-95 cursor-pointer px-1"
+              className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 transition-all hover:scale-102 active:scale-95 cursor-pointer group"
               title="البحث عن مقاطع وفيديوهات يوتيوب 📺"
             >
-              <div className="bg-[#ff0000] text-white rounded-md px-1.5 py-0.5 flex items-center justify-center shadow-xs text-[10px] font-black tracking-tighter">
-                <span className="font-sans">YouTube</span>
+              <div className="w-9 h-9 rounded-full bg-red-50 text-red-600 flex items-center justify-center mb-1 group-hover:bg-red-100 transition-colors">
+                <Youtube className="w-5 h-5" />
               </div>
+              <span className="text-[11px] font-bold">يوتيوب</span>
             </button>
 
-            {/* 5. Google Drive Button */}
+            {/* 6. Google Drive 📁 */}
             <button
               id="google-drive-open-btn"
               type="button"
@@ -410,81 +615,15 @@ export const ChatInput: React.FC = () => {
                 setIsMediaOpen(false);
                 setIsGoogleDriveOpen(true);
               }}
-              className="w-10 h-10 rounded-full bg-[#2563eb] hover:bg-[#1d4ed8] text-white flex items-center justify-center shadow-md transition-transform hover:scale-105 active:scale-95 cursor-pointer"
-              title="ملفاتي السحابية في Google Drive 📁"
+              className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 transition-all hover:scale-102 active:scale-95 cursor-pointer group"
+              title="Google Drive والمستندات السحابية 📁"
             >
-              <HardDrive className="w-5 h-5 text-white stroke-[2.2]" />
+              <div className="w-9 h-9 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mb-1 group-hover:bg-blue-100 transition-colors">
+                <HardDrive className="w-5 h-5" />
+              </div>
+              <span className="text-[11px] font-bold">Drive</span>
             </button>
-
           </div>
-
-          {/* Text Formatting Panel when Note/Format is expanded */}
-          {isFormatPanelOpen && (
-            <div className="mt-2 pt-2 border-t border-slate-100 space-y-2.5 max-h-64 overflow-y-auto custom-scrollbar p-1 min-w-[280px]">
-              {/* Colors */}
-              <div>
-                <span className="text-[11px] font-bold text-slate-700 block mb-1">اللون الأساسي:</span>
-                <div className="grid grid-cols-5 gap-1">
-                  {STANDARD_COLORS.map((col) => (
-                    <button
-                      key={col.value}
-                      type="button"
-                      onClick={() => setSelectedTextColor(col.value)}
-                      style={{ backgroundColor: col.value }}
-                      className={`h-7 rounded-lg border border-slate-300 flex items-center justify-center cursor-pointer ${
-                        selectedTextColor === col.value ? 'ring-2 ring-emerald-500 scale-105' : ''
-                      }`}
-                    >
-                      {selectedTextColor === col.value && (
-                        <Check className={`w-3.5 h-3.5 ${col.value === '#ffffff' ? 'text-black' : 'text-white'}`} />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Neon Colors */}
-              <div>
-                <span className="text-[11px] font-bold text-amber-500 block mb-1">ألوان نيون:</span>
-                <div className="grid grid-cols-3 gap-1">
-                  {NEON_COLORS_PALETTE.map((neon) => (
-                    <button
-                      key={neon.value}
-                      type="button"
-                      onClick={() => setSelectedTextColor(neon.value)}
-                      style={{
-                        backgroundColor: neon.value,
-                        boxShadow: `0 0 8px ${neon.value}`
-                      }}
-                      className={`py-1 px-1 rounded-lg text-[9px] font-black text-slate-950 cursor-pointer truncate ${
-                        selectedTextColor === neon.value ? 'scale-105 ring-2 ring-white' : ''
-                      }`}
-                    >
-                      {neon.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Font Size & Weight */}
-              <div className="grid grid-cols-2 gap-1 pt-1">
-                {FONT_SIZES.map((sz) => (
-                  <button
-                    key={sz.value}
-                    type="button"
-                    onClick={() => setSelectedFontSize(sz.value)}
-                    className={`py-1 px-1.5 rounded-lg text-[10px] font-bold cursor-pointer ${
-                      selectedFontSize === sz.value
-                        ? 'bg-slate-900 text-white'
-                        : 'bg-slate-100 text-slate-700'
-                    }`}
-                  >
-                    {sz.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
 
@@ -563,107 +702,206 @@ export const ChatInput: React.FC = () => {
         </div>
       )}
 
-      {/* Recording Indicator */}
-      {isRecording && (
-        <div className="mb-2 px-3 py-2 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between text-xs text-red-700 animate-pulse">
-          <div className="flex items-center gap-2 font-bold">
-            <div className="w-2.5 h-2.5 rounded-full bg-red-600 animate-ping" />
-            <span>جارٍ التسجيل الصوتي... ({recordingSeconds} ثانية)</span>
-          </div>
-          <button
-            type="button"
-            onClick={stopVoiceRecording}
-            className="bg-red-600 text-white px-3 py-1 rounded-lg font-bold text-xs hover:bg-red-700 cursor-pointer"
-          >
-            إيقاف وحفظ
-          </button>
-        </div>
-      )}
-
-      {/* Main Input Controls Row: Send, Mic, Pill Input, Emoji, Plus */}
+      {/* Main Input Controls Row: Send, Mic / Red Circle / Spinner, Pill Input, Emoji, Plus */}
       <form onSubmit={handleSend} className="flex items-center gap-1.5 sm:gap-2">
-        {/* Circular Dark Send Button (➤) on Far Right (DOM 1st in RTL) */}
-        <button
-          type="submit"
-          className="chat-send-btn w-9 h-9 sm:w-10 sm:h-10 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white rounded-full font-bold shadow-md transition-all shrink-0 cursor-pointer flex items-center justify-center"
-          title="إرسال الرسالة"
-        >
-          <Send className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-white shrink-0 -translate-x-0.5" />
-        </button>
-
-        {/* Voice Recorder Button (🎤) */}
-        {isRecording ? (
+        {/* Circular Send Button (➤) on Far Right (DOM 1st in RTL) */}
+        {!isRecording && (
           <button
-            type="button"
-            onClick={stopVoiceRecording}
-            className="bg-red-600 hover:bg-red-500 text-white p-2 sm:p-2.5 rounded-full shrink-0 cursor-pointer animate-pulse flex items-center gap-1 text-xs font-bold"
-            title="إيقاف التسجيل الصوتي"
+            type="submit"
+            disabled={isSendingVoice || (!text.trim() && !selectedFile && !recordedAudio)}
+            className={`chat-send-btn w-9 h-9 sm:w-10 sm:h-10 rounded-full font-bold transition-all shrink-0 flex items-center justify-center cursor-pointer ${
+              text.trim().length > 0 || selectedFile || recordedAudio
+                ? 'bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white shadow-md shadow-emerald-600/30'
+                : 'bg-slate-900 hover:bg-slate-800 active:scale-95 text-white/90 shadow-xs'
+            }`}
+            title="إرسال الرسالة"
           >
-            <Square className="w-4 h-4 fill-white" />
+            <Send className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0 -translate-x-0.5" />
           </button>
+        )}
+
+        {/* Voice Recorder Button: Idle Mic -> Recording Red Circle with Seconds -> Sending Spinning Loader -> Mic */}
+        {isSendingVoice ? (
+          /* 1. Sending State: Red Circle with Rotating Spinner */
+          <div className="relative shrink-0 flex items-center justify-center">
+            <span className="absolute -inset-1 rounded-full bg-red-500/30 animate-pulse pointer-events-none" />
+            <button
+              type="button"
+              disabled
+              className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-gradient-to-tr from-red-700 via-red-600 to-rose-500 text-white flex items-center justify-center shadow-lg shadow-red-500/40 border-2 border-white cursor-wait shrink-0 select-none"
+              title="جارٍ إرسال التسجيل الصوتي في العام..."
+            >
+              <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin text-white stroke-[2.8]" />
+            </button>
+          </div>
+        ) : isRecording ? (
+          /* 2. Recording State: Red Circle counting seconds (1 to 120s) with Progress Ring */
+          <div className="relative shrink-0 flex items-center justify-center">
+            {/* Pulsating radar ping rings */}
+            <span className="absolute -inset-1 rounded-full bg-red-500/40 animate-ping pointer-events-none" />
+            <span className="absolute -inset-0.5 rounded-full bg-red-600/30 animate-pulse pointer-events-none" />
+
+            {/* Circular Progress Track towards 120s */}
+            <svg className="absolute -inset-1 w-12 h-12 sm:w-13 sm:h-13 -rotate-90 pointer-events-none" viewBox="0 0 52 52">
+              <circle
+                cx="26"
+                cy="26"
+                r="22"
+                className="stroke-red-200/60"
+                strokeWidth="2.5"
+                fill="transparent"
+              />
+              <circle
+                cx="26"
+                cy="26"
+                r="22"
+                className="stroke-red-600 transition-all duration-300 ease-linear"
+                strokeWidth="2.5"
+                strokeDasharray={2 * Math.PI * 22}
+                strokeDashoffset={2 * Math.PI * 22 * (1 - Math.min(recordingSeconds, 120) / 120)}
+                strokeLinecap="round"
+                fill="transparent"
+              />
+            </svg>
+
+            {/* Interactive Red Circle Button: Pressing it sends the recording */}
+            <button
+              type="button"
+              onClick={handleFinishAndSendVoice}
+              className="relative z-10 w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-gradient-to-tr from-red-700 via-red-600 to-rose-500 hover:from-red-600 hover:to-rose-400 active:scale-95 text-white flex items-center justify-center shadow-lg shadow-red-600/50 border-2 border-white cursor-pointer transition-transform group"
+              title="اضغط على الدائرة الحمراء لإرسال التسجيل الصوتي في العام"
+            >
+              <div className="flex flex-col items-center justify-center leading-none text-white select-none">
+                <span className="text-[11px] sm:text-xs font-black font-mono tracking-tight drop-shadow-xs">
+                  {recordingSeconds < 60
+                    ? `${recordingSeconds}ث`
+                    : `${Math.floor(recordingSeconds / 60)}:${(recordingSeconds % 60).toString().padStart(2, '0')}`
+                  }
+                </span>
+              </div>
+            </button>
+          </div>
         ) : (
+          /* 3. Idle State: Clean Modern Microphone Icon */
           <button
             type="button"
             onClick={startVoiceRecording}
-            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full hover:bg-slate-100 text-slate-600 hover:text-red-500 transition-colors shrink-0 cursor-pointer flex items-center justify-center"
-            title="التسجيل الصوتي"
+            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full hover:bg-red-50 text-slate-600 hover:text-red-600 border border-transparent hover:border-red-200 transition-all shrink-0 cursor-pointer flex items-center justify-center hover:scale-105 active:scale-95"
+            title="تسجيل صوتي (اضغط للتسجيل - من ثانية إلى 120 ثانية)"
           >
             <Mic className="w-5 h-5" />
           </button>
         )}
 
-        {/* Center Pill Input Text Field */}
-        <div className="flex-1 relative">
-          {/* Command Suggestion Box when typing / */}
-          {text.startsWith('/') && (
-            <div
-              id="command-suggestions-menu"
-              className="absolute bottom-full mb-2 left-0 right-0 bg-slate-900 text-white rounded-xl shadow-xl border border-slate-700 p-1.5 z-40 animate-in fade-in slide-in-from-bottom-2 duration-150"
+        {/* Center Field: Recording Strip with Wave & Cancel OR Sending Bar OR Regular Input */}
+        {isRecording ? (
+          <div className="flex-1 bg-red-50 border border-red-200 rounded-full px-3 sm:px-4 py-1.5 sm:py-2 flex items-center justify-between gap-2 text-xs shadow-inner animate-in fade-in duration-150">
+            <div className="flex items-center gap-2 text-red-700 font-bold truncate">
+              {/* Sound wave animated equalizer bars */}
+              <div className="flex items-center gap-0.5 shrink-0">
+                <span className="w-1 h-3 bg-red-500 rounded-full animate-pulse" style={{ animationDuration: '600ms', animationDelay: '0ms' }} />
+                <span className="w-1 h-5 bg-red-600 rounded-full animate-pulse" style={{ animationDuration: '500ms', animationDelay: '150ms' }} />
+                <span className="w-1 h-2 bg-red-500 rounded-full animate-pulse" style={{ animationDuration: '700ms', animationDelay: '300ms' }} />
+                <span className="w-1 h-4 bg-red-600 rounded-full animate-pulse" style={{ animationDuration: '550ms', animationDelay: '100ms' }} />
+              </div>
+              <span className="truncate text-[11px] sm:text-xs">
+                {recordingSeconds < 1
+                  ? 'تحدث الآن... (مسموح من ثانية إلى 120 ثانية)'
+                  : `اضغط على الدائرة الحمراء للإرسال (${recordingSeconds}/120 ثانية)`}
+              </span>
+            </div>
+
+            {/* Cancel Button */}
+            <button
+              type="button"
+              onClick={cancelVoiceRecording}
+              className="shrink-0 text-red-600 hover:text-red-800 bg-red-100 hover:bg-red-200 rounded-full px-2.5 py-1 text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer active:scale-95 border border-red-200"
+              title="إلغاء التسجيل الصوتي بدون إرسال"
             >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>إلغاء</span>
+            </button>
+          </div>
+        ) : isSendingVoice ? (
+          <div className="flex-1 bg-red-50/90 border border-red-200 rounded-full px-4 py-2 flex items-center gap-2 text-xs text-red-700 font-bold shadow-inner animate-pulse">
+            <Loader2 className="w-4 h-4 animate-spin text-red-600 shrink-0" />
+            <span className="text-xs">جارٍ إرسال التسجيل الصوتي في العام...</span>
+          </div>
+        ) : (
+          /* Center Pill Input Text Field */
+          <div className={`flex-1 relative flex items-center bg-slate-50 border ${
+            isMutedInCurrentRoom
+              ? 'border-dashed border-red-300 bg-slate-100/90'
+              : 'border-slate-300/90 focus-within:border-sky-500 focus-within:bg-white'
+          } rounded-full px-2.5 sm:px-3 py-1 sm:py-1.5 shadow-inner transition-colors min-h-[38px] sm:min-h-[42px]`}>
+            {/* Command Suggestion Box when typing / */}
+            {text.startsWith('/') && (
               <div
-                onClick={() => {
-                  sendMessage('/Clear');
-                  setText('');
-                }}
-                className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-800 cursor-pointer transition-colors group"
+                id="command-suggestions-menu"
+                className="absolute bottom-full mb-2 left-0 right-0 bg-slate-900 text-white rounded-xl shadow-xl border border-slate-700 p-1.5 z-40 animate-in fade-in slide-in-from-bottom-2 duration-150"
               >
-                <div className="flex items-center gap-2">
-                  <span className="bg-amber-500/20 text-amber-300 font-mono text-xs px-2 py-0.5 rounded font-bold">
-                    /Clear
-                  </span>
-                  <span className="text-xs text-slate-200 font-bold">
-                    مسح الدردشة العامة للغرفة 🧹
+                <div
+                  onClick={() => {
+                    sendMessage('/Clear');
+                    setText('');
+                  }}
+                  className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-800 cursor-pointer transition-colors group"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="bg-amber-500/20 text-amber-300 font-mono text-xs px-2 py-0.5 rounded font-bold">
+                      /Clear
+                    </span>
+                    <span className="text-xs text-slate-200 font-bold">
+                      مسح الدردشة العامة للغرفة 🧹
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 group-hover:text-amber-300">
+                    اضغط للتنفيذ ⏎
                   </span>
                 </div>
-                <span className="text-[10px] text-slate-400 group-hover:text-amber-300">
-                  اضغط للتنفيذ ⏎
-                </span>
               </div>
-            </div>
-          )}
+            )}
 
-          <input
-            type="text"
-            value={text}
-            onChange={handleTextChange}
-            placeholder={
-              isMutedInCurrentRoom
-                ? '🔇 أنت مكتوم عن الكتابة في هذه الغرفة (مشاهدة فقط)...'
-                : isRecording
-                ? 'Recording audio...'
-                : t('input.placeholder', 'اكتب هنا... (أو اكتب /Clear لمسح الدردشة)')
-            }
-            disabled={isRecording || isMutedInCurrentRoom}
-            style={{
-              color: selectedTextColor !== '#000000' && selectedTextColor !== '#ffffff' ? selectedTextColor : undefined,
-              fontSize: selectedFontSize !== '14px' ? selectedFontSize : undefined,
-              fontWeight: selectedFontWeight !== 'normal' ? selectedFontWeight : undefined
-            }}
-            className={`w-full ${
-              isMutedInCurrentRoom ? 'bg-slate-100/90 text-slate-500 cursor-not-allowed border-dashed border-red-300' : 'bg-slate-50 border-slate-300/90 focus:border-slate-400 text-slate-800'
-            } border rounded-full px-4 py-2 sm:py-2.5 text-xs sm:text-sm placeholder-slate-400 focus:outline-none transition-colors shadow-inner`}
-          />
-        </div>
+            {/* Targeted User Tag directly INSIDE the input bar */}
+            {targetedUserForMessage && (
+              <div className="inline-flex items-center gap-1.5 bg-sky-100/90 hover:bg-sky-200/90 text-sky-950 border border-sky-300/90 rounded-full px-2.5 py-0.5 text-xs font-bold shrink-0 ml-1.5 animate-in fade-in select-none">
+                <span className="truncate max-w-[110px]">{targetedUserForMessage.username}</span>
+                <button
+                  type="button"
+                  onClick={() => setTargetedUserForMessage(null)}
+                  className="w-3.5 h-3.5 rounded-full hover:bg-sky-300/60 text-sky-700 flex items-center justify-center cursor-pointer transition-colors"
+                  title="إلغاء التحديد"
+                >
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              </div>
+            )}
+
+            <input
+              ref={inputRef}
+              type="text"
+              value={text}
+              onChange={handleTextChange}
+              onFocus={() => {
+                window.dispatchEvent(new CustomEvent('chat-scroll-bottom'));
+              }}
+              placeholder={
+                isMutedInCurrentRoom
+                  ? '🔇 أنت مكتوم عن الكتابة في هذه الغرفة (مشاهدة فقط)...'
+                  : t('input.placeholder', 'اكتب هنا... (أو اكتب /Clear لمسح الدردشة)')
+              }
+              disabled={isMutedInCurrentRoom}
+              style={{
+                color: currentUser?.chatTextColor || (selectedTextColor !== '#000000' && selectedTextColor !== '#ffffff' ? selectedTextColor : undefined),
+                fontSize: currentUser?.chatTextFontSize || (selectedFontSize !== '14px' ? selectedFontSize : undefined),
+                fontWeight: currentUser?.chatTextWeight === 'heavy' || currentUser?.chatTextWeight === '900' ? 900 : currentUser?.chatTextWeight === 'bold' || currentUser?.chatTextWeight === '700' ? 700 : undefined,
+                fontFamily: currentUser?.chatFontFamily || undefined,
+                fontStyle: currentUser?.chatFontStyle === 'italic' ? 'italic' : undefined,
+              }}
+              className="flex-1 bg-transparent border-0 px-1 py-1 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-0 min-w-0"
+            />
+          </div>
+        )}
 
         {/* Retro Emoticons Button (😊) */}
         <button
@@ -686,12 +924,12 @@ export const ChatInput: React.FC = () => {
             setIsMediaOpen(!isMediaOpen);
             setIsEmojiOpen(false);
           }}
-          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full transition-colors shrink-0 cursor-pointer flex items-center justify-center ${
+          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full transition-all shrink-0 cursor-pointer flex items-center justify-center active:scale-95 ${
             isMediaOpen
               ? 'bg-slate-900 text-white ring-2 ring-slate-400'
               : 'bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 hover:text-slate-900'
           }`}
-          title="إرفاق الوسائط، مدير الملفات، اليوتيوب، التنسيق ولوحة الرسم"
+          title="أدوات إضافية: الكاميرا، الوسائط، خلفية الرسالة، لوحة الرسم، يوتيوب، Drive"
         >
           <Plus className={`w-5 h-5 transition-transform duration-150 ${isMediaOpen ? 'rotate-45' : ''}`} />
         </button>

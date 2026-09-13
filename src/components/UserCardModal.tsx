@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useChat } from '../context/ChatContext';
 import { UserAvatar } from './UserAvatar';
 import { UsernameDisplay } from './UsernameDisplay';
-import { canPerformModActions, canBeIgnored } from '../utils/permissions';
+import { canPerformModActions, canBeIgnored, isPrimaryOwner, isGrantedOwner } from '../utils/permissions';
 import { getUserFlagEmoji, getArabicCountryName, getEnglishCountryName } from '../utils/geoip';
 import { toEnglishDigits } from '../utils/dateUtils';
 import {
@@ -48,9 +48,10 @@ export const UserCardModal: React.FC = () => {
   const isMe = currentUser && target.id === currentUser.id;
   const isSystemTarget = target.id === 'user-system' || target.username === 'System';
 
-  const canPerformModCommands = (!isSystemTarget && target.role !== 'owner')
+  const canPerformModCommands = (!isSystemTarget && !isPrimaryOwner(target) && target.id !== 'user-owner' && target.role !== 'owner')
     ? canPerformModActions(currentUser, target)
     : false;
+
 
   // Check if target is currently muted globally (checking active duration)
   const isGloballyMuted = Boolean(
@@ -262,6 +263,15 @@ export const UserCardModal: React.FC = () => {
                   </span>
                 </div>
               )}
+
+              {/* Membership Status Badge */}
+              {target.membership && (
+                <div className="mt-1.5 flex items-center justify-center">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-white/20 text-white backdrop-blur-xs border border-white/30">
+                    {target.membership.permanent ? 'عضوية دائمة ♾️' : target.membership.status === 'active' ? 'اشتراك رتبة 30 يوماً ⏱️' : 'عضوية منتهية'}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* BANNED ALERT BANNER MATCHING SCREENSHOT */}
@@ -435,7 +445,8 @@ export const UserCardModal: React.FC = () => {
                           </button>
 
                           {/* Button 3: حظر نهائي من الشات (للمالك والأدمن) */}
-                          {(currentUser?.role === 'owner' || currentUser?.role === 'admin') && target.role !== 'owner' && (
+                          {(currentUser?.role === 'owner' || currentUser?.role === 'admin') && !isPrimaryOwner(target) && target.id !== 'user-owner' && target.role !== 'owner' && (
+
                             <button
                               onClick={() => {
                                 const actionType = isTargetBanned ? 'unban' : 'ban';

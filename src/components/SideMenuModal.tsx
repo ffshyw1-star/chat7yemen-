@@ -342,10 +342,10 @@ export const SideMenuModal: React.FC = () => {
                  }}
                  className="w-full px-5 py-4 flex items-center justify-between hover:bg-amber-50 transition-colors cursor-pointer border-t border-slate-100 text-slate-800"
                >
-                 <div className="flex items-center gap-3">
-                   <span className="text-xl">👑</span>
-                   <span className="text-sm font-black text-amber-700">لوحة تحكم المالك</span>
-                 </div>
+                  <div className="flex items-center gap-3">
+                    <img src="/owner.svg" alt="owner" className="w-6 h-6 object-contain" />
+                    <span className="text-sm font-black text-amber-800">لوحة تحكم المالك</span>
+                  </div>
                </button>
              )}
 

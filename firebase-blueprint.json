@@ -17,6 +17,8 @@
         "statusMessage": { "type": "string", "maxLength": 256 },
         "coins": { "type": "number" },
         "likes": { "type": "number" },
+        "membership": { "type": "object", "description": "Active subscription or rank membership details" },
+        "membershipHistory": { "type": "array", "description": "Historical log of user rank memberships" },
         "onlineStatus": { "type": "string", "maxLength": 32 },
         "joinedDate": { "type": "string", "maxLength": 32 },
         "updatedAt": { "type": "string" }
@@ -89,12 +91,37 @@
         "hideChatBackgroundForVisitorAndMember": { "type": "boolean" },
         "updatedAt": { "type": "string" }
       }
+    },
+    "MembershipHistoryRecord": {
+      "title": "MembershipHistoryRecord",
+      "description": "Historical audit record for membership/rank changes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "rank": { "type": "string", "maxLength": 32 },
+        "assignedBy": { "type": "string", "maxLength": 64 },
+        "assignedByUserId": { "type": "string", "maxLength": 128 },
+        "assignedByUsername": { "type": "string", "maxLength": 64 },
+        "startAt": { "type": "number" },
+        "expiresAt": { "type": "number" },
+        "durationDays": { "type": "number" },
+        "permanent": { "type": "boolean" },
+        "status": { "type": "string", "maxLength": 32 },
+        "notes": { "type": "string", "maxLength": 512 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["rank", "assignedBy", "startAt"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "UserProfile",
       "description": "User accounts and profile storage"
+    },
+    "/users/{userId}/membershipHistory/{historyId}": {
+      "schema": "MembershipHistoryRecord",
+      "description": "Sub-collection tracking historical rank and membership assignments for audit"
     },
     "/messages/{messageId}": {
       "schema": "ChatMessage",

@@ -3,7 +3,7 @@ import { useChat } from '../../context/ChatContext';
 import { convertCustomEmojiItemToDef } from '../CustomEmojis';
 import {
   Image, Plus, Trash2, Upload, Check, Tag, Eye,
-  Crown, AlertCircle, Copy, Search
+  Crown, AlertCircle, Copy, Search, Loader2
 } from 'lucide-react';
 
 export const EmojisView: React.FC<{ showToast: (msg: string) => void }> = ({ showToast }) => {
@@ -14,6 +14,8 @@ export const EmojisView: React.FC<{ showToast: (msg: string) => void }> = ({ sho
   const [tag, setTag] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [operatingId, setOperatingId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -70,8 +72,9 @@ export const EmojisView: React.FC<{ showToast: (msg: string) => void }> = ({ sho
   };
 
   // Submit Handler
-  const handleAddSticker = (e: React.FormEvent) => {
+  const handleAddSticker = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting || operatingId) return;
 
     if (!imageUrl.trim()) {
       showToast('⚠️ يرجى رفع صورة أو إدخال رابط الصورة');
@@ -86,18 +89,40 @@ export const EmojisView: React.FC<{ showToast: (msg: string) => void }> = ({ sho
 
     const finalName = name.trim() || cleanTag;
 
-    addCustomEmoji({
-      name: finalName,
-      tag: `:${cleanTag}:`,
-      imageUrl: imageUrl.trim(),
-      category: 'custom',
-    });
+    setIsSubmitting(true);
+    try {
+      addCustomEmoji({
+        name: finalName,
+        tag: `:${cleanTag}:`,
+        imageUrl: imageUrl.trim(),
+        category: 'custom',
+      });
 
-    // Reset Form
-    setName('');
-    setTag('');
-    setImageUrl('');
-    showToast('تمت إضافة الملصق بنجاح ونشره لجميع المستخدمين! 🎉');
+      // Reset Form
+      setName('');
+      setTag('');
+      setImageUrl('');
+      showToast('تمت إضافة الملصق بنجاح ونشره لجميع المستخدمين! 🎉');
+    } catch (err) {
+      console.error('Failed to add sticker:', err);
+      showToast('⚠️ حدث خطأ أثناء إضافة الملصق');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteSticker = async (id: string, stickerName: string) => {
+    if (operatingId || isSubmitting) return;
+    setOperatingId(id);
+    try {
+      deleteCustomEmoji(id);
+      showToast(`تم حذف ملصق "${stickerName}" بنجاح 🗑️`);
+    } catch (err) {
+      console.error('Failed to delete sticker:', err);
+      showToast('⚠️ فشل حذف الملصق');
+    } finally {
+      setOperatingId(null);
+    }
   };
 
   const filteredEmojis = customEmojis.filter((item) => {
@@ -243,10 +268,11 @@ export const EmojisView: React.FC<{ showToast: (msg: string) => void }> = ({ sho
             <div className="pt-2">
               <button
                 type="submit"
-                className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs rounded-xl shadow-md cursor-pointer transition-all flex items-center justify-center gap-2 active:scale-[0.99]"
+                disabled={isSubmitting || Boolean(operatingId)}
+                className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs rounded-xl shadow-md cursor-pointer transition-all flex items-center justify-center gap-2 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Plus className="w-4 h-4 stroke-[3]" />
-                <span>حفظ ونشر الملصق لجميع المستخدمين الآن ✨</span>
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4 stroke-[3]" />}
+                <span>{isSubmitting ? 'جاري الحفظ والنشر...' : 'حفظ ونشر الملصق لجميع المستخدمين الآن ✨'}</span>
               </button>
             </div>
           </form>
@@ -370,15 +396,17 @@ export const EmojisView: React.FC<{ showToast: (msg: string) => void }> = ({ sho
 
                   <button
                     type="button"
-                    onClick={() => {
-                      deleteCustomEmoji(item.id);
-                      showToast(`تم حذف ملصق "${item.name}" بنجاح 🗑️`);
-                    }}
-                    className="w-full py-1 bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-300 text-slate-400 hover:text-rose-600 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                    disabled={operatingId === item.id || isSubmitting}
+                    onClick={() => handleDeleteSticker(item.id, item.name)}
+                    className="w-full py-1 bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-300 text-slate-400 hover:text-rose-600 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     title="حذف هذا الملصق"
                   >
-                    <Trash2 className="w-3 h-3" />
-                    <span>حذف</span>
+                    {operatingId === item.id ? (
+                      <Loader2 className="w-3 h-3 animate-spin text-rose-600" />
+                    ) : (
+                      <Trash2 className="w-3 h-3" />
+                    )}
+                    <span>{operatingId === item.id ? 'جاري الحذف...' : 'حذف'}</span>
                   </button>
                 </div>
               );

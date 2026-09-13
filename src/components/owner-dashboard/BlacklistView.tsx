@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useChat } from '../../context/ChatContext';
 import {
   Ban, ShieldAlert, Monitor, Smartphone, Globe2, Radio,
-  Plus, Trash2, X, Search, CheckCircle2, UserX, VolumeX, Shield, AlertTriangle, RefreshCw
+  Plus, Trash2, X, Search, CheckCircle2, UserX, VolumeX, Shield, AlertTriangle, RefreshCw, Loader2
 } from 'lucide-react';
 import { BlockedDeviceItem, BlockedBrowserItem, BlockedCountryItem, BlockedXBandItem } from '../../types';
 
@@ -27,6 +27,8 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
 
   const [activeTab, setActiveTab] = useState<'all' | 'ip' | 'devices' | 'browsers' | 'countries' | 'xbands' | 'room_moderation'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [operatingId, setOperatingId] = useState<string | null>(null);
 
   // Form Inputs for Adding Bans
   const [newIp, setNewIp] = useState('');
@@ -115,112 +117,241 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
   }, [siteSettings?.blockedXBands]);
 
   // Handle Add IP
-  const handleAddIp = (e: React.FormEvent) => {
+  const handleAddIp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newIp.trim()) return;
+    if (!newIp.trim() || isSubmitting) return;
     const ip = newIp.trim();
     if (bannedIps.includes(ip)) {
       showToast('عنوان IP محظور بالفعل');
       return;
     }
-    banIp(ip, newIpUsername.trim() || undefined, newIpReason.trim() || undefined);
-    setNewIp('');
-    setNewIpUsername('');
-    setNewIpReason('');
-    showToast(`تم حظر عنوان IP بنجاح: ${ip} 🚫`);
+    setIsSubmitting(true);
+    try {
+      await banIp(ip, newIpUsername.trim() || undefined, newIpReason.trim() || undefined);
+      setNewIp('');
+      setNewIpUsername('');
+      setNewIpReason('');
+      showToast(`تم حظر عنوان IP بنجاح: ${ip} 🚫`);
+    } catch (err) {
+      console.error(err);
+      showToast('⚠️ حدث خطأ أثناء حظر الـ IP');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Handle Add Device
-  const handleAddDevice = (e: React.FormEvent) => {
+  const handleAddDevice = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newDevice.trim()) return;
+    if (!newDevice.trim() || isSubmitting) return;
     const devId = newDevice.trim();
     if (blockedDevices.some(d => d.id === devId || d.token === devId)) {
       showToast('معرف الجهاز محظور بالفعل');
       return;
     }
-    banDevice(
-      devId,
-      newDeviceUsername.trim() || undefined,
-      newDeviceReason.trim() || undefined,
-      newDeviceName.trim() || undefined
-    );
-    setNewDevice('');
-    setNewDeviceName('');
-    setNewDeviceUsername('');
-    setNewDeviceReason('');
-    showToast(`تم حظر الجهاز بنجاح 📱`);
+    setIsSubmitting(true);
+    try {
+      await banDevice(
+        devId,
+        newDeviceUsername.trim() || undefined,
+        newDeviceReason.trim() || undefined,
+        newDeviceName.trim() || undefined
+      );
+      setNewDevice('');
+      setNewDeviceName('');
+      setNewDeviceUsername('');
+      setNewDeviceReason('');
+      showToast(`تم حظر الجهاز بنجاح 📱`);
+    } catch (err) {
+      console.error(err);
+      showToast('⚠️ حدث خطأ أثناء حظر الجهاز');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Handle Add Browser
-  const handleAddBrowser = (e: React.FormEvent) => {
+  const handleAddBrowser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newBrowserFp.trim()) return;
+    if (!newBrowserFp.trim() || isSubmitting) return;
     const fp = newBrowserFp.trim();
     if (blockedBrowsers.some(b => b.id === fp || b.fingerprint === fp)) {
       showToast('بصمة المتصفح محظورة بالفعل');
       return;
     }
-    banBrowser(
-      fp,
-      newBrowserUsername.trim() || undefined,
-      newBrowserReason.trim() || undefined,
-      newBrowserName.trim() || undefined
-    );
-    setNewBrowserFp('');
-    setNewBrowserName('');
-    setNewBrowserUsername('');
-    setNewBrowserReason('');
-    showToast(`تم حظر بصمة المتصفح بنجاح 🌐`);
+    setIsSubmitting(true);
+    try {
+      await banBrowser(
+        fp,
+        newBrowserUsername.trim() || undefined,
+        newBrowserReason.trim() || undefined,
+        newBrowserName.trim() || undefined
+      );
+      setNewBrowserFp('');
+      setNewBrowserName('');
+      setNewBrowserUsername('');
+      setNewBrowserReason('');
+      showToast(`تم حظر بصمة المتصفح بنجاح 🌐`);
+    } catch (err) {
+      console.error(err);
+      showToast('⚠️ حدث خطأ أثناء حظر بصمة المتصفح');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Handle Add Country
-  const handleAddCountry = (e: React.FormEvent) => {
+  const handleAddCountry = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCountryCode.trim()) return;
+    if (!newCountryCode.trim() || isSubmitting) return;
     const code = newCountryCode.trim().toUpperCase();
     if (blockedCountries.some(c => c.code.toUpperCase() === code)) {
       showToast('هذه الدولة محجوبة بالفعل');
       return;
     }
-    banCountry(
-      code,
-      newCountryName.trim() || undefined,
-      newCountryReason.trim() || undefined
-    );
-    setNewCountryCode('');
-    setNewCountryName('');
-    setNewCountryReason('');
-    showToast(`تم حجب الدولة بنجاح 🌍`);
+    setIsSubmitting(true);
+    try {
+      await banCountry(
+        code,
+        newCountryName.trim() || undefined,
+        newCountryReason.trim() || undefined
+      );
+      setNewCountryCode('');
+      setNewCountryName('');
+      setNewCountryReason('');
+      showToast(`تم حجب الدولة بنجاح 🌍`);
+    } catch (err) {
+      console.error(err);
+      showToast('⚠️ حدث خطأ أثناء حجب الدولة');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Handle Add XBand
-  const handleAddXBand = (e: React.FormEvent) => {
+  const handleAddXBand = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newXBandRange.trim()) return;
+    if (!newXBandRange.trim() || isSubmitting) return;
     const range = newXBandRange.trim();
     if (blockedXBands.some(x => x.range === range)) {
       showToast('نطاق الشبكة محظور بالفعل');
       return;
     }
-    const newItem: BlockedXBandItem = {
-      range,
-      reason: newXBandReason.trim() || 'حظر نطاق شبكة من لوحة التحكم',
-      date: new Date().toLocaleDateString('ar-EG')
-    };
-    updateSiteSettings({
-      blockedXBands: [...blockedXBands, newItem]
-    });
-    setNewXBandRange('');
-    setNewXBandReason('');
-    showToast(`تم حظر نطاق الشبكة بنجاح: ${range} 📡`);
+    setIsSubmitting(true);
+    try {
+      const newItem: BlockedXBandItem = {
+        range,
+        reason: newXBandReason.trim() || 'حظر نطاق شبكة من لوحة التحكم',
+        date: new Date().toLocaleDateString('ar-EG')
+      };
+      await updateSiteSettings({
+        blockedXBands: [...blockedXBands, newItem]
+      });
+      setNewXBandRange('');
+      setNewXBandReason('');
+      showToast(`تم حظر نطاق الشبكة بنجاح: ${range} 📡`);
+    } catch (err) {
+      console.error(err);
+      showToast('⚠️ حدث خطأ أثناء حظر نطاق الشبكة');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleRemoveXBand = (range: string) => {
-    updateSiteSettings({
-      blockedXBands: blockedXBands.filter(x => x.range !== range)
-    });
-    showToast(`تم فك حظر النطاق: ${range} 🔓`);
+  const handleRemoveXBand = async (range: string) => {
+    if (operatingId) return;
+    setOperatingId(`xband-${range}`);
+    try {
+      await updateSiteSettings({
+        blockedXBands: blockedXBands.filter(x => x.range !== range)
+      });
+      showToast(`تم فك حظر النطاق: ${range} 🔓`);
+    } catch (err) {
+      console.error(err);
+      showToast('⚠️ حدث خطأ أثناء فك حظر النطاق');
+    } finally {
+      setOperatingId(null);
+    }
+  };
+
+  const handleUnbanIp = async (ip: string) => {
+    if (operatingId) return;
+    setOperatingId(`ip-${ip}`);
+    try {
+      await unbanIp(ip);
+    } catch (err) {
+      console.error(err);
+      showToast('⚠️ حدث خطأ أثناء فك حظر الـ IP');
+    } finally {
+      setOperatingId(null);
+    }
+  };
+
+  const handleUnbanDevice = async (id: string) => {
+    if (operatingId) return;
+    setOperatingId(`dev-${id}`);
+    try {
+      await unbanDevice(id);
+    } catch (err) {
+      console.error(err);
+      showToast('⚠️ حدث خطأ أثناء فك حظر الجهاز');
+    } finally {
+      setOperatingId(null);
+    }
+  };
+
+  const handleUnbanBrowser = async (id: string) => {
+    if (operatingId) return;
+    setOperatingId(`browser-${id}`);
+    try {
+      await unbanBrowser(id);
+    } catch (err) {
+      console.error(err);
+      showToast('⚠️ حدث خطأ أثناء فك حظر بصمة المتصفح');
+    } finally {
+      setOperatingId(null);
+    }
+  };
+
+  const handleUnbanCountry = async (code: string) => {
+    if (operatingId) return;
+    setOperatingId(`country-${code}`);
+    try {
+      await unbanCountry(code);
+    } catch (err) {
+      console.error(err);
+      showToast('⚠️ حدث خطأ أثناء فك حجب الدولة');
+    } finally {
+      setOperatingId(null);
+    }
+  };
+
+  const handleUnkick = async (roomId: string, uid: string, username: string) => {
+    if (operatingId) return;
+    setOperatingId(`unkick-${roomId}-${uid}`);
+    try {
+      await unkickUserFromRoom(roomId, uid);
+      showToast(`تم فك طرد ${username}`);
+    } catch (err) {
+      console.error(err);
+      showToast('⚠️ حدث خطأ أثناء فك الطرد');
+    } finally {
+      setOperatingId(null);
+    }
+  };
+
+  const handleUnmute = async (roomId: string, uid: string, username: string) => {
+    if (operatingId) return;
+    setOperatingId(`unmute-${roomId}-${uid}`);
+    try {
+      await unmuteUserInRoom(roomId, uid);
+      showToast(`تم فك كتم ${username}`);
+    } catch (err) {
+      console.error(err);
+      showToast('⚠️ حدث خطأ أثناء فك الكتم');
+    } finally {
+      setOperatingId(null);
+    }
   };
 
   // Pre-filtered by search query
@@ -434,10 +565,15 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                       </div>
 
                       <button
-                        onClick={() => unbanIp(ip)}
-                        className="px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center justify-center gap-1.5 shrink-0 self-end sm:self-center"
+                        onClick={() => handleUnbanIp(ip)}
+                        disabled={operatingId === `ip-${ip}`}
+                        className="px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center justify-center gap-1.5 shrink-0 self-end sm:self-center"
                       >
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        {operatingId === `ip-${ip}` ? (
+                          <Loader2 className="w-3.5 h-3.5 text-emerald-600 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        )}
                         <span>فك الحظر 🔓</span>
                       </button>
                     </div>
@@ -498,10 +634,15 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                     </div>
 
                     <button
-                      onClick={() => unbanDevice(dev.id)}
-                      className="px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center justify-center gap-1.5 shrink-0 self-end sm:self-center"
+                      onClick={() => handleUnbanDevice(dev.id)}
+                      disabled={operatingId === `dev-${dev.id}`}
+                      className="px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center justify-center gap-1.5 shrink-0 self-end sm:self-center"
                     >
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      {operatingId === `dev-${dev.id}` ? (
+                        <Loader2 className="w-3.5 h-3.5 text-emerald-600 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      )}
                       <span>فك الحظر 🔓</span>
                     </button>
                   </div>
@@ -561,10 +702,15 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                     </div>
 
                     <button
-                      onClick={() => unbanBrowser(browser.id)}
-                      className="px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center justify-center gap-1.5 shrink-0 self-end sm:self-center"
+                      onClick={() => handleUnbanBrowser(browser.id)}
+                      disabled={operatingId === `browser-${browser.id}`}
+                      className="px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center justify-center gap-1.5 shrink-0 self-end sm:self-center"
                     >
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      {operatingId === `browser-${browser.id}` ? (
+                        <Loader2 className="w-3.5 h-3.5 text-emerald-600 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      )}
                       <span>فك الحظر 🔓</span>
                     </button>
                   </div>
@@ -621,10 +767,15 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                     </div>
 
                     <button
-                      onClick={() => unbanCountry(country.code)}
-                      className="px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center justify-center gap-1.5 shrink-0 self-end sm:self-center"
+                      onClick={() => handleUnbanCountry(country.code)}
+                      disabled={operatingId === `country-${country.code}`}
+                      className="px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center justify-center gap-1.5 shrink-0 self-end sm:self-center"
                     >
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      {operatingId === `country-${country.code}` ? (
+                        <Loader2 className="w-3.5 h-3.5 text-emerald-600 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      )}
                       <span>فك الحظر 🔓</span>
                     </button>
                   </div>
@@ -655,7 +806,8 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                   placeholder="مثال: 192.168.1.100"
                   value={newIp}
                   onChange={(e) => setNewIp(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-mono font-bold focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  disabled={isSubmitting}
+                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-mono font-bold focus:outline-none focus:ring-1 focus:ring-rose-500 disabled:opacity-60"
                   required
                 />
               </div>
@@ -666,7 +818,8 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                   placeholder="مثال: أحمد_المشاغب"
                   value={newIpUsername}
                   onChange={(e) => setNewIpUsername(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  disabled={isSubmitting}
+                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-rose-500 disabled:opacity-60"
                 />
               </div>
               <div>
@@ -676,17 +829,19 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                   placeholder="مثال: نشر روابط أو إعلانات مجهولة"
                   value={newIpReason}
                   onChange={(e) => setNewIpReason(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  disabled={isSubmitting}
+                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-rose-500 disabled:opacity-60"
                 />
               </div>
             </div>
             <div className="flex justify-end pt-1">
               <button
                 type="submit"
-                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-2xs"
+                disabled={isSubmitting}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-2xs"
               >
-                <Ban className="w-4 h-4" />
-                <span>تأكيد حظر الـ IP</span>
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />}
+                <span>{isSubmitting ? 'جاري الحظر...' : 'تأكيد حظر الـ IP'}</span>
               </button>
             </div>
           </form>
@@ -716,10 +871,15 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                       </div>
                     </div>
                     <button
-                      onClick={() => unbanIp(ip)}
-                      className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5"
+                      onClick={() => handleUnbanIp(ip)}
+                      disabled={operatingId === `ip-${ip}`}
+                      className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5"
                     >
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      {operatingId === `ip-${ip}` ? (
+                        <Loader2 className="w-4 h-4 text-emerald-600 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      )}
                       <span>فك الحظر 🔓</span>
                     </button>
                   </div>
@@ -750,7 +910,8 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                   placeholder="مثال: dev_iphone_14pro_x"
                   value={newDevice}
                   onChange={(e) => setNewDevice(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-mono font-bold focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  disabled={isSubmitting}
+                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-mono font-bold focus:outline-none focus:ring-1 focus:ring-rose-500 disabled:opacity-60"
                   required
                 />
               </div>
@@ -761,7 +922,8 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                   placeholder="مثال: iPhone 14 Pro Max"
                   value={newDeviceName}
                   onChange={(e) => setNewDeviceName(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  disabled={isSubmitting}
+                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-rose-500 disabled:opacity-60"
                 />
               </div>
               <div>
@@ -771,7 +933,8 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                   placeholder="مثال: عمر_المشاغب"
                   value={newDeviceUsername}
                   onChange={(e) => setNewDeviceUsername(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  disabled={isSubmitting}
+                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-rose-500 disabled:opacity-60"
                 />
               </div>
               <div>
@@ -781,17 +944,19 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                   placeholder="مثال: تكرار السبام والمخالفة"
                   value={newDeviceReason}
                   onChange={(e) => setNewDeviceReason(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  disabled={isSubmitting}
+                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-rose-500 disabled:opacity-60"
                 />
               </div>
             </div>
             <div className="flex justify-end pt-1">
               <button
                 type="submit"
-                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-2xs"
+                disabled={isSubmitting}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-2xs"
               >
-                <Smartphone className="w-4 h-4" />
-                <span>تأكيد حظر الجهاز</span>
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Smartphone className="w-4 h-4" />}
+                <span>{isSubmitting ? 'جاري الحظر...' : 'تأكيد حظر الجهاز'}</span>
               </button>
             </div>
           </form>
@@ -824,10 +989,15 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                     </div>
                   </div>
                   <button
-                    onClick={() => unbanDevice(dev.id)}
-                    className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5"
+                    onClick={() => handleUnbanDevice(dev.id)}
+                    disabled={operatingId === `dev-${dev.id}`}
+                    className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5"
                   >
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    {operatingId === `dev-${dev.id}` ? (
+                      <Loader2 className="w-4 h-4 text-emerald-600 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    )}
                     <span>فك الحظر 🔓</span>
                   </button>
                 </div>
@@ -857,7 +1027,8 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                   placeholder="مثال: fp_brw_8a92d4f107"
                   value={newBrowserFp}
                   onChange={(e) => setNewBrowserFp(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-mono font-bold focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  disabled={isSubmitting}
+                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-mono font-bold focus:outline-none focus:ring-1 focus:ring-rose-500 disabled:opacity-60"
                   required
                 />
               </div>
@@ -868,7 +1039,8 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                   placeholder="مثال: Chrome 120 (Windows)"
                   value={newBrowserName}
                   onChange={(e) => setNewBrowserName(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  disabled={isSubmitting}
+                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-rose-500 disabled:opacity-60"
                 />
               </div>
               <div>
@@ -878,7 +1050,8 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                   placeholder="مثال: زائر_مخالف_99"
                   value={newBrowserUsername}
                   onChange={(e) => setNewBrowserUsername(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  disabled={isSubmitting}
+                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-rose-500 disabled:opacity-60"
                 />
               </div>
               <div>
@@ -888,17 +1061,19 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                   placeholder="مثال: برامج آلية وزوار وهميين"
                   value={newBrowserReason}
                   onChange={(e) => setNewBrowserReason(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  disabled={isSubmitting}
+                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-rose-500 disabled:opacity-60"
                 />
               </div>
             </div>
             <div className="flex justify-end pt-1">
               <button
                 type="submit"
-                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-2xs"
+                disabled={isSubmitting}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-2xs"
               >
-                <Monitor className="w-4 h-4" />
-                <span>تأكيد حظر بصمة المتصفح</span>
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Monitor className="w-4 h-4" />}
+                <span>{isSubmitting ? 'جاري الحظر...' : 'تأكيد حظر بصمة المتصفح'}</span>
               </button>
             </div>
           </form>
@@ -931,10 +1106,15 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                     </div>
                   </div>
                   <button
-                    onClick={() => unbanBrowser(b.id)}
-                    className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5"
+                    onClick={() => handleUnbanBrowser(b.id)}
+                    disabled={operatingId === `browser-${b.id}`}
+                    className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5"
                   >
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    {operatingId === `browser-${b.id}` ? (
+                      <Loader2 className="w-4 h-4 text-emerald-600 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    )}
                     <span>فك الحظر 🔓</span>
                   </button>
                 </div>
@@ -964,7 +1144,8 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                   placeholder="مثال: IL, US, FR"
                   value={newCountryCode}
                   onChange={(e) => setNewCountryCode(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-mono font-bold uppercase focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  disabled={isSubmitting}
+                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-mono font-bold uppercase focus:outline-none focus:ring-1 focus:ring-rose-500 disabled:opacity-60"
                   maxLength={4}
                   required
                 />
@@ -976,7 +1157,8 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                   placeholder="مثال: إسرائيل، أو غيرها"
                   value={newCountryName}
                   onChange={(e) => setNewCountryName(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  disabled={isSubmitting}
+                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-rose-500 disabled:opacity-60"
                 />
               </div>
               <div>
@@ -986,17 +1168,19 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                   placeholder="مثال: حظر دخول كامل من هذه الدولة"
                   value={newCountryReason}
                   onChange={(e) => setNewCountryReason(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  disabled={isSubmitting}
+                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-rose-500 disabled:opacity-60"
                 />
               </div>
             </div>
             <div className="flex justify-end pt-1">
               <button
                 type="submit"
-                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-2xs"
+                disabled={isSubmitting}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-2xs"
               >
-                <Globe2 className="w-4 h-4" />
-                <span>تأكيد حجب الدولة</span>
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe2 className="w-4 h-4" />}
+                <span>{isSubmitting ? 'جاري الحجب...' : 'تأكيد حجب الدولة'}</span>
               </button>
             </div>
           </form>
@@ -1024,10 +1208,15 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                     </div>
                   </div>
                   <button
-                    onClick={() => unbanCountry(c.code)}
-                    className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5"
+                    onClick={() => handleUnbanCountry(c.code)}
+                    disabled={operatingId === `country-${c.code}`}
+                    className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5"
                   >
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    {operatingId === `country-${c.code}` ? (
+                      <Loader2 className="w-4 h-4 text-emerald-600 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    )}
                     <span>فك الحظر 🔓</span>
                   </button>
                 </div>
@@ -1057,7 +1246,8 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                   placeholder="مثال: 197.245.0.0/16 أو 10.0.0.*"
                   value={newXBandRange}
                   onChange={(e) => setNewXBandRange(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-mono font-bold focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  disabled={isSubmitting}
+                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-mono font-bold focus:outline-none focus:ring-1 focus:ring-rose-500 disabled:opacity-60"
                   required
                 />
               </div>
@@ -1068,17 +1258,19 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                   placeholder="مثال: مزود خدمة هجمات متكررة"
                   value={newXBandReason}
                   onChange={(e) => setNewXBandReason(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  disabled={isSubmitting}
+                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-rose-500 disabled:opacity-60"
                 />
               </div>
             </div>
             <div className="flex justify-end pt-1">
               <button
                 type="submit"
-                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-2xs"
+                disabled={isSubmitting}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-2xs"
               >
-                <Radio className="w-4 h-4" />
-                <span>تأكيد حظر نطاق الشبكة</span>
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Radio className="w-4 h-4" />}
+                <span>{isSubmitting ? 'جاري الحظر...' : 'تأكيد حظر نطاق الشبكة'}</span>
               </button>
             </div>
           </form>
@@ -1101,9 +1293,14 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                   </div>
                   <button
                     onClick={() => handleRemoveXBand(x.range)}
-                    className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5"
+                    disabled={operatingId === `xband-${x.range}`}
+                    className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5"
                   >
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    {operatingId === `xband-${x.range}` ? (
+                      <Loader2 className="w-4 h-4 text-emerald-600 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    )}
                     <span>فك الحظر 🔓</span>
                   </button>
                 </div>
@@ -1149,18 +1346,17 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                       <div className="flex flex-wrap gap-2">
                         {kicked.map(uid => {
                           const targetUser = users.find(u => u.id === uid);
+                          const isBusy = operatingId === `unkick-${room.id}-${uid}`;
                           return (
                             <div key={uid} className="bg-rose-100 text-rose-800 text-xs font-bold px-3 py-1 rounded-xl flex items-center gap-2 border border-rose-200">
                               <span>{targetUser?.username || uid}</span>
                               <button
-                                onClick={() => {
-                                  unkickUserFromRoom(room.id, uid);
-                                  showToast(`تم فك طرد ${targetUser?.username || uid}`);
-                                }}
-                                className="text-rose-600 hover:text-rose-900 cursor-pointer text-xs font-black"
+                                onClick={() => handleUnkick(room.id, uid, targetUser?.username || uid)}
+                                disabled={isBusy}
+                                className="text-rose-600 hover:text-rose-900 disabled:opacity-50 cursor-pointer text-xs font-black flex items-center"
                                 title="فك الطرد"
                               >
-                                ✕
+                                {isBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : '✕'}
                               </button>
                             </div>
                           );
@@ -1178,18 +1374,17 @@ export const BlacklistView: React.FC<{ showToast: (msg: string) => void }> = ({ 
                       <div className="flex flex-wrap gap-2">
                         {muted.map(uid => {
                           const targetUser = users.find(u => u.id === uid);
+                          const isBusy = operatingId === `unmute-${room.id}-${uid}`;
                           return (
                             <div key={uid} className="bg-amber-100 text-amber-800 text-xs font-bold px-3 py-1 rounded-xl flex items-center gap-2 border border-amber-200">
                               <span>{targetUser?.username || uid}</span>
                               <button
-                                onClick={() => {
-                                  unmuteUserInRoom(room.id, uid);
-                                  showToast(`تم فك كتم ${targetUser?.username || uid}`);
-                                }}
-                                className="text-amber-600 hover:text-amber-900 cursor-pointer text-xs font-black"
+                                onClick={() => handleUnmute(room.id, uid, targetUser?.username || uid)}
+                                disabled={isBusy}
+                                className="text-amber-600 hover:text-amber-900 disabled:opacity-50 cursor-pointer text-xs font-black flex items-center"
                                 title="فك الكتم"
                               >
-                                ✕
+                                {isBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : '✕'}
                               </button>
                             </div>
                           );

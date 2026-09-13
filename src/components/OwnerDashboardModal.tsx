@@ -9,7 +9,8 @@ import {
   RefreshCw, Trash2, Edit, Plus, Monitor, AlertCircle, Radio, Lock, Unlock,
   Download, Upload, ExternalLink, Globe, Key, AlertTriangle, UserCheck,
   UserX, Sliders, Music, RadioTower, Database, Menu, Bell, Smile, Gem, Sparkles,
-  Flame, Heart, Gamepad2, Coffee, Trophy, Image, Activity, BarChart3, Layout
+  Flame, Heart, Gamepad2, Coffee, Trophy, Image, Activity, BarChart3, Layout,
+  Loader2
 } from 'lucide-react';
 import { LandingSettingsView } from './owner-dashboard/LandingSettingsView';
 import { DjView } from './owner-dashboard/DjView';
@@ -25,6 +26,7 @@ import { ActionsView } from './owner-dashboard/ActionsView';
 import { EmojisView } from './owner-dashboard/EmojisView';
 import { BlacklistView } from './owner-dashboard/BlacklistView';
 import { RoomPresenceAnalytics } from './owner-dashboard/RoomPresenceAnalytics';
+import { isPrimaryOwner, isGrantedOwner, canDemoteOrModifyUser } from '../utils/permissions';
 
 export const OwnerDashboardModal: React.FC = () => {
   const {
@@ -60,7 +62,9 @@ export const OwnerDashboardModal: React.FC = () => {
     deleteUserAccount,
     bannedIps,
     unbanIp,
-    banIp
+    banIp,
+    getMembershipStatus,
+    cancelMembership
   } = useChat();
 
   if (!currentUser || currentUser.role !== 'owner') {
@@ -97,6 +101,7 @@ export const OwnerDashboardModal: React.FC = () => {
   const [editUserPass, setEditUserPass] = useState('');
   const [editUserCoins, setEditUserCoins] = useState<number>(0);
   const [editUserRole, setEditUserRole] = useState<UserRole>('member');
+  const [editUserPermanent, setEditUserPermanent] = useState<boolean>(false);
 
   // Room Creation State
   const [newRoomName, setNewRoomName] = useState('');
@@ -175,10 +180,46 @@ export const OwnerDashboardModal: React.FC = () => {
 
   if (!currentUser) return null;
 
-  const handleSaveSettings = (e?: React.FormEvent) => {
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [isUpdatingSetting, setIsUpdatingSetting] = useState(false);
+  const [updatingSettingKey, setUpdatingSettingKey] = useState<string | null>(null);
+
+  const handleSaveSettings = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    updateSiteSettings(settingsForm);
-    showToast('تم حفظ إعدادات النظام بنجاح 💾');
+    if (isSavingSettings || isUpdatingSetting) return;
+    setIsSavingSettings(true);
+    try {
+      await updateSiteSettings(settingsForm);
+      showToast('تم حفظ إعدادات النظام بنجاح 💾');
+    } catch (err) {
+      console.error('Failed to save settings:', err);
+      showToast('⚠️ حدث خطأ أثناء حفظ إعدادات النظام في قاعدة البيانات');
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
+  const handleUpdateSingleSetting = async (
+    updatedFields: Partial<typeof settingsForm>,
+    successMsg: string,
+    key?: string
+  ) => {
+    if (isSavingSettings || isUpdatingSetting) return;
+    setIsUpdatingSetting(true);
+    if (key) setUpdatingSettingKey(key);
+    try {
+      const merged = { ...settingsForm, ...updatedFields };
+      await updateSiteSettings(merged);
+      // Refresh UI state ONLY after Firestore succeeds
+      setSettingsForm(merged);
+      showToast(successMsg);
+    } catch (err) {
+      console.error('Failed to update setting in Firestore:', err);
+      showToast('⚠️ فشل تحديث الإعداد في قاعدة البيانات');
+    } finally {
+      setIsUpdatingSetting(false);
+      setUpdatingSettingKey(null);
+    }
   };
 
   const handleCreateBackup = () => {
@@ -442,8 +483,8 @@ export const OwnerDashboardModal: React.FC = () => {
 
             {/* Site Pill Logo Badge: شات اليوزر العربي */}
             <div className="flex items-center gap-2 bg-[#132238] border border-cyan-500/30 px-3 py-1 rounded-full shadow-inner">
-              <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-300 flex items-center justify-center shadow-xs text-slate-950 font-black text-xs">
-                👑
+              <div className="w-6 h-6 rounded-full bg-slate-900 border border-amber-400 flex items-center justify-center shadow-xs overflow-hidden p-0.5">
+                <img src="/owner.svg" alt="badge" className="w-full h-full object-contain" />
               </div>
               <div className="flex flex-col">
                 <span className="text-xs font-black text-white tracking-wide leading-none">
@@ -1179,15 +1220,17 @@ export const OwnerDashboardModal: React.FC = () => {
 
                       {/* Dropdown Selector */}
                       <select
+                        disabled={isSavingSettings || isUpdatingSetting}
                         value={settingsForm.onlinePresenceTimeoutHours ?? 0}
                         onChange={(e) => {
                           const val = Number(e.target.value);
-                          const updated = { ...settingsForm, onlinePresenceTimeoutHours: val };
-                          setSettingsForm(updated);
-                          updateSiteSettings(updated);
-                          showToast('تم تحديث وحفظ مدة بقاء المتواجدين في قاعدة البيانات بنجاح 💾✨');
+                          handleUpdateSingleSetting(
+                            { onlinePresenceTimeoutHours: val },
+                            'تم تحديث وحفظ مدة بقاء المتواجدين في قاعدة البيانات بنجاح 💾✨',
+                            'presence_timeout'
+                          );
                         }}
-                        className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-xs font-bold text-slate-800 cursor-pointer focus:outline-none"
+                        className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-xs font-bold text-slate-800 cursor-pointer focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <option value={0}>المتصلين فقط بالوقت الفعلي (الافتراضي)</option>
                         <option value={0.0833}>يختفي الحساب بعد 5 دقائق من الخروج</option>
@@ -1216,19 +1259,22 @@ export const OwnerDashboardModal: React.FC = () => {
                           <button
                             key={btn.val}
                             type="button"
+                            disabled={isSavingSettings || isUpdatingSetting}
                             onClick={() => {
-                              const updated = { ...settingsForm, onlinePresenceTimeoutHours: btn.val };
-                              setSettingsForm(updated);
-                              updateSiteSettings(updated);
-                              showToast(`تم ضبط مدة المتواجدين على (${btn.label}) وحفظها مباشرة 💾`);
+                              handleUpdateSingleSetting(
+                                { onlinePresenceTimeoutHours: btn.val },
+                                `تم ضبط مدة المتواجدين على (${btn.label}) وحفظها مباشرة 💾`,
+                                `presence_btn_${btn.val}`
+                              );
                             }}
-                            className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-colors cursor-pointer border ${
+                            className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-colors cursor-pointer border flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed ${
                               (settingsForm.onlinePresenceTimeoutHours ?? 0) === btn.val
                                 ? 'bg-amber-600 text-white border-amber-700 shadow-xs'
                                 : 'bg-white text-amber-900 border-amber-200 hover:bg-amber-100'
                             }`}
                           >
-                            {btn.label}
+                            {updatingSettingKey === `presence_btn_${btn.val}` && <Loader2 className="w-3 h-3 animate-spin" />}
+                            <span>{btn.label}</span>
                           </button>
                         ))}
                       </div>
@@ -1272,26 +1318,30 @@ export const OwnerDashboardModal: React.FC = () => {
                             <button
                               key={roleItem.key}
                               type="button"
+                              disabled={isSavingSettings || isUpdatingSetting}
                               onClick={() => {
                                 const nextPerms = canChange
                                   ? rolePerms.filter((p: string) => p !== 'change_username')
                                   : [...rolePerms, 'change_username'];
                                 const updatedMatrix = { ...currentMatrix, [roleItem.key]: nextPerms };
-                                const updated = { ...settingsForm, rolePermissions: updatedMatrix };
-                                setSettingsForm(updated);
-                                updateSiteSettings(updated);
-                                showToast(canChange
-                                  ? `تم إيقاف تغيير الاسم لرتبة ${roleItem.name} ❌`
-                                  : `تم تفعيل تغيير الاسم لرتبة ${roleItem.name} ✅`
+                                handleUpdateSingleSetting(
+                                  { rolePermissions: updatedMatrix },
+                                  canChange
+                                    ? `تم إيقاف تغيير الاسم لرتبة ${roleItem.name} ❌`
+                                    : `تم تفعيل تغيير الاسم لرتبة ${roleItem.name} ✅`,
+                                  `role_perm_${roleItem.key}`
                                 );
                               }}
-                              className={`p-2 rounded-lg border text-right flex items-center justify-between transition-all cursor-pointer ${
+                              className={`p-2 rounded-lg border text-right flex items-center justify-between transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                                 canChange
                                   ? 'bg-white border-purple-200 text-purple-950 font-bold'
                                   : 'bg-rose-50 border-rose-200 text-rose-700 font-bold'
                               }`}
                             >
-                              <span className="text-[11px]">{roleItem.name}</span>
+                              <span className="text-[11px] flex items-center gap-1">
+                                {updatingSettingKey === `role_perm_${roleItem.key}` && <Loader2 className="w-3 h-3 animate-spin" />}
+                                {roleItem.name}
+                              </span>
                               <span className={`text-[10px] px-1.5 py-0.5 rounded-md ${
                                 canChange ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
                               }`}>
@@ -1306,21 +1356,27 @@ export const OwnerDashboardModal: React.FC = () => {
                     {/* Hide Room Switch Notifications Toggle */}
                     <div className="p-3 bg-sky-50/70 rounded-xl border border-sky-200 flex items-center justify-between">
                       <div>
-                        <p className="text-xs font-bold text-sky-950">🚪 إخفاء تنقل المستخدمين بين الغرف</p>
+                        <p className="text-xs font-bold text-sky-950 flex items-center gap-1">
+                          {updatingSettingKey === 'hideRoomSwitchNotifications' && <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-600" />}
+                          <span>🚪 إخفاء تنقل المستخدمين بين الغرف</span>
+                        </p>
                         <p className="text-[10px] text-sky-800/80 mt-0.5">
                           إخفاء الرسائل العامة والتنبيهات عند انتقال المستخدمين ودخولهم بين الغرف المختلفة
                         </p>
                       </div>
                       <input
                         type="checkbox"
+                        disabled={isSavingSettings || isUpdatingSetting}
                         checked={Boolean(settingsForm.hideRoomSwitchNotifications)}
                         onChange={(e) => {
-                          const updated = { ...settingsForm, hideRoomSwitchNotifications: e.target.checked };
-                          setSettingsForm(updated);
-                          updateSiteSettings(updated);
-                          showToast(e.target.checked ? 'تم تفعيل إخفاء تنقل الغرف 🔕' : 'تم إظهار تنبيهات تنقل الغرف 🔔');
+                          const checked = e.target.checked;
+                          handleUpdateSingleSetting(
+                            { hideRoomSwitchNotifications: checked },
+                            checked ? 'تم تفعيل إخفاء تنقل الغرف 🔕' : 'تم إظهار تنبيهات تنقل الغرف 🔔',
+                            'hideRoomSwitchNotifications'
+                          );
                         }}
-                        className="w-4 h-4 accent-[#f97316] cursor-pointer"
+                        className="w-4 h-4 accent-[#f97316] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                       />
                     </div>
                     
@@ -1338,19 +1394,25 @@ export const OwnerDashboardModal: React.FC = () => {
                       ].map((item: any) => (
                         <div key={item.key} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
                           <div>
-                            <p className="text-xs font-bold text-slate-800">{item.label}</p>
+                            <p className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                              {updatingSettingKey === item.key && <Loader2 className="w-3.5 h-3.5 animate-spin text-orange-500" />}
+                              <span>{item.label}</span>
+                            </p>
                             <p className="text-[10px] text-slate-500 mt-0.5">{item.desc}</p>
                           </div>
                           <input
                             type="checkbox"
+                            disabled={isSavingSettings || isUpdatingSetting}
                             checked={item.isHideFlag ? Boolean((settingsForm as any)[item.key]) : Boolean((settingsForm as any)[item.key] ?? true)}
                             onChange={(e) => {
-                              const updated = { ...settingsForm, [item.key]: e.target.checked };
-                              setSettingsForm(updated);
-                              updateSiteSettings(updated);
-                              showToast('تم تحديث الميزة وحفظها بنجاح ✨💾');
+                              const checked = e.target.checked;
+                              handleUpdateSingleSetting(
+                                { [item.key]: checked },
+                                'تم تحديث الميزة وحفظها بنجاح ✨💾',
+                                item.key
+                              );
                             }}
-                            className="w-4 h-4 accent-[#f97316] cursor-pointer"
+                            className="w-4 h-4 accent-[#f97316] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                           />
                         </div>
                       ))}
@@ -1384,10 +1446,13 @@ export const OwnerDashboardModal: React.FC = () => {
                         />
                       </div>
                       <button
+                        type="button"
+                        disabled={isSavingSettings || isUpdatingSetting}
                         onClick={handleSaveSettings}
-                        className="px-4 py-2 bg-[#f97316] text-white text-xs font-bold rounded-lg cursor-pointer"
+                        className="px-4 py-2 bg-[#f97316] hover:bg-[#ea580c] text-white text-xs font-bold rounded-lg cursor-pointer flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        حفظ الروابط 💾
+                        {isSavingSettings ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                        <span>{isSavingSettings ? 'جاري الحفظ...' : 'حفظ الروابط 💾'}</span>
                       </button>
                     </div>
                   </div>
@@ -1465,10 +1530,13 @@ export const OwnerDashboardModal: React.FC = () => {
                         />
                       </div>
                       <button
+                        type="button"
+                        disabled={isSavingSettings || isUpdatingSetting}
                         onClick={handleSaveSettings}
-                        className="px-4 py-2 bg-[#f97316] text-white text-xs font-bold rounded-lg cursor-pointer"
+                        className="px-4 py-2 bg-[#f97316] hover:bg-[#ea580c] text-white text-xs font-bold rounded-lg cursor-pointer flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        حفظ الإعلان 📢
+                        {isSavingSettings ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                        <span>{isSavingSettings ? 'جاري الحفظ...' : 'حفظ الإعلان 📢'}</span>
                       </button>
                     </div>
                   </div>
@@ -1546,9 +1614,11 @@ export const OwnerDashboardModal: React.FC = () => {
 
                   <button
                     type="submit"
-                    className="px-5 py-2.5 bg-[#f97316] hover:bg-[#ea580c] text-white font-bold rounded-lg shadow-xs cursor-pointer transition-colors"
+                    disabled={isSavingSettings || isUpdatingSetting}
+                    className="px-5 py-2.5 bg-[#f97316] hover:bg-[#ea580c] text-white font-bold rounded-lg shadow-xs cursor-pointer transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    حفظ إعدادات النظام 💾
+                    {isSavingSettings ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    <span>{isSavingSettings ? 'جاري حفظ إعدادات النظام...' : 'حفظ إعدادات النظام 💾'}</span>
                   </button>
                 </form>
               </div>
@@ -1612,9 +1682,26 @@ export const OwnerDashboardModal: React.FC = () => {
                           <tr key={u.id} className="hover:bg-slate-50/80">
                             <td className="p-3 font-bold text-slate-900">{u.username}</td>
                             <td className="p-3">
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                                {u.role}
-                              </span>
+                              <div className="flex flex-col gap-0.5">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 w-fit">
+                                  {u.role}
+                                </span>
+                                {u.membership && (
+                                  <span className={`text-[9px] font-black ${
+                                    u.membership.permanent
+                                      ? 'text-emerald-600'
+                                      : u.membership.status === 'active'
+                                      ? 'text-sky-600'
+                                      : 'text-slate-400'
+                                  }`}>
+                                    {u.membership.permanent
+                                      ? '♾️ دائمة'
+                                      : u.membership.status === 'active' && u.membership.expiresAt
+                                      ? `⏱️ متبقي ${Math.max(0, Math.ceil((u.membership.expiresAt - Date.now()) / (24 * 3600 * 1000)))} يوم`
+                                      : 'منتهية'}
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="p-3 font-mono font-bold text-amber-600">{u.coins || 0}</td>
                             <td className="p-3">
@@ -1633,6 +1720,7 @@ export const OwnerDashboardModal: React.FC = () => {
                                     setSelectedUserForEdit(u);
                                     setEditUserRole(u.role);
                                     setEditUserCoins(u.coins || 0);
+                                    setEditUserPermanent(!!u.membership?.permanent);
                                   }}
                                   className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg cursor-pointer"
                                   title="تعديل الحساب"
@@ -1677,23 +1765,122 @@ export const OwnerDashboardModal: React.FC = () => {
                       </div>
 
                       <div className="space-y-3 text-xs">
-                        <div>
-                          <label className="font-bold text-slate-600 block mb-1">الرتبة:</label>
-                          <select
-                            value={editUserRole}
-                            disabled={selectedUserForEdit.id === 'user-owner' && currentUser?.id !== 'user-owner'}
-                            onChange={(e) => setEditUserRole(e.target.value as any)}
-                            className={`w-full border rounded-lg p-2 font-bold ${selectedUserForEdit.id === 'user-owner' && currentUser?.id !== 'user-owner' ? 'bg-slate-200 text-slate-500 cursor-not-allowed' : 'bg-slate-50 border-slate-200'}`}
-                          >
-                            <option value="visitor">زائر</option>
-                            <option value="member">عضو</option>
-                            <option value="vip">مميز ⭐</option>
-                            <option value="moderator">مشرف 🛡️</option>
-                            <option value="management">إدارة 💼</option>
-                            <option value="admin">أدمن ⚡</option>
-                            <option value="owner">مالك 👑</option>
-                          </select>
-                        </div>
+                        {/* Current Membership Details Card if available */}
+                        {selectedUserForEdit.membership && (() => {
+                          const memInfo = getMembershipStatus(selectedUserForEdit.membership);
+                          return (
+                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-slate-700">بيانات العضوية الحالية:</span>
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${memInfo.isPermanent ? 'bg-emerald-100 text-emerald-800' : memInfo.isActive ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'}`}>
+                                  {memInfo.isPermanent ? 'دائمة ♾️' : memInfo.isActive ? 'نشطة 🟢' : 'منتهية ⚠️'}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-600">
+                                <div><span className="text-slate-400">البداية: </span><span className="font-mono font-bold text-slate-800">{memInfo.formattedStart}</span></div>
+                                <div><span className="text-slate-400">الانتهاء: </span><span className="font-mono font-bold text-slate-800">{memInfo.formattedExpires}</span></div>
+                                <div><span className="text-slate-400">المتبقي: </span><span className="font-bold text-blue-600">{memInfo.remainingText}</span></div>
+                                <div><span className="text-slate-400">المصدر: </span><span className="font-bold text-slate-800">{memInfo.sourceText}</span></div>
+                              </div>
+                              {memInfo.isActive && !isPrimaryOwner(selectedUserForEdit) && selectedUserForEdit.id !== 'user-owner' && (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (selectedUserForEdit.role === 'owner' && !isPrimaryOwner(currentUser)) {
+                                      showToast('🚫 صاحب الموقع الأساسي فقط هو المخول بإلغاء رتبة مالك آخر.');
+                                      return;
+                                    }
+                                    if (!confirm(`هل أنت متأكد من إلغاء عضوية ${selectedUserForEdit.username} وإرجاعه إلى عضو مسجل؟`)) return;
+                                    const res = await cancelMembership(selectedUserForEdit.id);
+                                    if (res.success) {
+                                      showToast(`تم إلغاء عضوية ${selectedUserForEdit.username} بنجاح`);
+                                      setSelectedUserForEdit(null);
+                                    }
+                                  }}
+                                  className="w-full mt-1 py-1.5 px-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[11px] font-bold cursor-pointer transition-colors"
+                                >
+                                  🚫 إلغاء العضوية فوراً (إرجاع لعضو مسجل)
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {isPrimaryOwner(selectedUserForEdit) || selectedUserForEdit.id === 'user-owner' ? (
+                          <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl">
+                            <div className="flex items-center gap-1.5 text-amber-900 font-bold text-xs mb-1">
+                              <span>👑</span>
+                              <span>صاحب الموقع الأساسي (Primary Owner)</span>
+                            </div>
+                            <p className="text-[11px] text-amber-800 leading-relaxed">
+                              هذه الرتبة سيادية ومحمية بشكل دائم ومطلق، ولا يمكن خفضها أو تعديلها أو إلغاؤها من قبل أي مستخدم أو مشرف أو إدارة أو مالك آخر.
+                            </p>
+                          </div>
+                        ) : selectedUserForEdit.role === 'owner' && !isPrimaryOwner(currentUser) ? (
+                          <div className="p-2.5 bg-slate-100 border border-slate-200 rounded-xl">
+                            <div className="flex items-center gap-1.5 text-slate-800 font-bold text-xs mb-1">
+                              <span>🛡️</span>
+                              <span>رتبة مالك (Owner)</span>
+                            </div>
+                            <p className="text-[11px] text-slate-600 leading-relaxed">
+                              صاحب الموقع الأساسي فقط هو المخول بتعديل أو خفض أو إلغاء رتبة المالكين الآخرين.
+                            </p>
+                          </div>
+                        ) : (
+                          <div>
+                            <label className="font-bold text-slate-600 block mb-1">الرتبة:</label>
+                            <select
+                              value={editUserRole}
+                              onChange={(e) => setEditUserRole(e.target.value as any)}
+                              className="w-full border rounded-lg p-2 font-bold bg-slate-50 border-slate-200"
+                            >
+                              <option value="visitor">زائر</option>
+                              <option value="member">عضو (أساسي)</option>
+                              <option value="vip">مميز ⭐</option>
+                              <option value="moderator">مشرف 🛡️</option>
+                              <option value="management">إدارة 💼</option>
+                              <option value="admin">أدمن ⚡</option>
+                              {isPrimaryOwner(currentUser) && <option value="owner">مالك 👑</option>}
+                            </select>
+                          </div>
+                        )}
+
+
+                        {/* Duration Selector for temporary ranks */}
+                        {['vip', 'moderator', 'management', 'admin'].includes(editUserRole) && (
+                          <div className="space-y-1.5 p-2.5 bg-amber-50 border border-amber-200 rounded-xl">
+                            <label className="font-bold text-amber-900 block text-xs">نوع وصلاحية الرتبة:</label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setEditUserPermanent(false)}
+                                className={`py-1.5 px-2 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                                  !editUserPermanent
+                                    ? 'bg-amber-500 text-white border-amber-600 shadow-2xs'
+                                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                                }`}
+                              >
+                                ⏱️ مؤقتة (30 يوم)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditUserPermanent(true)}
+                                className={`py-1.5 px-2 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                                  editUserPermanent
+                                    ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
+                                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                                }`}
+                              >
+                                ♾️ رتبة دائمة بدون مدة
+                              </button>
+                            </div>
+                            <p className="text-[10px] text-amber-800 leading-tight">
+                              {!editUserPermanent 
+                                ? 'يبدأ احتساب الـ 30 يوماً من لحظة الحفظ بتوقيت الخادم، ويعود المستخدم تلقائياً لعضو مسجل فور انتهائها.' 
+                                : 'صلاحية خاصة بالمالك: تظل الرتبة نشطة بشكل دائم ولا تنتهي تلقائياً.'}
+                            </p>
+                          </div>
+                        )}
 
                         <div>
                           <label className="font-bold text-slate-600 block mb-1">الكوينز:</label>
@@ -1719,16 +1906,28 @@ export const OwnerDashboardModal: React.FC = () => {
 
                       <div className="flex gap-2 pt-2">
                         <button
-                          onClick={() => {
-                            if (selectedUserForEdit.id === 'user-owner' && currentUser?.id !== 'user-owner') {
-                              showToast('🚫 لا يمكن تعديل أو تغيير رتبة المالك الرئيسي إلا بواسطة المالك الرئيسي الأصلي!');
+                          onClick={async () => {
+                            if (isPrimaryOwner(selectedUserForEdit) || selectedUserForEdit.id === 'user-owner') {
+                              showToast('🚫 رتبة صاحب الموقع الأساسي محمية بشكل دائم ومطلق، ولا يمكن تغييرها أو خفضها لأي سبب!');
                               return;
                             }
-                            updateUserRole(selectedUserForEdit.id, editUserRole);
-                            ownerUpdateUser(selectedUserForEdit.id, {
+                            if (editUserRole === 'owner' && !isPrimaryOwner(currentUser)) {
+                              showToast('🚫 صاحب الموقع الأساسي فقط من يملك صلاحية منح رتبة مالك لمستخدمين آخرين.');
+                              return;
+                            }
+                            if (selectedUserForEdit.role === 'owner' && !isPrimaryOwner(currentUser)) {
+                              showToast('🚫 صاحب الموقع الأساسي فقط من يملك صلاحية تعديل رتبة مالك آخر.');
+                              return;
+                            }
+                            await updateUserRole(selectedUserForEdit.id, editUserRole, { permanent: editUserPermanent });
+                            const res = await ownerUpdateUser(selectedUserForEdit.id, {
                               coins: editUserCoins,
                               ...(editUserPass ? { password: editUserPass } : {})
                             });
+                            if (!res.success) {
+                              showToast(`❌ فشل حفظ التعديلات: ${res.error || 'خطأ'}`);
+                              return;
+                            }
                             setSelectedUserForEdit(null);
                             showToast(`تم حفظ التعديلات للعضو ${selectedUserForEdit.username} بنجاح ✨`);
                           }}
@@ -1736,6 +1935,7 @@ export const OwnerDashboardModal: React.FC = () => {
                         >
                           حفظ التعديلات 💾
                         </button>
+
                         <button
                           onClick={() => setSelectedUserForEdit(null)}
                           className="px-4 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-lg cursor-pointer"

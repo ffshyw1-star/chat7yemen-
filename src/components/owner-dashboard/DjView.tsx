@@ -3,7 +3,8 @@ import { useChat } from '../../context/ChatContext';
 import {
   Disc, Radio, Volume2, Mic, MicOff, Music, Play, Pause,
   SkipForward, Plus, Trash2, CheckCircle2, XCircle, Sliders,
-  Sparkles, RadioTower, Zap, VolumeX, Shield, Award
+  Sparkles, RadioTower, Zap, VolumeX, Shield, Award,
+  Loader2
 } from 'lucide-react';
 
 export const DjView: React.FC<{ showToast: (msg: string) => void }> = ({ showToast }) => {
@@ -16,6 +17,7 @@ export const DjView: React.FC<{ showToast: (msg: string) => void }> = ({ showToa
   const [djPermissionRole, setDjPermissionRole] = useState<'owner' | 'admin' | 'vip' | 'all'>(siteSettings.djPermissionRole || 'admin');
   const [autoApproveSongs, setAutoApproveSongs] = useState(siteSettings.djAutoApproveSongs || false);
   const [activeTab, setActiveTab] = useState<'station' | 'queue' | 'soundboard' | 'settings'>('station');
+  const [isUpdating, setIsUpdating] = useState(false);
 
   // Soundboard audio synth using Web Audio API
   const playSfx = (type: string, name: string) => {
@@ -357,11 +359,11 @@ export const DjView: React.FC<{ showToast: (msg: string) => void }> = ({ showToa
             <button
               onClick={() => {
                 setCurrentDjUser(currentUser?.username || 'المالك');
-                showToast('أصبحت أنت الدي جي المعتمد للبث 👑');
+                showToast('أصبحت أنت الدي جي المعتمد للبث 🔵');
               }}
               className="w-full py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-black text-xs rounded-xl shadow-xs cursor-pointer transition-all"
             >
-              استلام دفة الـ DJ 👑
+              استلام دفة الـ DJ 🎧
             </button>
           </div>
         </div>
@@ -495,16 +497,29 @@ export const DjView: React.FC<{ showToast: (msg: string) => void }> = ({ showToa
 
           <div className="space-y-3 text-xs">
             <div>
-              <label className="font-bold text-slate-700 block mb-1.5">من يحق له تشغيل واستلام DJ الغرفة؟</label>
+              <label className="font-bold text-slate-700 block mb-1.5 flex items-center gap-1.5">
+                {isUpdating && <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-600" />}
+                <span>من يحق له تشغيل واستلام DJ الغرفة؟</span>
+              </label>
               <select
+                disabled={isUpdating}
                 value={djPermissionRole}
-                onChange={(e: any) => {
+                onChange={async (e: any) => {
                   const val = e.target.value;
-                  setDjPermissionRole(val);
-                  updateSiteSettings({ djPermissionRole: val });
-                  showToast('تم تحديث وحفظ رتبة صلاحيات الدي جي 🎚️');
+                  if (isUpdating) return;
+                  setIsUpdating(true);
+                  try {
+                    await updateSiteSettings({ djPermissionRole: val });
+                    setDjPermissionRole(val);
+                    showToast('تم تحديث وحفظ رتبة صلاحيات الدي جي 🎚️');
+                  } catch (err) {
+                    console.error('Failed to update DJ role:', err);
+                    showToast('⚠️ فشل حفظ رتبة صلاحيات الدي جي');
+                  } finally {
+                    setIsUpdating(false);
+                  }
                 }}
-                className="w-full sm:w-64 bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold text-xs"
+                className="w-full sm:w-64 bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <option value="owner">المالك فقط 👑</option>
                 <option value="admin">المدراء والمشرفين 🛡️</option>
@@ -515,17 +530,30 @@ export const DjView: React.FC<{ showToast: (msg: string) => void }> = ({ showToa
 
             <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
               <div>
-                <span className="font-bold text-slate-800 block text-xs">الموافقة التلقائية على طلبات الأغاني</span>
+                <span className="font-bold text-slate-800 block text-xs flex items-center gap-1.5">
+                  {isUpdating && <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-600" />}
+                  <span>الموافقة التلقائية على طلبات الأغاني</span>
+                </span>
                 <span className="text-[11px] text-slate-500">إدراج طلبات الأعضاء في الطابور مباشرة دون انتظار مراجعة الدي جي</span>
               </div>
               <button
-                onClick={() => {
+                disabled={isUpdating}
+                onClick={async () => {
+                  if (isUpdating) return;
                   const nextVal = !autoApproveSongs;
-                  setAutoApproveSongs(nextVal);
-                  updateSiteSettings({ djAutoApproveSongs: nextVal });
-                  showToast(nextVal ? 'تم تفعيل وحفظ الموافقة التلقائية' : 'تم تفعيل وحفظ المراجعة اليدوية');
+                  setIsUpdating(true);
+                  try {
+                    await updateSiteSettings({ djAutoApproveSongs: nextVal });
+                    setAutoApproveSongs(nextVal);
+                    showToast(nextVal ? 'تم تفعيل وحفظ الموافقة التلقائية' : 'تم تفعيل وحفظ المراجعة اليدوية');
+                  } catch (err) {
+                    console.error('Failed to update auto approve songs:', err);
+                    showToast('⚠️ فشل حفظ إعداد الموافقة التلقائية');
+                  } finally {
+                    setIsUpdating(false);
+                  }
                 }}
-                className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
+                className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                   autoApproveSongs ? 'bg-purple-600' : 'bg-slate-300'
                 }`}
               >

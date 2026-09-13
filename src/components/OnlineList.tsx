@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { useChat } from '../context/ChatContext';
 import { UserAvatar } from './UserAvatar';
 import { UsernameDisplay } from './UsernameDisplay';
+import { RoleBadge } from './RoleBadge';
 import { User } from '../types';
 import { getRankEmoji, getRankEmojiClass, isSystemUser, isSiteOwner } from '../utils/permissions';
 import { NEON_COLORS } from './ProfileEditorModal';
@@ -91,6 +92,9 @@ export const OnlineList: React.FC = () => {
   const isUserConsideredOnline = (u: User): boolean => {
     if (currentUser && u.id === currentUser.id) return true;
 
+    // Strict offline check
+    if (u.onlineStatus === 'offline' || u.isOnline === false) return false;
+
     // Check inactivity timeout (in minutes) configured by owner in dashboard
     const inactivityMinutes = siteSettings?.userInactivityTimeoutMinutes || 15;
     if (u.lastSeenTimestamp && u.lastSeenTimestamp > 0) {
@@ -100,21 +104,8 @@ export const OnlineList: React.FC = () => {
       }
     }
 
-    if (u.onlineStatus === 'offline') return false;
-    if (u.onlineStatus === 'online') return true;
+    if (u.onlineStatus === 'online' || u.isOnline === true) return true;
 
-    const timeoutHours = siteSettings?.onlinePresenceTimeoutHours ?? 0;
-    if (timeoutHours === -1) {
-      // Forever mode: Keep user in presence list until explicit logout
-      return true;
-    }
-    if (timeoutHours > 0) {
-      if (u.lastSeenTimestamp && u.lastSeenTimestamp > 0) {
-        const diffHours = (Date.now() - u.lastSeenTimestamp) / (1000 * 60 * 60);
-        return diffHours <= timeoutHours;
-      }
-      return true;
-    }
     return false;
   };
 
@@ -421,6 +412,11 @@ export const OnlineList: React.FC = () => {
                               className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-sky-600 transition-colors"
                             />
                             {renderStatusIcon(user.onlineStatus)}
+                            {user.countryFlag && (
+                              <span className="text-xs shrink-0 select-none" title={user.country || 'الدولة'}>
+                                {user.countryFlag}
+                              </span>
+                            )}
                             {user.role === 'owner' && user.isStealth && (
                               <span className="text-[10px] bg-purple-100 text-purple-700 border border-purple-300 px-1.5 py-0.2 rounded font-black">
                                 مخفي 🕵️‍♂️
@@ -448,12 +444,16 @@ export const OnlineList: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Left side in RTL: Rank Icon (Trophy 🏆, Android 🤖, Shield 🛡️, Diamond 💎) */}
-                      <div className="shrink-0 pl-1">
+                      {/* Left side in RTL: Rank Icon */}
+                      <div className="shrink-0 pl-1 flex items-center">
                         {!isSystemUser(user) && (
-                          <span className={`text-lg sm:text-xl shrink-0 ${getRankEmojiClass(user.role, user.username)}`}>
-                            {getRankEmoji(user.role, user.username)}
-                          </span>
+                          user.role === 'owner' ? (
+                            <RoleBadge role="owner" customBadge={user.customRoleBadge} size="sm" />
+                          ) : (
+                            <span className={`text-lg sm:text-xl shrink-0 ${getRankEmojiClass(user.role, user.username)}`}>
+                              {getRankEmoji(user.role, user.username)}
+                            </span>
+                          )
                         )}
                       </div>
                     </div>
@@ -567,6 +567,11 @@ export const OnlineList: React.FC = () => {
                               className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-sky-600 transition-colors block"
                             />
                             {renderStatusIcon(user.onlineStatus)}
+                            {user.countryFlag && (
+                              <span className="text-xs shrink-0 select-none" title={user.country || 'الدولة'}>
+                                {user.countryFlag}
+                              </span>
+                            )}
                             <span className="text-[10px] font-mono text-sky-700 bg-sky-50 border border-sky-200 px-1.5 py-0.2 rounded-md font-bold dir-ltr">
                               {getUserDisplayTag(user)}
                             </span>
@@ -593,11 +598,15 @@ export const OnlineList: React.FC = () => {
                       </div>
 
                       {/* Left side in RTL: Rank Icon */}
-                      <div className="shrink-0 pl-1">
+                      <div className="shrink-0 pl-1 flex items-center">
                         {!isSystemUser(user) && (
-                          <span className={`text-base shrink-0 ${getRankEmojiClass(user.role, user.username)}`}>
-                            {getRankEmoji(user.role, user.username)}
-                          </span>
+                          user.role === 'owner' ? (
+                            <RoleBadge role="owner" customBadge={user.customRoleBadge} size="sm" />
+                          ) : (
+                            <span className={`text-base shrink-0 ${getRankEmojiClass(user.role, user.username)}`}>
+                              {getRankEmoji(user.role, user.username)}
+                            </span>
+                          )
                         )}
                       </div>
                     </div>

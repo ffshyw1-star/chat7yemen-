@@ -2,11 +2,15 @@ import React, { useState } from 'react';
 import { useChat } from '../../context/ChatContext';
 import {
   PlayCircle, Plus, Trash2, Volume2, Music, Youtube,
-  Radio, Sliders, CheckCircle2, Play, Pause, Save
+  Radio, Sliders, CheckCircle2, Play, Pause, Save, Loader2
 } from 'lucide-react';
 
 export const MusicView: React.FC<{ showToast: (msg: string) => void }> = ({ showToast }) => {
   const { siteSettings, updateSiteSettings } = useChat();
+
+  const [isSaving, setIsSaving] = useState(false);
+  const [isAddingTrack, setIsAddingTrack] = useState(false);
+  const [isDeletingTrackId, setIsDeletingTrackId] = useState<string | null>(null);
 
   const [playlist, setPlaylist] = useState<{ id: string; title: string; url: string; duration: string }[]>(
     siteSettings.musicPlaylist || [
@@ -22,38 +26,64 @@ export const MusicView: React.FC<{ showToast: (msg: string) => void }> = ({ show
   const [defaultVolume, setDefaultVolume] = useState(siteSettings.defaultMusicVolume || 70);
   const [allowMemberRequests, setAllowMemberRequests] = useState(siteSettings.allowMusicRequests ?? true);
 
-  const handleAddTrack = (e: React.FormEvent) => {
+  const handleAddTrack = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTitle.trim()) return;
-    const newTrack = {
-      id: `m-${Date.now()}`,
-      title: newTitle.trim(),
-      url: newUrl.trim() || 'https://youtube.com/watch?v=sample',
-      duration: '3:30'
-    };
-    const updated = [...playlist, newTrack];
-    setPlaylist(updated);
-    updateSiteSettings({ musicPlaylist: updated });
-    setNewTitle('');
-    setNewUrl('');
-    showToast('تمت إضافة المقطع إلى قائمة تشغيل الموقع وحفظه في السيرفر 🎵');
+    if (!newTitle.trim() || isAddingTrack || isSaving) return;
+    setIsAddingTrack(true);
+    try {
+      const newTrack = {
+        id: `m-${Date.now()}`,
+        title: newTitle.trim(),
+        url: newUrl.trim() || 'https://youtube.com/watch?v=sample',
+        duration: '3:30'
+      };
+      const updated = [...playlist, newTrack];
+      await updateSiteSettings({ musicPlaylist: updated });
+      setPlaylist(updated);
+      setNewTitle('');
+      setNewUrl('');
+      showToast('تمت إضافة المقطع إلى قائمة تشغيل الموقع وحفظه في السيرفر 🎵');
+    } catch (err) {
+      console.error('Failed to add track:', err);
+      showToast('⚠️ حدث خطأ أثناء إضافة المقطع في قاعدة البيانات');
+    } finally {
+      setIsAddingTrack(false);
+    }
   };
 
-  const handleDeleteTrack = (id: string) => {
-    const updated = playlist.filter(t => t.id !== id);
-    setPlaylist(updated);
-    updateSiteSettings({ musicPlaylist: updated });
-    showToast('تم حذف المقطع من القائمة وتحديث السيرفر 🗑️');
+  const handleDeleteTrack = async (id: string) => {
+    if (isDeletingTrackId || isSaving) return;
+    setIsDeletingTrackId(id);
+    try {
+      const updated = playlist.filter(t => t.id !== id);
+      await updateSiteSettings({ musicPlaylist: updated });
+      setPlaylist(updated);
+      showToast('تم حذف المقطع من القائمة وتحديث السيرفر 🗑️');
+    } catch (err) {
+      console.error('Failed to delete track:', err);
+      showToast('⚠️ حدث خطأ أثناء حذف المقطع في قاعدة البيانات');
+    } finally {
+      setIsDeletingTrackId(null);
+    }
   };
 
-  const handleSaveSettings = () => {
-    updateSiteSettings({
-      musicPlaylist: playlist,
-      autoPlayBackgroundMusic: autoPlayBackground,
-      defaultMusicVolume: defaultVolume,
-      allowMusicRequests: allowMemberRequests
-    });
-    showToast('تم حفظ إعدادات مشغلات الموسيقى واليوتيوب في قاعدة البيانات 💾');
+  const handleSaveSettings = async () => {
+    if (isSaving || isAddingTrack || isDeletingTrackId) return;
+    setIsSaving(true);
+    try {
+      await updateSiteSettings({
+        musicPlaylist: playlist,
+        autoPlayBackgroundMusic: autoPlayBackground,
+        defaultMusicVolume: defaultVolume,
+        allowMusicRequests: allowMemberRequests
+      });
+      showToast('تم حفظ إعدادات مشغلات الموسيقى واليوتيوب في قاعدة البيانات 💾');
+    } catch (err) {
+      console.error('Failed to save music settings:', err);
+      showToast('⚠️ حدث خطأ أثناء حفظ إعدادات الموسيقى في قاعدة البيانات');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -72,10 +102,11 @@ export const MusicView: React.FC<{ showToast: (msg: string) => void }> = ({ show
 
         <button
           onClick={handleSaveSettings}
-          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg cursor-pointer shadow-xs flex items-center gap-1.5"
+          disabled={isSaving || isAddingTrack || !!isDeletingTrackId}
+          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg cursor-pointer shadow-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <Save className="w-3.5 h-3.5" />
-          <span>حفظ الإعدادات 💾</span>
+          {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+          <span>{isSaving ? 'جارٍ الحفظ...' : 'حفظ الإعدادات 💾'}</span>
         </button>
       </div>
 
@@ -87,8 +118,9 @@ export const MusicView: React.FC<{ showToast: (msg: string) => void }> = ({ show
             <span className="text-[11px] text-slate-500">بدء تشغيل القائمة تلقائياً للأعضاء الجدد</span>
           </div>
           <button
+            disabled={isSaving}
             onClick={() => setAutoPlayBackground(!autoPlayBackground)}
-            className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
+            className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
               autoPlayBackground ? 'bg-emerald-600' : 'bg-slate-300'
             }`}
           >
@@ -104,8 +136,9 @@ export const MusicView: React.FC<{ showToast: (msg: string) => void }> = ({ show
             <span className="text-[11px] text-slate-500">إظهار زر طلب مقطع يوتيوب بالدردشة</span>
           </div>
           <button
+            disabled={isSaving}
             onClick={() => setAllowMemberRequests(!allowMemberRequests)}
-            className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
+            className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
               allowMemberRequests ? 'bg-emerald-600' : 'bg-slate-300'
             }`}
           >
@@ -125,23 +158,27 @@ export const MusicView: React.FC<{ showToast: (msg: string) => void }> = ({ show
         <form onSubmit={handleAddTrack} className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <input
             type="text"
+            disabled={isAddingTrack || isSaving}
             placeholder="عنوان المقطع *"
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs font-bold"
+            className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs font-bold disabled:opacity-50"
           />
           <input
             type="text"
+            disabled={isAddingTrack || isSaving}
             placeholder="رابط يوتيوب أو MP3 (https://...)"
             value={newUrl}
             onChange={(e) => setNewUrl(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs"
+            className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs disabled:opacity-50"
           />
           <button
             type="submit"
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg cursor-pointer shadow-xs"
+            disabled={isAddingTrack || isSaving}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg cursor-pointer shadow-xs flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            إضافة للقائمة 🎵
+            {isAddingTrack ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+            <span>{isAddingTrack ? 'جارٍ الإضافة...' : 'إضافة للقائمة 🎵'}</span>
           </button>
         </form>
       </div>
@@ -170,11 +207,12 @@ export const MusicView: React.FC<{ showToast: (msg: string) => void }> = ({ show
                 تشغيل تجريبي ▶
               </button>
               <button
+                disabled={isDeletingTrackId === track.id || isSaving}
                 onClick={() => handleDeleteTrack(track.id)}
-                className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg cursor-pointer"
+                className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 title="حذف من القائمة"
               >
-                <Trash2 className="w-4 h-4" />
+                {isDeletingTrackId === track.id ? <Loader2 className="w-4 h-4 animate-spin text-rose-600" /> : <Trash2 className="w-4 h-4" />}
               </button>
             </div>
           </div>

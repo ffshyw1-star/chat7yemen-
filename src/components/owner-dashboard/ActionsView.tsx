@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useChat } from '../../context/ChatContext';
 import {
   Radio, Zap, VolumeX, Users, Coins, Lock, Unlock,
-  Trash2, RefreshCw, AlertTriangle, CheckCircle2, Shield
+  Trash2, RefreshCw, AlertTriangle, CheckCircle2, Shield, Loader2
 } from 'lucide-react';
 
 export const ActionsView: React.FC<{ showToast: (msg: string) => void }> = ({ showToast }) => {
@@ -18,38 +18,83 @@ export const ActionsView: React.FC<{ showToast: (msg: string) => void }> = ({ sh
   const [broadcastTitle, setBroadcastTitle] = useState('تنبيه إداري عام 📢');
   const [broadcastText, setBroadcastText] = useState('يرجى من جميع الأعضاء والزوار الالتزام بالقوانين وعدم نشر الإعلانات.');
   const [allRoomsLocked, setAllRoomsLocked] = useState(false);
+  const [isOperating, setIsOperating] = useState<string | null>(null);
 
-  const handleBroadcast = (e: React.FormEvent) => {
+  const handleBroadcast = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!broadcastText.trim()) return;
-    broadcastAudioAlert(`${broadcastTitle}: ${broadcastText}`);
-    showToast('تم بث التنبيه الصوتي والكتابي لجميع المتواجدين 📢');
+    if (!broadcastText.trim() || isOperating) return;
+    setIsOperating('broadcast');
+    try {
+      broadcastAudioAlert(`${broadcastTitle}: ${broadcastText}`);
+      showToast('تم بث التنبيه الصوتي والكتابي لجميع المتواجدين 📢');
+    } catch (err) {
+      console.error('Failed to broadcast alert:', err);
+      showToast('⚠️ فشل بث التنبيه');
+    } finally {
+      setIsOperating(null);
+    }
   };
 
-  const handlePurgeCache = () => {
-    purgeSystemCache();
-    showToast('تم تفريغ الذاكرة المؤقتة (Cache) بنجاح ⚡');
+  const handlePurgeCache = async () => {
+    if (isOperating) return;
+    setIsOperating('cache');
+    try {
+      purgeSystemCache();
+      showToast('تم تفريغ الذاكرة المؤقتة (Cache) بنجاح ⚡');
+    } catch (err) {
+      console.error('Failed to purge cache:', err);
+      showToast('⚠️ فشل تفريغ الذاكرة المؤقتة');
+    } finally {
+      setIsOperating(null);
+    }
   };
 
-  const handleMassKickVisitors = () => {
+  const handleMassKickVisitors = async () => {
+    if (isOperating) return;
     if (window.confirm('هل أنت متأكد من طرد جميع الزوار المتصلين حالياً؟')) {
-      setUsers(prev => prev.filter(u => u.role !== 'visitor'));
-      showToast('تم طرد جميع الزوار وإنهاء جلساتهم 🚪');
+      setIsOperating('kick_visitors');
+      try {
+        setUsers(prev => prev.filter(u => u.role !== 'visitor'));
+        showToast('تم طرد جميع الزوار وإنهاء جلساتهم 🚪');
+      } catch (err) {
+        console.error('Failed to kick visitors:', err);
+        showToast('⚠️ فشل طرد الزوار');
+      } finally {
+        setIsOperating(null);
+      }
     }
   };
 
-  const handleMassMuteVisitors = () => {
+  const handleMassMuteVisitors = async () => {
+    if (isOperating) return;
     if (window.confirm('هل تريد كتم جميع حسابات الزوار مؤقتاً؟')) {
-      setUsers(prev => prev.map(u => u.role === 'visitor' ? { ...u, isMuted: true } : u));
-      showToast('تم كتم جميع حسابات الزوار 🔇');
+      setIsOperating('mute_visitors');
+      try {
+        setUsers(prev => prev.map(u => u.role === 'visitor' ? { ...u, isMuted: true } : u));
+        showToast('تم كتم جميع حسابات الزوار 🔇');
+      } catch (err) {
+        console.error('Failed to mute visitors:', err);
+        showToast('⚠️ فشل كتم الزوار');
+      } finally {
+        setIsOperating(null);
+      }
     }
   };
 
-  const handleToggleLockAllRooms = () => {
-    const nextState = !allRoomsLocked;
-    setAllRoomsLocked(nextState);
-    setRooms(prev => prev.map(r => ({ ...r, isLocked: nextState })));
-    showToast(nextState ? 'تم قفل جميع الغرف 🔒' : 'تم فتح جميع الغرف 🔓');
+  const handleToggleLockAllRooms = async () => {
+    if (isOperating) return;
+    setIsOperating('toggle_lock');
+    try {
+      const nextState = !allRoomsLocked;
+      setAllRoomsLocked(nextState);
+      setRooms(prev => prev.map(r => ({ ...r, isLocked: nextState })));
+      showToast(nextState ? 'تم قفل جميع الغرف 🔒' : 'تم فتح جميع الغرف 🔓');
+    } catch (err) {
+      console.error('Failed to toggle lock all rooms:', err);
+      showToast('⚠️ فشل تعديل قفل الغرف');
+    } finally {
+      setIsOperating(null);
+    }
   };
 
   return (
@@ -95,10 +140,11 @@ export const ActionsView: React.FC<{ showToast: (msg: string) => void }> = ({ sh
 
           <button
             type="submit"
-            className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-lg shadow-xs cursor-pointer transition-colors flex items-center gap-2"
+            disabled={Boolean(isOperating)}
+            className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-lg shadow-xs cursor-pointer transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Radio className="w-4 h-4" />
-            <span>بث التنبيه الصوتي الآن 📢</span>
+            {isOperating === 'broadcast' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Radio className="w-4 h-4" />}
+            <span>{isOperating === 'broadcast' ? 'جاري البث...' : 'بث التنبيه الصوتي الآن 📢'}</span>
           </button>
         </form>
       </div>
@@ -112,9 +158,11 @@ export const ActionsView: React.FC<{ showToast: (msg: string) => void }> = ({ sh
           </div>
           <button
             onClick={handleMassKickVisitors}
-            className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl cursor-pointer shrink-0"
+            disabled={Boolean(isOperating)}
+            className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
           >
-            طرد الزوار 🚪
+            {isOperating === 'kick_visitors' && <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-700" />}
+            <span>طرد الزوار 🚪</span>
           </button>
         </div>
 
@@ -125,9 +173,11 @@ export const ActionsView: React.FC<{ showToast: (msg: string) => void }> = ({ sh
           </div>
           <button
             onClick={handleMassMuteVisitors}
-            className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold text-xs rounded-xl cursor-pointer shrink-0"
+            disabled={Boolean(isOperating)}
+            className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold text-xs rounded-xl cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
           >
-            كتم الزوار 🔇
+            {isOperating === 'mute_visitors' && <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-700" />}
+            <span>كتم الزوار 🔇</span>
           </button>
         </div>
 
@@ -138,13 +188,15 @@ export const ActionsView: React.FC<{ showToast: (msg: string) => void }> = ({ sh
           </div>
           <button
             onClick={handleToggleLockAllRooms}
-            className={`px-3.5 py-2 font-bold text-xs rounded-xl cursor-pointer shrink-0 ${
+            disabled={Boolean(isOperating)}
+            className={`px-3.5 py-2 font-bold text-xs rounded-xl cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 ${
               allRoomsLocked
                 ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700'
                 : 'bg-purple-50 hover:bg-purple-100 text-purple-700'
             }`}
           >
-            {allRoomsLocked ? 'فتح الغرف 🔓' : 'قفل الغرف 🔒'}
+            {isOperating === 'toggle_lock' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            <span>{allRoomsLocked ? 'فتح الغرف 🔓' : 'قفل الغرف 🔒'}</span>
           </button>
         </div>
 
@@ -155,9 +207,11 @@ export const ActionsView: React.FC<{ showToast: (msg: string) => void }> = ({ sh
           </div>
           <button
             onClick={handlePurgeCache}
-            className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs rounded-xl cursor-pointer shrink-0"
+            disabled={Boolean(isOperating)}
+            className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs rounded-xl cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
           >
-            تفريغ الكاش ⚡
+            {isOperating === 'cache' && <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-700" />}
+            <span>تفريغ الكاش ⚡</span>
           </button>
         </div>
       </div>

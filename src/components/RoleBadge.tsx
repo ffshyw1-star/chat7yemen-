@@ -124,7 +124,7 @@ export const RoleBadge: React.FC<RoleBadgeProps> = ({
         <img
           src={activeBadge.iconValue}
           alt={activeBadge.label || role}
-          className="w-full h-full object-cover rounded-full pointer-events-none select-none"
+          className="w-full h-full object-contain p-0.5 pointer-events-none select-none"
           loading="lazy"
         />
       ) : activeBadge.iconType === 'lucide' ? (

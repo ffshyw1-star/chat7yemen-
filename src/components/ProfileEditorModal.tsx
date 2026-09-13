@@ -119,6 +119,8 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
   const [customWallUrl, setCustomWallUrl] = useState('');
   const [showWallUrlInput, setShowWallUrlInput] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!currentUser) return null;
 
@@ -127,49 +129,67 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
 
   const filteredAvatars = DEFAULT_AVATARS.filter(a => a.category === avatarCategory);
 
-  // Handle local image file upload for avatar
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle local image file upload for avatar with automatic compression
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        alert('حجم الصورة كبير جداً! يُرجى اختيار صورة أقل من 5 ميجابايت.');
+      if (file.size > 8 * 1024 * 1024) {
+        alert('حجم الصورة كبير جداً! يُرجى اختيار صورة أقل من 8 ميجابايت.');
         return;
       }
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          setAvatar(reader.result);
-        }
-      };
-      reader.readAsDataURL(file);
+      try {
+        const { compressAvatar } = await import('../utils/imageCompressor');
+        const compressed = await compressAvatar(file, 256, 0.85);
+        setAvatar(compressed);
+      } catch (err: any) {
+        console.error('Avatar compression error:', err);
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === 'string') {
+            setAvatar(reader.result);
+          }
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 
-  // Handle local image file upload for wall cover (static image or animated GIF)
-  const handleWallFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle local image file upload for wall cover with compression
+  const handleWallFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 10 * 1024 * 1024) {
         alert('حجم ملف الغلاف كبير جداً! يُرجى اختيار ملف أقل من 10 ميجابايت.');
         return;
       }
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          setWallCover(reader.result);
-        }
-      };
-      reader.readAsDataURL(file);
+      try {
+        const { compressCover } = await import('../utils/imageCompressor');
+        const compressed = await compressCover(file, 800, 400, 0.8);
+        setWallCover(compressed);
+      } catch (err: any) {
+        console.error('Cover compression error:', err);
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === 'string') {
+            setWallCover(reader.result);
+          }
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 
   // Submit Profile Form
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim()) {
       alert('الرجاء إدخال اسم العرض الشخصي');
       return;
     }
+
+    setIsSubmitting(true);
+    setSaveError('');
+    setSaveSuccess('');
 
     const previousLang = getAppLanguage();
     let normalizedLang = 'Arabic';
@@ -187,32 +207,44 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
     localStorage.setItem('selectedLang', normalizedLang);
     applyLanguageSettings(normalizedLang);
 
-    updateUserProfile({
-      username: username.trim(),
-      statusMessage: statusMessage.trim(),
-      bio: bio.trim(),
-      avatar,
-      wallCover,
-      gender,
-      age,
-      specialty: specialty.trim(),
-      country,
-      countryFlag,
-      language: normalizedLang,
-      hideCountry,
-      usernameColor,
-      usernameFontSize
-    });
+    try {
+      const result = await updateUserProfile({
+        username: username.trim(),
+        statusMessage: statusMessage.trim(),
+        bio: bio.trim(),
+        avatar,
+        wallCover,
+        gender,
+        age,
+        specialty: specialty.trim(),
+        country,
+        countryFlag,
+        language: normalizedLang,
+        hideCountry,
+        usernameColor,
+        usernameFontSize
+      });
 
-    const isLangChanged = previousLang !== normalizedLang;
-    setSaveSuccess(isLangChanged ? 'تم حفظ الملف وتغيير لغة الموقع بنجاح! جاري التحديث...' : 'تم حفظ الملف الشخصي والصور بنجاح في السيرفر ✨');
-    setTimeout(() => {
-      setSaveSuccess('');
-      if (onClose) onClose();
-      if (isLangChanged) {
-        window.location.reload();
+      if (!result.success) {
+        setSaveError(result.error || 'فشلت عملية حفظ التعديلات في السيرفر وقاعدة البيانات');
+        setIsSubmitting(false);
+        return;
       }
-    }, isLangChanged ? 800 : 1500);
+
+      const isLangChanged = previousLang !== normalizedLang;
+      setSaveSuccess(isLangChanged ? 'تم حفظ الملف وتغيير لغة الموقع بنجاح! جاري التحديث...' : 'تم حفظ الملف الشخصي والصورة بنجاح في قاعدة البيانات بشكل دائم ✨');
+      setTimeout(() => {
+        setSaveSuccess('');
+        setIsSubmitting(false);
+        if (onClose) onClose();
+        if (isLangChanged) {
+          window.location.reload();
+        }
+      }, isLangChanged ? 800 : 1200);
+    } catch (err: any) {
+      setSaveError(err?.message || 'حدث خطأ أثناء حفظ الملف الشخصي');
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -250,6 +282,13 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
             <div className="p-3 rounded-2xl bg-emerald-950/90 border border-emerald-500/50 text-emerald-200 text-xs font-extrabold flex items-center justify-center gap-2 animate-bounce">
               <Check className="w-4 h-4 text-emerald-400" />
               <span>{saveSuccess}</span>
+            </div>
+          )}
+
+          {saveError && (
+            <div className="p-3 rounded-2xl bg-rose-950/90 border border-rose-500/50 text-rose-200 text-xs font-extrabold flex items-center justify-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-400" />
+              <span>{saveError}</span>
             </div>
           )}
 
@@ -801,10 +840,22 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
             <div className="pt-2 flex items-center gap-3">
               <button
                 type="submit"
-                className="flex-1 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black py-3 rounded-2xl text-xs shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2"
+                disabled={isSubmitting}
+                className={`flex-1 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black py-3 rounded-2xl text-xs shadow-lg transition-all flex items-center justify-center gap-2 ${
+                  isSubmitting ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                }`}
               >
-                <Check className="w-4 h-4 stroke-[3]" />
-                <span>حفظ التعديلات في الملف الشخصي</span>
+                {isSubmitting ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>جاري الحفظ في قاعدة البيانات...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4 stroke-[3]" />
+                    <span>حفظ التعديلات في الملف الشخصي</span>
+                  </>
+                )}
               </button>
 
               {onClose && (

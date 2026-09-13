@@ -3,7 +3,7 @@ import { useChat } from '../../context/ChatContext';
 import {
   Layers, MessageSquare, Mic, Palette, Radio,
   Gift, ShoppingBag, ThumbsUp, AlertTriangle, Disc, Video,
-  Save
+  Save, Loader2
 } from 'lucide-react';
 
 interface ModuleConfig {
@@ -40,6 +40,10 @@ export const ModulesView: React.FC<{ showToast: (msg: string) => void }> = ({ sh
     }));
   });
 
+  const [isUpdating, setIsUpdating] = useState<boolean>(false);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [updatingModuleId, setUpdatingModuleId] = useState<string | null>(null);
+
   useEffect(() => {
     if ((siteSettings as any)?.modulesState) {
       const savedStates: Record<string, boolean> = (siteSettings as any).modulesState;
@@ -50,21 +54,45 @@ export const ModulesView: React.FC<{ showToast: (msg: string) => void }> = ({ sh
     }
   }, [siteSettings]);
 
-  const toggleModule = (id: string) => {
-    setModules(prev => {
-      const next = prev.map(m => m.id === id ? { ...m, enabled: !m.enabled } : m);
+  const toggleModule = async (id: string) => {
+    if (isUpdating || isSaving) return; // Prevent concurrent interactions
+    setIsUpdating(true);
+    setUpdatingModuleId(id);
+    try {
+      const next = modules.map(m => m.id === id ? { ...m, enabled: !m.enabled } : m);
       const modulesState: Record<string, boolean> = {};
       next.forEach(m => { modulesState[m.id] = m.enabled; });
-      updateSiteSettings({ modulesState } as any);
-      return next;
-    });
+
+      // Async Firestore write
+      await updateSiteSettings({ modulesState } as any);
+
+      // Refresh UI state ONLY after Firestore succeeds
+      setModules(next);
+      const targetMod = next.find(m => m.id === id);
+      showToast(`تم ${targetMod?.enabled ? 'تفعيل' : 'إيقاف'} ${targetMod?.name} وحفظه بنجاح ✅`);
+    } catch (err) {
+      console.error('Failed to update module in Firestore:', err);
+      showToast('⚠️ فشل حفظ إعداد الميزة في قاعدة البيانات');
+    } finally {
+      setIsUpdating(false);
+      setUpdatingModuleId(null);
+    }
   };
 
-  const handleSave = () => {
-    const modulesState: Record<string, boolean> = {};
-    modules.forEach(m => { modulesState[m.id] = m.enabled; });
-    updateSiteSettings({ modulesState } as any);
-    showToast('تم حفظ إعدادات الوحدات في قاعدة البيانات وتفعيلها بنجاح 💾');
+  const handleSave = async () => {
+    if (isUpdating || isSaving) return;
+    setIsSaving(true);
+    try {
+      const modulesState: Record<string, boolean> = {};
+      modules.forEach(m => { modulesState[m.id] = m.enabled; });
+      await updateSiteSettings({ modulesState } as any);
+      showToast('تم حفظ إعدادات الوحدات في قاعدة البيانات وتفعيلها بنجاح 💾');
+    } catch (err) {
+      console.error('Failed to save modules in Firestore:', err);
+      showToast('⚠️ فشل حفظ إعدادات الوحدات في قاعدة البيانات');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -83,11 +111,12 @@ export const ModulesView: React.FC<{ showToast: (msg: string) => void }> = ({ sh
 
         <button
           type="button"
+          disabled={isSaving || isUpdating}
           onClick={handleSave}
-          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg cursor-pointer shadow-xs flex items-center gap-1.5 transition-colors"
+          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg cursor-pointer shadow-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <Save className="w-3.5 h-3.5" />
-          <span>حفظ التعديلات 💾</span>
+          {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+          <span>{isSaving ? 'جاري الحفظ...' : 'حفظ التعديلات 💾'}</span>
         </button>
       </div>
 
@@ -95,6 +124,7 @@ export const ModulesView: React.FC<{ showToast: (msg: string) => void }> = ({ sh
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {modules.map(mod => {
           const IconComponent = mod.icon;
+          const isThisUpdating = updatingModuleId === mod.id;
           return (
             <div
               key={mod.id}
@@ -126,19 +156,24 @@ export const ModulesView: React.FC<{ showToast: (msg: string) => void }> = ({ sh
               {/* Toggle Switch */}
               <button
                 type="button"
-                onClick={() => {
-                  toggleModule(mod.id);
-                  showToast(`تم ${mod.enabled ? 'إيقاف' : 'تفعيل'} ${mod.name}`);
-                }}
-                className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer shrink-0 mt-1 ${
+                disabled={isUpdating || isSaving}
+                onClick={() => toggleModule(mod.id)}
+                className={`w-11 h-6 rounded-full transition-colors relative shrink-0 mt-1 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer flex items-center ${
                   mod.enabled ? 'bg-emerald-500' : 'bg-slate-300'
                 }`}
+                title={mod.enabled ? 'تعطيل الميزة' : 'تفعيل الميزة'}
               >
-                <div
-                  className={`w-5 h-5 rounded-full bg-white shadow-xs absolute top-0.5 transition-transform ${
-                    mod.enabled ? 'right-0.5' : 'left-0.5'
-                  }`}
-                />
+                {isThisUpdating ? (
+                  <div className="w-full flex items-center justify-center">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                  </div>
+                ) : (
+                  <div
+                    className={`w-5 h-5 rounded-full bg-white shadow-xs absolute top-0.5 transition-transform ${
+                      mod.enabled ? 'right-0.5' : 'left-0.5'
+                    }`}
+                  />
+                )}
               </button>
             </div>
           );

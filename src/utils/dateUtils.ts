@@ -29,7 +29,7 @@ export const formatEnglishTime = (date: Date = new Date()): string => {
 };
 
 /**
- * Format date in English digits, e.g. "13/08/2026"
+ * Format date in English digits, e.g. "10/09/2026"
  */
 export const formatEnglishDate = (date: Date = new Date()): string => {
   const d = date instanceof Date ? date : new Date(date);
@@ -40,10 +40,77 @@ export const formatEnglishDate = (date: Date = new Date()): string => {
 };
 
 /**
- * Format date and time in English digits, e.g. "14:30 - 13/08/2026"
+ * Unified Date and Time format across Chat7Yemen: DD/MM/YYYY HH:mm (e.g. "10/09/2026 04:48")
+ * Strictly uses English digits (0-9).
+ */
+export const formatUnifiedDateTime = (input?: Date | number | string | null): string => {
+  if (!input) {
+    const now = new Date();
+    return `${formatEnglishDate(now)} ${formatEnglishTime(now)}`;
+  }
+  if (input instanceof Date) {
+    return `${formatEnglishDate(input)} ${formatEnglishTime(input)}`;
+  }
+  if (typeof input === 'number') {
+    const d = new Date(input);
+    if (!isNaN(d.getTime())) {
+      return `${formatEnglishDate(d)} ${formatEnglishTime(d)}`;
+    }
+  }
+  if (typeof input === 'string') {
+    const clean = toEnglishDigits(input.trim());
+    // If it's already in DD/MM/YYYY HH:mm or similar numerical form
+    if (/^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}$/.test(clean)) {
+      return clean;
+    }
+    // If it contains ban words like 'الآن' or 'متصل', fallback to current time
+    if (clean.includes('الآن') || clean.includes('متصل') || clean.includes('لحظات')) {
+      const now = new Date();
+      return `${formatEnglishDate(now)} ${formatEnglishTime(now)}`;
+    }
+    const parsed = new Date(clean);
+    if (!isNaN(parsed.getTime())) {
+      return `${formatEnglishDate(parsed)} ${formatEnglishTime(parsed)}`;
+    }
+    return clean;
+  }
+  const now = new Date();
+  return `${formatEnglishDate(now)} ${formatEnglishTime(now)}`;
+};
+
+/**
+ * Format date and time in English digits: DD/MM/YYYY HH:mm, e.g. "10/09/2026 04:48"
  */
 export const formatEnglishDateTime = (date: Date = new Date()): string => {
-  return `${formatEnglishTime(date)} - ${formatEnglishDate(date)}`;
+  return formatUnifiedDateTime(date);
+};
+
+/**
+ * Format any message's date and time into the unified DD/MM/YYYY HH:mm format
+ */
+export const formatMessageDateTime = (msg: { timestamp?: string; date?: string; createdAt?: number | string }): string => {
+  if (msg.createdAt) {
+    return formatUnifiedDateTime(msg.createdAt);
+  }
+  const datePart = msg.date ? toEnglishDigits(msg.date.trim()) : formatEnglishDate(new Date());
+  const timePart = msg.timestamp ? toEnglishDigits(msg.timestamp.trim()) : formatEnglishTime(new Date());
+
+  // If timePart already has date inside it, return unified format
+  if (timePart.includes('/') && timePart.includes(':')) {
+    return formatUnifiedDateTime(timePart);
+  }
+
+  // Ensure 4-digit year in datePart
+  let fullDate = datePart;
+  if (/^\d{2}\/\d{2}$/.test(datePart)) {
+    fullDate = `${datePart}/${new Date().getFullYear()}`;
+  }
+
+  // Extract pure HH:mm from timePart
+  const timeMatch = timePart.match(/\d{1,2}:\d{2}/);
+  const cleanTime = timeMatch ? timeMatch[0].padStart(5, '0') : formatEnglishTime(new Date());
+
+  return `${fullDate} ${cleanTime}`;
 };
 
 /**

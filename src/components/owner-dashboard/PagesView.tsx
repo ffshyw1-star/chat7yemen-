@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useChat } from '../../context/ChatContext';
 import {
   FileText, Save, Eye, Shield, Scale, Info, Phone,
-  CheckCircle2, Sparkles, Edit3
+  CheckCircle2, Sparkles, Edit3, Loader2
 } from 'lucide-react';
 
 interface PageItem {
@@ -15,6 +15,7 @@ interface PageItem {
 
 export const PagesView: React.FC<{ showToast: (msg: string) => void }> = ({ showToast }) => {
   const { siteSettings, updateSiteSettings } = useChat();
+  const [isSaving, setIsSaving] = useState(false);
 
   const [pages, setPages] = useState<PageItem[]>([
     {
@@ -63,13 +64,22 @@ export const PagesView: React.FC<{ showToast: (msg: string) => void }> = ({ show
     setPages(prev => prev.map(p => p.id === selectedPageId ? { ...p, content: text } : p));
   };
 
-  const handleSavePage = () => {
-    const updatedCustomPages: Record<string, string> = { ...(siteSettings.customPages || {}) };
-    pages.forEach(p => {
-      updatedCustomPages[p.id] = p.content;
-    });
-    updateSiteSettings({ customPages: updatedCustomPages });
-    showToast(`تم حفظ وتحديث صفحة "${selectedPage.title}" وحفظها في السيرفر بنجاح 💾`);
+  const handleSavePage = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      const updatedCustomPages: Record<string, string> = { ...(siteSettings.customPages || {}) };
+      pages.forEach(p => {
+        updatedCustomPages[p.id] = p.content;
+      });
+      await updateSiteSettings({ customPages: updatedCustomPages });
+      showToast(`تم حفظ وتحديث صفحة "${selectedPage.title}" وحفظها في السيرفر بنجاح 💾`);
+    } catch (err) {
+      console.error('Failed to save page:', err);
+      showToast('⚠️ حدث خطأ أثناء حفظ الصفحة في قاعدة البيانات');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -96,10 +106,11 @@ export const PagesView: React.FC<{ showToast: (msg: string) => void }> = ({ show
           </button>
           <button
             onClick={handleSavePage}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg cursor-pointer shadow-xs flex items-center gap-1.5"
+            disabled={isSaving}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg cursor-pointer shadow-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Save className="w-3.5 h-3.5" />
-            <span>حفظ ونشر الصفحة 💾</span>
+            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            <span>{isSaving ? 'جارٍ الحفظ...' : 'حفظ ونشر الصفحة 💾'}</span>
           </button>
         </div>
       </div>
@@ -148,10 +159,11 @@ export const PagesView: React.FC<{ showToast: (msg: string) => void }> = ({ show
           </div>
         ) : (
           <textarea
+            disabled={isSaving}
             value={selectedPage.content}
             onChange={(e) => handleUpdateContent(e.target.value)}
             rows={10}
-            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs font-medium text-slate-800 leading-relaxed focus:bg-white transition-colors custom-scrollbar"
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs font-medium text-slate-800 leading-relaxed focus:bg-white transition-colors custom-scrollbar disabled:opacity-50 disabled:cursor-not-allowed"
             placeholder="اكتب محتوى الصفحة هنا..."
           />
         )}

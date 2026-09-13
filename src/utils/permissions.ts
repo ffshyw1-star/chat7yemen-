@@ -88,13 +88,61 @@ export const hasRolePermission = (
 
 
 /**
- * Helper to check if a user is Owner (Site Owner)
+ * Sovereign Primary Owner Identifiers
+ */
+export const PRIMARY_OWNER_ID = 'user-owner';
+export const PRIMARY_OWNER_EMAIL = 'alzymasd9@gmail.com';
+
+/**
+ * Checks if a user is the Primary Site Owner (صاحب الموقع الأساسي)
+ * - Has absolute, permanent immunity
+ * - Cannot be demoted, role-changed, kicked, muted, banned, or deleted
+ */
+export const isPrimaryOwner = (user?: User | null | string): boolean => {
+  if (!user) return false;
+  if (typeof user === 'string') {
+    return user === PRIMARY_OWNER_ID || user === 'primary-owner';
+  }
+  return Boolean(
+    user.id === PRIMARY_OWNER_ID ||
+    user.isPrimaryOwner === true ||
+    (user as any).is_primary_owner === true ||
+    user.email === PRIMARY_OWNER_EMAIL ||
+    (user.role === 'owner' && (user.username === 'Owner' || user.username === 'صاحب الموقع'))
+  );
+};
+
+/**
+ * Checks if a user is a Granted Owner (مالك ممنوح - تم منحه رتبة مالك لكن ليس صاحب الموقع الأساسي)
+ */
+export const isGrantedOwner = (user?: User | null | string): boolean => {
+  if (!user) return false;
+  if (typeof user === 'string') return false;
+  return user.role === 'owner' && !isPrimaryOwner(user);
+};
+
+/**
+ * Helper to check if a user is Owner (Primary Owner or Granted Owner)
  */
 export const isSiteOwner = (user?: User | null | string): boolean => {
   if (!user) return false;
-  if (typeof user === 'string') return user === 'user-owner' || user === 'owner' || user === 'site_owner';
-  return user.role === 'owner' || user.id === 'user-owner' || user.username.toLowerCase() === 'صاحب الموقع' || user.username.toLowerCase() === 'owner';
+  if (typeof user === 'string') return user === PRIMARY_OWNER_ID || user === 'owner' || user === 'site_owner';
+  return user.role === 'owner' || isPrimaryOwner(user);
 };
+
+/**
+ * Checks if requester has authority to demote or modify target user
+ * - Target Primary Owner can NEVER be demoted or modified by anyone!
+ * - Target Granted Owner can only be modified by Primary Owner
+ */
+export const canDemoteOrModifyUser = (requester?: User | null, target?: User | null): boolean => {
+  if (!requester || !target) return false;
+  if (isPrimaryOwner(target)) return false;
+  if (isGrantedOwner(target)) return isPrimaryOwner(requester);
+  return isPrimaryOwner(requester) || requester.role === 'owner';
+};
+
+
 
 
 /**
@@ -109,31 +157,28 @@ export const isSystemUser = (user?: User | null | string): boolean => {
 /**
  * Format lastSeen string to always return Time and Date (الوقت والتاريخ)
  */
-import { toEnglishDigits } from './dateUtils';
+import { toEnglishDigits, formatUnifiedDateTime } from './dateUtils';
 
 export const formatLastSeenDateTime = (lastSeen?: string, lastSeenTimestamp?: number, isOnline?: boolean): string => {
+  // If user is currently online, display their latest activity or presence timestamp in unified format
   if (isOnline) {
-    return 'متصل الآن';
+    if (lastSeenTimestamp && lastSeenTimestamp > 0) {
+      return formatUnifiedDateTime(lastSeenTimestamp);
+    }
+    return formatUnifiedDateTime(new Date());
   }
+
+  // When user is offline: display frozen lastSeen timestamp strictly formatted as DD/MM/YYYY HH:mm
   if (lastSeenTimestamp && lastSeenTimestamp > 0) {
-    const d = new Date(lastSeenTimestamp);
-    const hours = String(d.getHours()).padStart(2, '0');
-    const minutes = String(d.getMinutes()).padStart(2, '0');
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${hours}:${minutes} ${day}/${month}/${year}`;
+    return formatUnifiedDateTime(lastSeenTimestamp);
   }
-  if (lastSeen && lastSeen !== 'الآن' && lastSeen !== 'متصل الان' && lastSeen.includes(':') && (lastSeen.includes('-') || lastSeen.includes('/'))) {
-    return toEnglishDigits(lastSeen);
+
+  // If lastSeen contains a valid string or date
+  if (lastSeen && lastSeen !== 'الآن' && lastSeen !== 'متصل الان' && lastSeen !== 'متصل الآن' && lastSeen !== 'غير متصل') {
+    return formatUnifiedDateTime(lastSeen);
   }
-  const now = new Date();
-  const hours = String(now.getHours()).padStart(2, '0');
-  const minutes = String(now.getMinutes()).padStart(2, '0');
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${hours}:${minutes} ${day}/${month}/${year}`;
+
+  return formatUnifiedDateTime(new Date());
 };
 
 /**

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useChat } from '../../context/ChatContext';
 import {
-  Check, X, RotateCcw, Save, Key
+  Check, X, RotateCcw, Save, Key, Loader2
 } from 'lucide-react';
 import { UserRole } from '../../types';
 import { PERMISSIONS_LIST, DEFAULT_PERMISSIONS } from '../../utils/permissions';
@@ -28,6 +28,9 @@ export const PermissionsView: React.FC<{ showToast: (msg: string) => void }> = (
   const { siteSettings, updateSiteSettings } = useChat();
   const [selectedRole, setSelectedRole] = useState<UserRole>('owner');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [isUpdating, setIsUpdating] = useState<boolean>(false);
+  const [updatingPermId, setUpdatingPermId] = useState<string | null>(null);
   
   // Matrix State: map of role -> Array of permission IDs
   const [rolePermissions, setRolePermissions] = useState<Record<string, string[]>>(() => {
@@ -40,7 +43,8 @@ export const PermissionsView: React.FC<{ showToast: (msg: string) => void }> = (
     }
   }, [siteSettings]);
 
-  const togglePermission = (role: string, permId: string) => {
+  const togglePermission = async (role: string, permId: string) => {
+    if (isUpdating || isSaving) return; // Prevent concurrent interactions
     if (role === 'owner') {
       showToast('لا يمكن تعطيل صلاحيات المالك الأساسية 👑');
       return;
@@ -49,40 +53,88 @@ export const PermissionsView: React.FC<{ showToast: (msg: string) => void }> = (
     const exists = currentList.includes(permId);
     const nextList = exists ? currentList.filter(id => id !== permId) : [...currentList, permId];
     const updated = { ...rolePermissions, [role]: nextList };
-    setRolePermissions(updated);
-    updateSiteSettings({ rolePermissions: updated });
-    showToast(exists ? 'تم تعطيل الصلاحية لهذه الرتبة ❌' : 'تم تفعيل الصلاحية لهذه الرتبة ✅');
+
+    setIsUpdating(true);
+    setUpdatingPermId(permId);
+    try {
+      // Await Firestore call (setDoc/updateDoc) first
+      await updateSiteSettings({ rolePermissions: updated });
+      // Refresh UI state ONLY after Firestore operation succeeds
+      setRolePermissions(updated);
+      showToast(exists ? 'تم تعطيل الصلاحية لهذه الرتبة ❌' : 'تم تفعيل الصلاحية لهذه الرتبة ✅');
+    } catch (err) {
+      console.error('Failed to update permission in Firestore:', err);
+      showToast('⚠️ فشل حفظ الصلاحية في قاعدة البيانات');
+    } finally {
+      setIsUpdating(false);
+      setUpdatingPermId(null);
+    }
   };
 
-  const handleGrantAll = () => {
-    if (selectedRole === 'owner') return;
-    const allIds = PERMISSIONS_LIST.map(p => p.id);
-    const updated = { ...rolePermissions, [selectedRole]: allIds };
-    setRolePermissions(updated);
-    updateSiteSettings({ rolePermissions: updated });
-    showToast(`تم تفعيل جميع الصلاحيات لرتبة ${ROLES.find(r => r.key === selectedRole)?.name} ✅`);
+  const handleGrantAll = async () => {
+    if (isUpdating || isSaving || selectedRole === 'owner') return;
+    setIsUpdating(true);
+    try {
+      const allIds = PERMISSIONS_LIST.map(p => p.id);
+      const updated = { ...rolePermissions, [selectedRole]: allIds };
+      await updateSiteSettings({ rolePermissions: updated });
+      setRolePermissions(updated);
+      showToast(`تم تفعيل جميع الصلاحيات لرتبة ${ROLES.find(r => r.key === selectedRole)?.name} ✅`);
+    } catch (err) {
+      console.error('Failed to grant all permissions in Firestore:', err);
+      showToast('⚠️ فشل تفعيل الصلاحيات في قاعدة البيانات');
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
-  const handleRevokeAll = () => {
+  const handleRevokeAll = async () => {
+    if (isUpdating || isSaving) return;
     if (selectedRole === 'owner') {
       showToast('لا يمكن تجريد المالك من الصلاحيات 👑');
       return;
     }
-    const updated = { ...rolePermissions, [selectedRole]: [] };
-    setRolePermissions(updated);
-    updateSiteSettings({ rolePermissions: updated });
-    showToast(`تم تعطيل جميع الصلاحيات لرتبة ${ROLES.find(r => r.key === selectedRole)?.name} ❌`);
+    setIsUpdating(true);
+    try {
+      const updated = { ...rolePermissions, [selectedRole]: [] };
+      await updateSiteSettings({ rolePermissions: updated });
+      setRolePermissions(updated);
+      showToast(`تم تعطيل جميع الصلاحيات لرتبة ${ROLES.find(r => r.key === selectedRole)?.name} ❌`);
+    } catch (err) {
+      console.error('Failed to revoke permissions in Firestore:', err);
+      showToast('⚠️ فشل تعطيل الصلاحيات في قاعدة البيانات');
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
-  const handleSavePermissions = () => {
-    updateSiteSettings({ rolePermissions });
-    showToast('تم حفظ مصفوفة الصلاحيات وتطبيقها على جميع الرتب وتخزينها بنجاح 💾');
+  const handleSavePermissions = async () => {
+    if (isSaving || isUpdating) return;
+    setIsSaving(true);
+    try {
+      await updateSiteSettings({ rolePermissions });
+      showToast('تم حفظ مصفوفة الصلاحيات وتطبيقها على جميع الرتب وتخزينها بنجاح 💾');
+    } catch (err) {
+      console.error('Failed to save permissions in Firestore:', err);
+      showToast('⚠️ فشل حفظ الصلاحيات في قاعدة البيانات');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleResetPermissions = () => {
-    setRolePermissions(DEFAULT_PERMISSIONS);
-    updateSiteSettings({ rolePermissions: DEFAULT_PERMISSIONS });
-    showToast('تم استعادة الصلاحيات الافتراضية للنظام 🔄');
+  const handleResetPermissions = async () => {
+    if (isSaving || isUpdating) return;
+    setIsSaving(true);
+    try {
+      await updateSiteSettings({ rolePermissions: DEFAULT_PERMISSIONS });
+      setRolePermissions(DEFAULT_PERMISSIONS);
+      showToast('تم استعادة الصلاحيات الافتراضية للنظام 🔄');
+    } catch (err) {
+      console.error('Failed to reset permissions in Firestore:', err);
+      showToast('⚠️ فشل استعادة الصلاحيات الافتراضية');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const filteredPermissions = selectedCategory === 'all'
@@ -110,8 +162,9 @@ export const PermissionsView: React.FC<{ showToast: (msg: string) => void }> = (
         <div className="flex items-center gap-2 w-full sm:w-auto">
           <button
             type="button"
+            disabled={isSaving || isUpdating}
             onClick={handleResetPermissions}
-            className="flex-1 sm:flex-none px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center justify-center gap-1.5"
+            className="flex-1 sm:flex-none px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
             title="استعادة الافتراضي"
           >
             <RotateCcw className="w-3.5 h-3.5" />
@@ -120,11 +173,12 @@ export const PermissionsView: React.FC<{ showToast: (msg: string) => void }> = (
 
           <button
             type="button"
+            disabled={isSaving || isUpdating}
             onClick={handleSavePermissions}
-            className="flex-1 sm:flex-none px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl cursor-pointer shadow-xs flex items-center justify-center gap-1.5 transition-colors"
+            className="flex-1 sm:flex-none px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl cursor-pointer shadow-xs flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Save className="w-3.5 h-3.5" />
-            <span>حفظ الصلاحيات 💾</span>
+            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            <span>{isSaving ? 'جاري الحفظ...' : 'حفظ الصلاحيات 💾'}</span>
           </button>
         </div>
       </div>
@@ -138,8 +192,9 @@ export const PermissionsView: React.FC<{ showToast: (msg: string) => void }> = (
             <button
               key={r.key}
               type="button"
+              disabled={isSaving || isUpdating}
               onClick={() => setSelectedRole(r.key)}
-              className={`px-3 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 shrink-0 transition-all cursor-pointer ${
+              className={`px-3 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 shrink-0 transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
                 isActive
                   ? 'bg-slate-900 text-white shadow-md'
                   : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200/60'
@@ -178,18 +233,20 @@ export const PermissionsView: React.FC<{ showToast: (msg: string) => void }> = (
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <button
               type="button"
+              disabled={isSaving || isUpdating}
               onClick={handleGrantAll}
-              className="flex-1 sm:flex-none px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-lg cursor-pointer transition-colors flex items-center justify-center gap-1"
+              className="flex-1 sm:flex-none px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-lg cursor-pointer transition-colors flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Check className="w-3.5 h-3.5" />
+              {isUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
               <span>تفعيل الكل</span>
             </button>
             <button
               type="button"
+              disabled={isSaving || isUpdating}
               onClick={handleRevokeAll}
-              className="flex-1 sm:flex-none px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-lg cursor-pointer transition-colors flex items-center justify-center gap-1"
+              className="flex-1 sm:flex-none px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-lg cursor-pointer transition-colors flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <X className="w-3.5 h-3.5" />
+              {isUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
               <span>تعطيل الكل</span>
             </button>
           </div>
@@ -202,8 +259,9 @@ export const PermissionsView: React.FC<{ showToast: (msg: string) => void }> = (
           <button
             key={cat.id}
             type="button"
+            disabled={isSaving || isUpdating}
             onClick={() => setSelectedCategory(cat.id)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-all whitespace-nowrap ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-all whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed ${
               selectedCategory === cat.id
                 ? 'bg-amber-500 text-slate-950 shadow-xs'
                 : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
@@ -219,14 +277,21 @@ export const PermissionsView: React.FC<{ showToast: (msg: string) => void }> = (
         {filteredPermissions.map(p => {
           const isGranted = (rolePermissions[selectedRole] || DEFAULT_PERMISSIONS[selectedRole] || []).includes(p.id);
           const isOwnerRole = selectedRole === 'owner';
+          const isThisUpdating = updatingPermId === p.id;
           return (
             <div
               key={p.id}
-              onClick={() => !isOwnerRole && togglePermission(selectedRole, p.id)}
+              onClick={() => {
+                if (!isOwnerRole && !isSaving && !isUpdating) {
+                  togglePermission(selectedRole, p.id);
+                }
+              }}
               className={`p-3.5 rounded-xl border flex items-center justify-between transition-all select-none ${
                 isOwnerRole
                   ? 'bg-amber-50/50 border-amber-200 cursor-not-allowed opacity-90'
-                  : 'cursor-pointer hover:shadow-xs'
+                  : isSaving || isUpdating
+                    ? 'cursor-not-allowed opacity-75'
+                    : 'cursor-pointer hover:shadow-xs'
               } ${
                 isGranted
                   ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950 font-bold'
@@ -237,14 +302,21 @@ export const PermissionsView: React.FC<{ showToast: (msg: string) => void }> = (
                 <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${
                   isGranted ? 'bg-emerald-600 text-white shadow-2xs' : 'bg-slate-200 text-slate-400'
                 }`}>
-                  {isGranted ? <Check className="w-3.5 h-3.5 stroke-[3]" /> : <X className="w-3 h-3" />}
+                  {isThisUpdating ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                  ) : isGranted ? (
+                    <Check className="w-3.5 h-3.5 stroke-[3]" />
+                  ) : (
+                    <X className="w-3 h-3" />
+                  )}
                 </div>
                 <span className="leading-snug">{p.name}</span>
               </div>
 
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 ${
                 isGranted ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-500'
               }`}>
+                {isThisUpdating && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
                 {isGranted ? 'مفعّل' : 'معطل'}
               </span>
             </div>

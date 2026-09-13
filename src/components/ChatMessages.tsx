@@ -5,7 +5,7 @@ import { Message, User } from '../types';
 import { UserAvatar } from './UserAvatar';
 import { UsernameDisplay } from './UsernameDisplay';
 import { getRankEmoji, getRankEmojiClass, getRankTitle, getYouTubeVideoId } from '../utils/permissions';
-import { Play, Pause, MoreVertical, MoreHorizontal, Flag, Trash2, Volume2, Smile, Youtube, Sparkles, Clock, Zap, Loader2, ArrowUpCircle, ChevronDown } from 'lucide-react';
+import { Play, Pause, MoreVertical, MoreHorizontal, Flag, Trash2, Volume2, Smile, Youtube, Sparkles, Clock, Zap, Loader2, ChevronDown } from 'lucide-react';
 import { ReportMessageModal } from './ReportMessageModal';
 import { ImageLightboxModal } from './ImageLightboxModal';
 import { NEON_COLORS } from './ProfileEditorModal';
@@ -165,8 +165,8 @@ export const ChatMessages: React.FC = () => {
   const {
     messages, currentRoom, currentUser, users,
     setSelectedUserForCard, setSelectedUserForProfile, deleteMessage,
-    setInputInsertedUsername, reactToMessage, setIsProfileSettingsOpen,
-    typingUsers, customEmojis,
+    setInputInsertedUsername, setTargetedUserForMessage, reactToMessage, setIsProfileSettingsOpen,
+    typingUsers, customEmojis, prependHistoricalMessages,
     openTextContextMenu, openImageContextMenu
   } = useChat();
 
@@ -209,32 +209,25 @@ export const ChatMessages: React.FC = () => {
     if (targetUser) {
       setSelectedUserForCard(targetUser);
     } else {
-      setInputInsertedUsername(username);
+      setTargetedUserForMessage({
+        userId: `user-${username}`,
+        username: username
+      });
     }
   };
 
-  // Initial visible message count determination:
-  // For registered member and visitor:
-  // - On browser refresh (ريفرش): start from last 1 message (only messages after refresh appear)
-  // - On initial fresh entry / room join: show the last 50 messages
-  const getInitialVisibleCount = useCallback((role?: string) => {
-    const isMemberOrVisitor = !role || role === 'visitor' || role === 'member';
-    if (isMemberOrVisitor) {
-      const isReload = isBrowserReload();
-      const sessionActive = (() => {
-        try {
-          return sessionStorage.getItem('araby_chat_session_active') === 'true';
-        } catch {
-          return false;
-        }
-      })();
+  // Allowed older messages per role according to system specifications:
+  // - visitor: 0 older messages (only current messages upon joining)
+  // - member: up to 200 older messages
+  // - vip: up to 500 older messages
+  // - moderator / management / admin / owner / system: up to 5000 older messages
+  const userRole = currentUser?.role || 'visitor';
+  const canViewOldMessages = userRole !== 'visitor';
+  const maxAllowedOlderMessages = userRole === 'member' ? 200 : (userRole === 'vip' ? 500 : 5000);
 
-      if (isReload || sessionActive) {
-        return 1; // Displays only from last message after refresh
-      }
-      return PAGE_SIZE; // 50 messages on fresh initial load
-    }
-    return PAGE_SIZE;
+  // Initial visible message count: 50 messages upon entry
+  const getInitialVisibleCount = useCallback(() => {
+    return PAGE_SIZE; // 50 messages
   }, []);
 
   // Mark session as active after initial render
@@ -246,6 +239,7 @@ export const ChatMessages: React.FC = () => {
 
   // Lazy loading state for older messages
   const [visibleCount, setVisibleCount] = useState<number>(() => getInitialVisibleCount(currentUser?.role));
+  const [hasServerOlder, setHasServerOlder] = useState<boolean>(true);
   const [isLoadingOlder, setIsLoadingOlder] = useState<boolean>(false);
   const [showScrollBottomBtn, setShowScrollBottomBtn] = useState<boolean>(false);
   const [pullDistance, setPullDistance] = useState<number>(0);
@@ -258,13 +252,31 @@ export const ChatMessages: React.FC = () => {
   const prevScrollTopRef = useRef<number>(0);
   const isInitialMountRef = useRef<boolean>(true);
 
-  const allRoomMessages = messages.filter(m => m.roomId === currentRoom.id);
+  const allRoomMessages = messages.filter(m => {
+    if (m.roomId !== currentRoom.id) return false;
+    if (m.id.startsWith('sys-exit-') || (m.id.startsWith('evt-leave-') && (m as any).type === 'system')) return false;
+    if ((m as any).type === 'system' && m.text?.includes('غادر')) return false;
+    return true;
+  });
   const totalRoomMessagesCount = allRoomMessages.length;
 
   // Display only the most recent `visibleCount` messages
   const displayedMessages = allRoomMessages.slice(Math.max(0, totalRoomMessagesCount - visibleCount));
-  const hasMoreOlder = visibleCount < totalRoomMessagesCount;
-  const remainingCount = totalRoomMessagesCount - visibleCount;
+  const hasMoreOlder = canViewOldMessages && (visibleCount < totalRoomMessagesCount || hasServerOlder) && visibleCount < maxAllowedOlderMessages;
+
+  // Listen for global scroll to bottom events (e.g. keyboard open or input focus)
+  useEffect(() => {
+    const handleScrollBottomEvent = () => {
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTo({
+          top: scrollContainerRef.current.scrollHeight,
+          behavior: 'smooth'
+        });
+      }
+    };
+    window.addEventListener('chat-scroll-bottom', handleScrollBottomEvent);
+    return () => window.removeEventListener('chat-scroll-bottom', handleScrollBottomEvent);
+  }, []);
 
   // Reset pagination when room changes
   const prevRoomIdRef = useRef<string>(currentRoom.id);
@@ -272,6 +284,7 @@ export const ChatMessages: React.FC = () => {
     if (prevRoomIdRef.current !== currentRoom.id) {
       prevRoomIdRef.current = currentRoom.id;
       setVisibleCount(PAGE_SIZE);
+      setHasServerOlder(true);
       setIsLoadingOlder(false);
       setShowScrollBottomBtn(false);
       setPullDistance(0);
@@ -308,8 +321,9 @@ export const ChatMessages: React.FC = () => {
   }, [allRoomMessages.length]);
 
   // Function to load more older messages (50 at a time) with scroll position retention
-  const loadMoreOlderMessages = useCallback(() => {
-    if (isLoadingOlder || !hasMoreOlder) return;
+  // Allowed up to role limit: Member (200), VIP (500), Staff (5000)
+  const loadMoreOlderMessages = useCallback(async () => {
+    if (!canViewOldMessages || isLoadingOlder || !hasMoreOlder || visibleCount >= maxAllowedOlderMessages) return;
 
     const container = scrollContainerRef.current;
     if (container) {
@@ -319,25 +333,69 @@ export const ChatMessages: React.FC = () => {
 
     setIsLoadingOlder(true);
 
-    // Small delay to simulate smooth loading and provide clear feedback
-    setTimeout(() => {
-      setVisibleCount(prev => Math.min(totalRoomMessagesCount, prev + PAGE_SIZE));
+    // Case 1: If there are unrendered messages in memory for this room, reveal them first
+    if (visibleCount < totalRoomMessagesCount) {
+      setTimeout(() => {
+        setVisibleCount(prev => Math.min(maxAllowedOlderMessages, Math.min(totalRoomMessagesCount, prev + PAGE_SIZE)));
+        setIsLoadingOlder(false);
+        setPullDistance(0);
+        setIsPulling(false);
+
+        // Restore exact scroll offset so content doesn't jump
+        requestAnimationFrame(() => {
+          if (container) {
+            const heightDifference = container.scrollHeight - prevScrollHeightRef.current;
+            container.scrollTop = prevScrollTopRef.current + heightDifference;
+          }
+        });
+      }, 300);
+      return;
+    }
+
+    // Case 2: All in-memory messages are already visible, fetch older archived messages from server
+    try {
+      const earliestMsg = allRoomMessages[0];
+      const beforeTimestamp = earliestMsg ? (earliestMsg.createdAt || earliestMsg.timestamp) : undefined;
+      const url = new URL('/api/messages/history', window.location.origin);
+      url.searchParams.set('roomId', currentRoom.id);
+      url.searchParams.set('role', currentUser?.role || '');
+      const allowedRemaining = maxAllowedOlderMessages - visibleCount;
+      const fetchLimit = Math.min(PAGE_SIZE, allowedRemaining);
+      url.searchParams.set('limit', String(fetchLimit));
+      if (beforeTimestamp) {
+        url.searchParams.set('beforeTimestamp', String(beforeTimestamp));
+      }
+
+      const res = await fetch(url.toString());
+      const data = await res.json();
+      if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
+        prependHistoricalMessages(data.messages);
+        const addedCount = Math.min(data.messages.length, allowedRemaining);
+        setVisibleCount(prev => Math.min(maxAllowedOlderMessages, prev + addedCount));
+        setHasServerOlder(Boolean(data.hasMore && (visibleCount + addedCount < maxAllowedOlderMessages)));
+      } else {
+        setHasServerOlder(false);
+      }
+    } catch (err) {
+      console.warn('Failed to load older messages from history API:', err);
+      setHasServerOlder(false);
+    } finally {
       setIsLoadingOlder(false);
       setPullDistance(0);
       setIsPulling(false);
 
-      // Restore exact scroll offset so content doesn't jump
       requestAnimationFrame(() => {
         if (container) {
           const heightDifference = container.scrollHeight - prevScrollHeightRef.current;
           container.scrollTop = prevScrollTopRef.current + heightDifference;
         }
       });
-    }, 300);
-  }, [isLoadingOlder, hasMoreOlder, totalRoomMessagesCount]);
+    }
+  }, [canViewOldMessages, isLoadingOlder, hasMoreOlder, visibleCount, maxAllowedOlderMessages, totalRoomMessagesCount, allRoomMessages, currentRoom.id, currentUser?.role, prependHistoricalMessages]);
 
-  // Touch handlers for Pull-Down gesture to reveal older messages
+  // Touch handlers for Pull-Down gesture to reveal older messages (only for authorized roles)
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!canViewOldMessages) return;
     const container = scrollContainerRef.current;
     if (!container) return;
     if (container.scrollTop <= 10) {
@@ -349,7 +407,7 @@ export const ChatMessages: React.FC = () => {
   };
 
   const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (!isPullingRef.current || isLoadingOlder || !hasMoreOlder) return;
+    if (!canViewOldMessages || !isPullingRef.current || isLoadingOlder || !hasMoreOlder) return;
     const container = scrollContainerRef.current;
     if (!container || container.scrollTop > 10) {
       isPullingRef.current = false;
@@ -381,7 +439,7 @@ export const ChatMessages: React.FC = () => {
     setIsPulling(false);
   };
 
-  // Scroll listener: triggers lazy loading when scrolling up near top
+  // Scroll listener: triggers progressive lazy loading when scrolling up near top
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget;
     const distanceFromTop = target.scrollTop;
@@ -390,8 +448,8 @@ export const ChatMessages: React.FC = () => {
     // Show floating scroll to bottom button if user scrolled up
     setShowScrollBottomBtn(distanceFromBottom > 350);
 
-    // Trigger lazy loading when near the top (< 70px)
-    if (distanceFromTop <= 70 && hasMoreOlder && !isLoadingOlder) {
+    // Trigger lazy loading when near the top (< 80px) for authorized roles
+    if (distanceFromTop <= 80 && canViewOldMessages && hasMoreOlder && !isLoadingOlder) {
       loadMoreOlderMessages();
     }
   };
@@ -418,10 +476,20 @@ export const ChatMessages: React.FC = () => {
     }
   };
 
-  // Click on username -> inserts name into message input box
-  const handleUsernameClick = (name: string) => {
-    setInputInsertedUsername(name);
+  // Click on username -> targets user in input bar AND places name directly into "اكتب هنا" box
+  const handleUsernameClick = (name: string, senderId?: string, senderRole?: string, senderAvatar?: string) => {
+    const foundUser = users.find(u => (senderId && u.id === senderId) || u.username.toLowerCase() === name.toLowerCase());
+    const finalUname = foundUser?.username || name;
+    setTargetedUserForMessage({
+      userId: foundUser?.id || senderId || `user-${name}`,
+      username: finalUname,
+      role: foundUser?.role || senderRole,
+      avatar: foundUser?.avatar || senderAvatar
+    });
+    setInputInsertedUsername(finalUname);
+    window.dispatchEvent(new CustomEvent('insert-username-to-input', { detail: { username: finalUname } }));
   };
+
 
   // Click on avatar -> opens User Card popover
   const handleAvatarClick = (senderId: string) => {
@@ -545,49 +613,6 @@ export const ChatMessages: React.FC = () => {
       onTouchCancel={handleTouchEnd}
       className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y bg-white custom-scrollbar text-slate-800 flex flex-col relative"
     >
-      {/* Dynamic Pull-Down to Load Indicator (عند سحب الدردشة لأسفل) */}
-      {(isPulling && pullDistance > 0) && (
-        <div
-          style={{ height: `${pullDistance}px` }}
-          className="w-full bg-gradient-to-b from-sky-100/90 via-sky-50/70 to-white flex items-center justify-center overflow-hidden transition-all duration-75 border-b border-sky-200 select-none shrink-0"
-        >
-          <div className="flex items-center gap-2 text-xs font-bold text-sky-800 animate-in fade-in">
-            <ArrowUpCircle
-              className={`w-4 h-4 text-sky-600 transition-transform duration-200 ${
-                pullDistance >= 40 ? 'rotate-0 text-emerald-600 scale-110' : 'rotate-180'
-              }`}
-            />
-            <span>
-              {pullDistance >= 40 ? 'اترك الآن لتحميل 50 رسالة سابقة 🚀' : 'اسحب لأسفل لعرض 50 رسالة قديمة ⬇️'}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Subtle loader shown ONLY when actively fetching older messages */}
-      {isLoadingOlder && (
-        <div className="w-full py-2.5 bg-sky-50/90 border-b border-sky-100 flex items-center justify-center shrink-0 animate-in fade-in">
-          <div className="flex items-center gap-2 text-xs font-bold text-sky-700">
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-[#00aeeF]" />
-            <span>جارٍ تحميل 50 رسالة سابقة...</span>
-          </div>
-        </div>
-      )}
-
-      {/* Interactive Top Button to load older messages when more exist */}
-      {hasMoreOlder && !isLoadingOlder && (
-        <div className="w-full py-2 px-3 bg-slate-50/80 border-b border-slate-200/80 flex justify-center shrink-0 dir-rtl">
-          <button
-            type="button"
-            onClick={loadMoreOlderMessages}
-            className="w-full max-w-sm bg-white hover:bg-sky-50 active:scale-98 border border-sky-200 text-sky-800 text-xs font-bold py-1.5 px-3.5 rounded-xl shadow-2xs transition-all flex items-center justify-center gap-2 cursor-pointer select-none"
-          >
-            <ArrowUpCircle className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-            <span>اسحب لأسفل أو اضغط هنا لعرض 50 رسالة قديمة (متبقي {remainingCount})</span>
-          </button>
-        </div>
-      )}
-
       {/* Top Section: Visitor Welcome */}
       <div className="shrink-0">
         {/* Visitor Room Welcome Banner */}
@@ -610,7 +635,7 @@ export const ChatMessages: React.FC = () => {
               onClick={() => setIsProfileSettingsOpen(true)}
               className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs px-3.5 py-1.5 rounded-xl shadow-xs transition-all active:scale-95 shrink-0 cursor-pointer flex items-center gap-1.5"
             >
-              <span>تسجيل حساب عضو 👑</span>
+              <span>تسجيل حساب عضو ⭐</span>
             </button>
           </div>
         )}
@@ -627,6 +652,85 @@ export const ChatMessages: React.FC = () => {
               (topicAnchorMsgId === null && msgIndex === 0) ||
               (topicAnchorMsgId && !displayedMessages.some(m => m.id === topicAnchorMsgId) && msgIndex === 0)
             );
+
+            // Dedicated Room Event: Join / Leave Room Notification
+            const isRoomEvent = (msg as any).type === 'room_event' ||
+              ((msg as any).type === 'system' && (msg.text?.includes('انضم للغرفة') || msg.text?.includes('غادر الغرفة')));
+
+            if (isRoomEvent) {
+              const isJoin = (msg as any).eventType ? (msg as any).eventType === 'join' : !msg.text?.includes('غادر');
+              const targetUname = (msg as any).username || msg.senderName || (msg.text ? msg.text.split(' ')[0] : 'مستخدم');
+              const targetUid = (msg as any).userId || msg.senderId;
+              const senderUser = users.find(u => u.id === targetUid || u.username === targetUname);
+              const rawRank = (msg as any).rank || msg.senderRole || senderUser?.role || 'member';
+              const roleTitle = getRankTitle(rawRank);
+              const rankEmoji = getRankEmoji(rawRank as any);
+              const userColor = senderUser?.usernameColor || msg.senderUsernameColor || '#0284c7';
+
+              return (
+                <React.Fragment key={msg.id}>
+                  <div
+                    id={`room-event-${msg.id}`}
+                    className="flex items-center justify-between gap-2 px-3 py-1.5 sm:px-4 sm:py-2 bg-slate-50/60 hover:bg-slate-100/70 border-y border-slate-100/90 transition-colors group relative dir-rtl my-0.5 select-none"
+                  >
+                    <div className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-0 flex-wrap">
+                      {/* Left arrow indicator */}
+                      <span className="text-slate-400 font-bold text-sm select-none shrink-0">
+                        &gt;
+                      </span>
+
+                      {/* Event bracket prefix: [ انظم المستخدم / [ غادر المستخدم */}
+                      <span className="text-slate-700 font-bold text-xs sm:text-sm shrink-0">
+                        [ {isJoin ? 'انظم المستخدم' : 'غادر المستخدم'}
+                      </span>
+
+                      {/* Clickable Username -> places username into "اكتب هنا" input box & targets user */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleUsernameClick(targetUname, targetUid, rawRank, senderUser?.avatar || msg.senderAvatar);
+                        }}
+                        style={{ color: userColor }}
+                        className="font-black text-sm sm:text-base hover:underline cursor-pointer transition-all hover:opacity-85 shrink-0 inline-flex items-center gap-1 px-1 py-0.5 rounded hover:bg-slate-100"
+                        title={`إدراج ${targetUname} في مربع اكتب هنا`}
+                      >
+                        <span>{targetUname}</span>
+                        {rankEmoji && <span className="text-xs">{rankEmoji}</span>}
+                      </button>
+
+                      {/* Event bracket suffix: الى الغرفة ] / الغرفة ] */}
+                      <span className="text-slate-700 font-bold text-xs sm:text-sm shrink-0">
+                        {isJoin ? 'الى الغرفة ]' : 'الغرفة ]'}
+                      </span>
+
+                      {/* Rank Badge */}
+                      <span className="text-red-600 font-black px-2 py-0.5 rounded-md bg-red-50 border border-red-200 inline-block shadow-2xs text-xs sm:text-sm shrink-0">
+                        [رتبة {roleTitle}]
+                      </span>
+                    </div>
+
+
+                    {/* Timestamp & Moderation delete */}
+                    <div className="flex items-center gap-2 text-slate-400 shrink-0 self-center dir-ltr">
+                      {currentUser && isModOrHigher && (
+                        <button
+                          onClick={() => deleteMessage(msg.id)}
+                          className="p-1 hover:bg-slate-200 rounded text-slate-300 hover:text-red-500 transition-colors cursor-pointer"
+                          title="حذف الإشعار"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <span className="text-[10px] sm:text-xs text-slate-400 font-semibold font-sans">
+                        {toEnglishDigits(msg.timestamp || '')}
+                      </span>
+                    </div>
+                  </div>
+                  {isAnchoredHere && renderTopicBanner()}
+                </React.Fragment>
+              );
+            }
 
             if (msg.type === 'system') {
               const isWelcome = msg.id.includes('welcome') || msg.text.includes('قوانين وتعليمات الغرفة') || msg.senderName.includes('الروبوت');
@@ -781,6 +885,14 @@ export const ChatMessages: React.FC = () => {
             const senderFontSize = senderUser?.usernameFontSize || msg.senderUsernameFontSize;
             const isJoinMessage = msg.text.includes('انضم للغرفة');
 
+            // Requirement 4 & 5: Unified, persistent message styling based on sender's latest saved preferences
+            const senderMsgBg = senderUser?.chatTextBgGradient || (isMe ? currentUser?.chatTextBgGradient : undefined) || msg.textBgGradient;
+            const senderMsgColor = senderUser?.chatTextColor || (isMe ? currentUser?.chatTextColor : undefined) || msg.textColor || '#1e293b';
+            const senderMsgFont = senderUser?.chatFontFamily || (isMe ? currentUser?.chatFontFamily : undefined) || msg.fontFamily;
+            const senderMsgWeight = senderUser?.chatTextWeight || (isMe ? currentUser?.chatTextWeight : undefined) || msg.textWeight;
+            const senderMsgStyle = senderUser?.chatFontStyle || (isMe ? currentUser?.chatFontStyle : undefined) || msg.textStyle;
+            const senderMsgNeon = (senderUser?.chatIsNeon !== undefined ? senderUser.chatIsNeon : (isMe ? currentUser?.chatIsNeon : undefined)) ?? msg.isNeon;
+
             return (
               <React.Fragment key={msg.id}>
                 <div
@@ -817,7 +929,7 @@ export const ChatMessages: React.FC = () => {
                         usernameBgGradient={userBgGradient}
                         isNeon={senderUser?.isNeon || NEON_COLORS.some(n => n.value.toLowerCase() === (userColor || '').toLowerCase())}
                         fontSize={senderFontSize}
-                        onClick={() => handleUsernameClick(msg.senderName)}
+                        onClick={() => handleUsernameClick(msg.senderName, msg.senderId, msg.senderRole, msg.senderAvatar)}
                         onContextMenu={(e) => {
                           e.preventDefault();
                           openTextContextMenu(msg.senderName, `اسم المستخدم: ${msg.senderName}`);
@@ -826,7 +938,7 @@ export const ChatMessages: React.FC = () => {
                         onTouchEnd={cancelLongPress}
                         onTouchCancel={cancelLongPress}
                         className="hover:underline cursor-pointer tracking-tight text-right leading-tight"
-                        title="اضغط لإدراج الاسم (أو اضغط مطولاً للنسخ والخيارات)"
+                        title="اضغط للتحديد (أو اضغط مطولاً للنسخ والخيارات)"
                       />
                     </div>
 
@@ -852,9 +964,10 @@ export const ChatMessages: React.FC = () => {
                           )}
                         </div>
                       ) : (
-                        /* Regular Message Text */
+                        /* Regular Message Text with Message Box Background (المربع بالكامل) */
                         msg.type === 'text' && (
                           <div
+                            id={`message-box-${msg.id}`}
                             onContextMenu={(e) => {
                               e.preventDefault();
                               openTextContextMenu(msg.text, `رسالة من ${msg.senderName}`);
@@ -863,28 +976,37 @@ export const ChatMessages: React.FC = () => {
                             onTouchEnd={cancelLongPress}
                             onTouchCancel={cancelLongPress}
                             style={{
-                              color: msg.textColor || undefined,
-                              fontSize: msg.textFontSize || undefined,
-                              fontFamily: msg.fontFamily || undefined,
-                              fontWeight: msg.textWeight === 'heavy' || msg.textWeight === '900' ? 900 : msg.textWeight === 'bold' || msg.textWeight === '700' ? 700 : undefined,
-                              fontStyle: msg.textStyle === 'italic' ? 'italic' : undefined,
-                              background: msg.textBgGradient || undefined,
-                              padding: msg.textBgGradient ? '4px 14px' : undefined,
-                              borderRadius: msg.textBgGradient ? '9999px' : undefined,
-                              display: msg.textBgGradient ? 'inline-block' : undefined,
-                              boxShadow: msg.textBgGradient
-                                ? '0 3px 10px rgba(0,0,0,0.18), inset 0 1px 2px rgba(255,255,255,0.6)'
-                                : undefined,
-                              border: msg.textBgGradient ? '1px solid rgba(255,255,255,0.4)' : undefined,
-                              textShadow: msg.isNeon || (msg.textColor && NEON_COLORS.some(n => n.value.toLowerCase() === (msg.textColor || '').toLowerCase()))
-                                ? `0 0 8px ${msg.textColor || '#00f3ff'}, 0 0 16px ${msg.textColor || '#00f3ff'}, 0 0 2px #000`
-                                : undefined
+                              backgroundColor: senderMsgBg && !senderMsgBg.startsWith('linear-gradient') ? senderMsgBg : undefined,
+                              backgroundImage: senderMsgBg && senderMsgBg.startsWith('linear-gradient') ? senderMsgBg : undefined,
+                              borderRadius: senderMsgBg ? '12px' : undefined,
+                              padding: senderMsgBg ? '8px 14px' : '1px 0',
+                              border: senderMsgBg ? '1px solid rgba(0,0,0,0.1)' : undefined,
+                              boxShadow: senderMsgBg ? '0 2px 6px rgba(0,0,0,0.08)' : undefined,
+                              display: senderMsgBg ? 'inline-block' : 'block',
+                              maxWidth: '100%',
                             }}
-                            className={`text-sm sm:text-base text-slate-800 leading-relaxed break-words dir-rtl cursor-pointer select-text transition-all ${
-                              msg.text.includes('وعليكم السلام') ? 'text-red-600 font-black text-lg' : 'font-medium'
+                            className={`message-box transition-all dir-rtl cursor-pointer select-text ${
+                              senderMsgBg ? 'my-1 rounded-xl shadow-xs' : 'my-0.5'
                             }`}
                           >
-                            {renderTextWithMentionsAndRanks(msg.text, users, currentUser, handleMentionClick, customEmojis, (tag) => setInputInsertedUsername(tag))}
+                            <div
+                              id={`message-text-${msg.id}`}
+                              style={{
+                                color: senderMsgColor || undefined,
+                                fontSize: msg.textFontSize || undefined,
+                                fontFamily: senderMsgFont || undefined,
+                                fontWeight: senderMsgWeight === 'heavy' || senderMsgWeight === '900' ? 900 : senderMsgWeight === 'bold' || senderMsgWeight === '700' ? 700 : undefined,
+                                fontStyle: senderMsgStyle === 'italic' ? 'italic' : undefined,
+                                textShadow: senderMsgNeon || (senderMsgColor && NEON_COLORS.some(n => n.value.toLowerCase() === (senderMsgColor || '').toLowerCase()))
+                                  ? `0 0 8px ${senderMsgColor || '#00f3ff'}, 0 0 16px ${senderMsgColor || '#00f3ff'}, 0 0 2px #000`
+                                  : undefined
+                              }}
+                              className={`message-text text-sm sm:text-base leading-relaxed break-words transition-all ${
+                                msg.text.includes('وعليكم السلام') ? 'text-red-600 font-black text-lg' : 'font-medium'
+                              }`}
+                            >
+                              {renderTextWithMentionsAndRanks(msg.text, users, currentUser, handleMentionClick, customEmojis, (tag) => setInputInsertedUsername(tag))}
+                            </div>
                           </div>
                         )
                       )}

@@ -5,13 +5,13 @@ export const DEFAULT_ROLE_BADGES: Record<UserRole, RoleBadgeConfig> = {
     role: 'owner',
     label: 'مالك (صاحب الموقع)',
     iconType: 'image',
-    iconValue: '/owner_badge.svg',
-    bgColor: 'linear-gradient(135deg, #eab308, #ca8a04)',
-    borderColor: '#fde047',
-    textColor: '#ffffff',
+    iconValue: '/owner.svg',
+    bgColor: '#ffffff',
+    borderColor: '#f59e0b',
+    textColor: '#b45309',
     borderWidth: 2,
     glow: true,
-    glowColor: 'rgba(234, 179, 8, 0.6)',
+    glowColor: 'rgba(245, 158, 11, 0.5)',
   },
   system: {
     role: 'system',
@@ -98,6 +98,7 @@ export const DEFAULT_ROLE_BADGES: Record<UserRole, RoleBadgeConfig> = {
 };
 
 export const PRESET_BADGE_ICONS = [
+  { label: 'تاج المالك الرسمي', value: '/owner.svg' },
   { label: 'تاج ملكي', value: '👑' },
   { label: 'كأس ذهبي', value: '🏆' },
   { label: 'شعار ملكي', value: '⚜️' },
@@ -178,3 +179,24 @@ export const PRESET_BADGE_STYLES = [
     glowColor: 'rgba(15, 23, 42, 0.5)',
   },
 ];
+
+export function getRankTitle(role?: string): string {
+  if (!role) return 'عضو مسجل';
+  const badge = DEFAULT_ROLE_BADGES[role as UserRole];
+  return badge?.label || role;
+}
+
+export function getRankEmoji(role?: string): string {
+  if (!role) return '👤';
+  const badge = DEFAULT_ROLE_BADGES[role as UserRole];
+  if (badge?.iconType === 'emoji') return badge.iconValue;
+  if (role === 'owner') return '👑';
+  return '👤';
+}
+
+export function getRankColor(role?: string): string {
+  if (!role) return '#059669';
+  const badge = DEFAULT_ROLE_BADGES[role as UserRole];
+  return badge?.textColor || '#059669';
+}
+

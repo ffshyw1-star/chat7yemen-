@@ -176,6 +176,7 @@ export class VoiceRecorder {
   private mediaRecorder: MediaRecorder | null = null;
   private stream: MediaStream | null = null;
   private audioChunks: Blob[] = [];
+  private recordingStartTime: number = 0;
 
   public async startRecording(): Promise<{ ok: boolean; error?: string }> {
     try {
@@ -197,10 +198,16 @@ export class VoiceRecorder {
         }
       }
 
-      this.mediaRecorder = chosenMime
-        ? new MediaRecorder(this.stream, { mimeType: chosenMime })
-        : new MediaRecorder(this.stream);
+      const recorderOptions: MediaRecorderOptions = {
+        audioBitsPerSecond: 28000
+      };
+      if (chosenMime) {
+        recorderOptions.mimeType = chosenMime;
+      }
+
+      this.mediaRecorder = new MediaRecorder(this.stream, recorderOptions);
       this.audioChunks = [];
+      this.recordingStartTime = Date.now();
 
       this.mediaRecorder.ondataavailable = (event) => {
         if (event.data && event.data.size > 0) {
@@ -229,7 +236,7 @@ export class VoiceRecorder {
         return;
       }
 
-      const startTime = Date.now();
+      const startTime = this.recordingStartTime || Date.now();
 
       this.mediaRecorder.onstop = () => {
         try {

@@ -2,13 +2,15 @@ import React, { useState } from 'react';
 import { useChat } from '../../context/ChatContext';
 import {
   MessageSquare, Trash2, Search, Download, Filter, AlertCircle,
-  Clock, Shield, RefreshCw, CheckCircle2
+  Clock, Shield, RefreshCw, CheckCircle2, Loader2
 } from 'lucide-react';
 
 export const MessagesView: React.FC<{ showToast: (msg: string) => void }> = ({ showToast }) => {
   const { messages, privateMessages, clearChat, clearAllPrivateConversations, deleteMessage } = useChat();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRoomFilter, setSelectedRoomFilter] = useState('all');
+  const [isClearing, setIsClearing] = useState<'public' | 'private' | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const filteredMessages = messages.filter(m => {
     const matchesSearch = !searchTerm || m.text?.toLowerCase().includes(searchTerm.toLowerCase()) || m.senderName?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -16,17 +18,49 @@ export const MessagesView: React.FC<{ showToast: (msg: string) => void }> = ({ s
     return matchesSearch && matchesRoom;
   });
 
-  const handleClearPublicChat = () => {
+  const handleClearPublicChat = async () => {
+    if (isClearing || deletingId) return;
     if (window.confirm('هل أنت متأكد من مسح جميع رسائل الدردشة العامة لكافة الغرف؟ لا يمكن التراجع.')) {
-      clearChat();
-      showToast('تم مسح جميع رسائل الدردشة العامة وحفظ التغييرات في قاعدة البيانات 🧹');
+      setIsClearing('public');
+      try {
+        await clearChat('all');
+        showToast('تم مسح جميع رسائل الدردشة العامة وحفظ التغييرات في قاعدة البيانات 🧹');
+      } catch (err) {
+        console.error('Failed to clear public chat:', err);
+        showToast('⚠️ حدث خطأ أثناء مسح رسائل الدردشة العامة');
+      } finally {
+        setIsClearing(null);
+      }
     }
   };
 
-  const handleClearPrivateChats = () => {
+  const handleClearPrivateChats = async () => {
+    if (isClearing || deletingId) return;
     if (window.confirm('هل أنت متأكد من مسح أرشيف المحادثات الخاصة بالكامل؟')) {
-      clearAllPrivateConversations();
-      showToast('تم تفريغ وحذف أرشيف المحادثات الخاصة من قاعدة البيانات 🧹');
+      setIsClearing('private');
+      try {
+        await clearAllPrivateConversations();
+        showToast('تم تفريغ وحذف أرشيف المحادثات الخاصة من قاعدة البيانات 🧹');
+      } catch (err) {
+        console.error('Failed to clear private chats:', err);
+        showToast('⚠️ حدث خطأ أثناء مسح المحادثات الخاصة');
+      } finally {
+        setIsClearing(null);
+      }
+    }
+  };
+
+  const handleDeleteMessage = async (id: string) => {
+    if (isClearing || deletingId) return;
+    setDeletingId(id);
+    try {
+      await deleteMessage(id);
+      showToast('تم حذف الرسالة بنجاح 🗑️');
+    } catch (err) {
+      console.error('Failed to delete message:', err);
+      showToast('⚠️ فشل حذف الرسالة من قاعدة البيانات');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -58,24 +92,27 @@ export const MessagesView: React.FC<{ showToast: (msg: string) => void }> = ({ s
         <div className="flex items-center gap-2 w-full sm:w-auto">
           <button
             onClick={handleExportPublicChat}
-            className="flex-1 sm:flex-none px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1"
+            disabled={Boolean(isClearing) || Boolean(deletingId)}
+            className="flex-1 sm:flex-none px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Download className="w-3.5 h-3.5" />
             <span>تصدير السجلات</span>
           </button>
           <button
             onClick={handleClearPublicChat}
-            className="flex-1 sm:flex-none px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1"
+            disabled={Boolean(isClearing) || Boolean(deletingId)}
+            className="flex-1 sm:flex-none px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>مسح العام 🧹</span>
+            {isClearing === 'public' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            <span>{isClearing === 'public' ? 'جاري المسح...' : 'مسح العام 🧹'}</span>
           </button>
           <button
             onClick={handleClearPrivateChats}
-            className="flex-1 sm:flex-none px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg cursor-pointer shadow-xs flex items-center justify-center gap-1"
+            disabled={Boolean(isClearing) || Boolean(deletingId)}
+            className="flex-1 sm:flex-none px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg cursor-pointer shadow-xs flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>مسح الخاص 🧹</span>
+            {isClearing === 'private' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            <span>{isClearing === 'private' ? 'جاري المسح...' : 'مسح الخاص 🧹'}</span>
           </button>
         </div>
       </div>
@@ -119,14 +156,16 @@ export const MessagesView: React.FC<{ showToast: (msg: string) => void }> = ({ s
                 </div>
 
                 <button
-                  onClick={() => {
-                    deleteMessage(msg.id);
-                    showToast('تم حذف الرسالة بنجاح 🗑️');
-                  }}
-                  className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer shrink-0"
+                  disabled={deletingId === msg.id || Boolean(isClearing)}
+                  onClick={() => handleDeleteMessage(msg.id)}
+                  className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                   title="حذف الرسالة"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  {deletingId === msg.id ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-rose-600" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
                 </button>
               </div>
             ))

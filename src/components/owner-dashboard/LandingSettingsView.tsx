@@ -3,7 +3,7 @@ import { useChat } from '../../context/ChatContext';
 import {
   Layout, Eye, EyeOff, UserCheck, CheckCircle2, ShieldAlert,
   Sliders, Globe, Sparkles, Hash, AlertCircle, Save, Smartphone,
-  Users, Lock, RefreshCw
+  Users, Lock, RefreshCw, Loader2
 } from 'lucide-react';
 
 interface LandingSettingsViewProps {
@@ -24,51 +24,98 @@ export const LandingSettingsView: React.FC<LandingSettingsViewProps> = ({ showTo
     siteName: siteSettings?.siteName || 'شات اليوزر العربي'
   });
 
-  const handleSave = (e?: React.FormEvent) => {
+  const [isSaving, setIsSaving] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updatingField, setUpdatingField] = useState<string | null>(null);
+
+  const handleSave = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    updateSiteSettings({
-      ...siteSettings,
-      hideVisitorLogin: form.hideVisitorLogin,
-      hideRegisterLink: form.hideRegisterLink,
-      maxUsernameLength: Number(form.maxUsernameLength) || 20,
-      landingTitle: form.landingTitle.trim() || 'دردشة تعارف',
-      landingTitleEn: form.landingTitleEn.trim() || 'Dating & Chat',
-      landingSubtitle: form.landingSubtitle.trim(),
-      landingSubtitleEn: form.landingSubtitleEn.trim(),
-      siteName: form.siteName.trim() || 'شات اليوزر العربي'
-    });
-    showToast('تم حفظ إعدادات الواجهة الرئيسية بنجاح 💾✨');
+    if (isSaving || isUpdating) return;
+    setIsSaving(true);
+    try {
+      const payload = {
+        ...siteSettings,
+        hideVisitorLogin: form.hideVisitorLogin,
+        hideRegisterLink: form.hideRegisterLink,
+        maxUsernameLength: Number(form.maxUsernameLength) || 20,
+        landingTitle: form.landingTitle.trim() || 'دردشة تعارف',
+        landingTitleEn: form.landingTitleEn.trim() || 'Dating & Chat',
+        landingSubtitle: form.landingSubtitle.trim(),
+        landingSubtitleEn: form.landingSubtitleEn.trim(),
+        siteName: form.siteName.trim() || 'شات اليوزر العربي'
+      };
+      await updateSiteSettings(payload);
+      showToast('تم حفظ إعدادات الواجهة الرئيسية بنجاح 💾✨');
+    } catch (err) {
+      console.error('Failed to save landing settings:', err);
+      showToast('⚠️ فشل حفظ إعدادات الواجهة الرئيسية في قاعدة البيانات');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleToggleVisitorLogin = (checked: boolean) => {
-    const updated = { ...form, hideVisitorLogin: checked };
-    setForm(updated);
-    updateSiteSettings({
-      ...siteSettings,
-      hideVisitorLogin: checked
-    });
-    showToast(checked ? 'تم إخفاء زر دخول الزوار من الواجهة الرئيسية 🚫' : 'تم إظهار زر دخول الزوار في الواجهة الرئيسية ✅');
+  const handleToggleVisitorLogin = async (checked: boolean) => {
+    if (isSaving || isUpdating) return;
+    setIsUpdating(true);
+    setUpdatingField('hideVisitorLogin');
+    try {
+      await updateSiteSettings({
+        ...siteSettings,
+        hideVisitorLogin: checked
+      });
+      // Refresh UI state ONLY after Firestore succeeds
+      setForm(prev => ({ ...prev, hideVisitorLogin: checked }));
+      showToast(checked ? 'تم إخفاء زر دخول الزوار من الواجهة الرئيسية 🚫' : 'تم إظهار زر دخول الزوار في الواجهة الرئيسية ✅');
+    } catch (err) {
+      console.error('Failed to toggle visitor login in Firestore:', err);
+      showToast('⚠️ فشل تحديث إعداد دخول الزوار في قاعدة البيانات');
+    } finally {
+      setIsUpdating(false);
+      setUpdatingField(null);
+    }
   };
 
-  const handleToggleRegisterLink = (checked: boolean) => {
-    const updated = { ...form, hideRegisterLink: checked };
-    setForm(updated);
-    updateSiteSettings({
-      ...siteSettings,
-      hideRegisterLink: checked
-    });
-    showToast(checked ? 'تم إخفاء رابط التسجيل من الواجهة الرئيسية 🔒' : 'تم إظهار رابط التسجيل في الواجهة الرئيسية ✅');
+  const handleToggleRegisterLink = async (checked: boolean) => {
+    if (isSaving || isUpdating) return;
+    setIsUpdating(true);
+    setUpdatingField('hideRegisterLink');
+    try {
+      await updateSiteSettings({
+        ...siteSettings,
+        hideRegisterLink: checked
+      });
+      // Refresh UI state ONLY after Firestore succeeds
+      setForm(prev => ({ ...prev, hideRegisterLink: checked }));
+      showToast(checked ? 'تم إخفاء رابط التسجيل من الواجهة الرئيسية 🔒' : 'تم إظهار رابط التسجيل في الواجهة الرئيسية ✅');
+    } catch (err) {
+      console.error('Failed to toggle register link in Firestore:', err);
+      showToast('⚠️ فشل تحديث إعداد رابط التسجيل في قاعدة البيانات');
+    } finally {
+      setIsUpdating(false);
+      setUpdatingField(null);
+    }
   };
 
-  const handleSetMaxUsernameLength = (len: number) => {
+  const handleSetMaxUsernameLength = async (len: number) => {
+    if (isSaving || isUpdating) return;
     const safeLen = Math.max(3, Math.min(50, len));
-    const updated = { ...form, maxUsernameLength: safeLen };
-    setForm(updated);
-    updateSiteSettings({
-      ...siteSettings,
-      maxUsernameLength: safeLen
-    });
-    showToast(`تم ضبط الحد الأقصى لأحرف الاسم على ${safeLen} حرفاً 💾`);
+    setIsUpdating(true);
+    setUpdatingField('maxUsernameLength');
+    try {
+      await updateSiteSettings({
+        ...siteSettings,
+        maxUsernameLength: safeLen
+      });
+      // Refresh UI state ONLY after Firestore succeeds
+      setForm(prev => ({ ...prev, maxUsernameLength: safeLen }));
+      showToast(`تم ضبط الحد الأقصى لأحرف الاسم على ${safeLen} حرفاً 💾`);
+    } catch (err) {
+      console.error('Failed to update max username length in Firestore:', err);
+      showToast('⚠️ فشل تحديث طول الاسم في قاعدة البيانات');
+    } finally {
+      setIsUpdating(false);
+      setUpdatingField(null);
+    }
   };
 
   return (
@@ -94,11 +141,13 @@ export const LandingSettingsView: React.FC<LandingSettingsViewProps> = ({ showTo
         </div>
 
         <button
+          type="button"
+          disabled={isSaving || isUpdating}
           onClick={() => handleSave()}
-          className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white text-xs font-black rounded-xl shadow-md flex items-center gap-1.5 cursor-pointer transition-all self-end sm:self-center shrink-0"
+          className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white text-xs font-black rounded-xl shadow-md flex items-center gap-1.5 cursor-pointer transition-all self-end sm:self-center shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <Save className="w-4 h-4" />
-          <span>حفظ جميع التغييرات</span>
+          {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          <span>{isSaving ? 'جاري الحفظ...' : 'حفظ جميع التغييرات'}</span>
         </button>
       </div>
 
@@ -118,18 +167,25 @@ export const LandingSettingsView: React.FC<LandingSettingsViewProps> = ({ showTo
                   ? 'bg-rose-100 text-rose-700'
                   : 'bg-slate-100 text-slate-700'
               }`}>
-                {form.hideVisitorLogin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                {updatingField === 'hideVisitorLogin' ? (
+                  <Loader2 className="w-5 h-5 animate-spin text-rose-600" />
+                ) : form.hideVisitorLogin ? (
+                  <EyeOff className="w-5 h-5" />
+                ) : (
+                  <Eye className="w-5 h-5" />
+                )}
               </div>
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-xs font-black text-slate-900">
                     زر إخفاء دخول الزوار من الصفحة الرئيسية
                   </h3>
-                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 ${
                     form.hideVisitorLogin
                       ? 'bg-rose-200 text-rose-900 border border-rose-300'
                       : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                   }`}>
+                    {updatingField === 'hideVisitorLogin' && <Loader2 className="w-3 h-3 animate-spin" />}
                     {form.hideVisitorLogin ? 'مخفي حالياً 🚫' : 'ظاهر في الواجهة ✅'}
                   </span>
                 </div>
@@ -140,9 +196,10 @@ export const LandingSettingsView: React.FC<LandingSettingsViewProps> = ({ showTo
             </div>
 
             {/* Switch Toggle */}
-            <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+            <label className={`relative inline-flex items-center shrink-0 mt-1 ${isSaving || isUpdating ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}>
               <input
                 type="checkbox"
+                disabled={isSaving || isUpdating}
                 checked={form.hideVisitorLogin}
                 onChange={(e) => handleToggleVisitorLogin(e.target.checked)}
                 className="sr-only peer"
@@ -165,18 +222,25 @@ export const LandingSettingsView: React.FC<LandingSettingsViewProps> = ({ showTo
                   ? 'bg-amber-100 text-amber-700'
                   : 'bg-slate-100 text-slate-700'
               }`}>
-                {form.hideRegisterLink ? <Lock className="w-5 h-5" /> : <Users className="w-5 h-5" />}
+                {updatingField === 'hideRegisterLink' ? (
+                  <Loader2 className="w-5 h-5 animate-spin text-amber-600" />
+                ) : form.hideRegisterLink ? (
+                  <Lock className="w-5 h-5" />
+                ) : (
+                  <Users className="w-5 h-5" />
+                )}
               </div>
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-xs font-black text-slate-900">
                     زر إخفاء رابط "لست مسجل لدينا ؟ سجل الآن"
                   </h3>
-                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 ${
                     form.hideRegisterLink
                       ? 'bg-amber-200 text-amber-900 border border-amber-300'
                       : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                   }`}>
+                    {updatingField === 'hideRegisterLink' && <Loader2 className="w-3 h-3 animate-spin" />}
                     {form.hideRegisterLink ? 'مخفي حالياً 🔒' : 'ظاهر في الواجهة ✅'}
                   </span>
                 </div>
@@ -187,9 +251,10 @@ export const LandingSettingsView: React.FC<LandingSettingsViewProps> = ({ showTo
             </div>
 
             {/* Switch Toggle */}
-            <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+            <label className={`relative inline-flex items-center shrink-0 mt-1 ${isSaving || isUpdating ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}>
               <input
                 type="checkbox"
+                disabled={isSaving || isUpdating}
                 checked={form.hideRegisterLink}
                 onChange={(e) => handleToggleRegisterLink(e.target.checked)}
                 className="sr-only peer"
@@ -206,12 +271,17 @@ export const LandingSettingsView: React.FC<LandingSettingsViewProps> = ({ showTo
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-purple-50 border border-purple-200 flex items-center justify-center text-purple-700 shrink-0">
-              <Sliders className="w-5 h-5" />
+              {updatingField === 'maxUsernameLength' ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Sliders className="w-5 h-5" />
+              )}
             </div>
             <div>
               <h3 className="text-xs font-black text-slate-900 flex items-center gap-2">
                 <span>تحديد عدد أحرف اسم المستخدم المسموح بها</span>
-                <span className="text-[11px] font-black text-purple-700 bg-purple-100 px-2 py-0.5 rounded-md">
+                <span className="text-[11px] font-black text-purple-700 bg-purple-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+                  {updatingField === 'maxUsernameLength' && <Loader2 className="w-3 h-3 animate-spin" />}
                   {form.maxUsernameLength} حرفاً
                 </span>
               </h3>
@@ -228,9 +298,10 @@ export const LandingSettingsView: React.FC<LandingSettingsViewProps> = ({ showTo
               type="number"
               min={3}
               max={50}
+              disabled={isSaving || isUpdating}
               value={form.maxUsernameLength}
               onChange={(e) => handleSetMaxUsernameLength(Number(e.target.value))}
-              className="w-20 bg-slate-50 border border-purple-300 rounded-lg px-2.5 py-1.5 text-xs font-black text-purple-900 text-center focus:outline-none focus:border-purple-500"
+              className="w-20 bg-slate-50 border border-purple-300 rounded-lg px-2.5 py-1.5 text-xs font-black text-purple-900 text-center focus:outline-none focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <span className="text-xs text-slate-500 font-bold">أحرف</span>
           </div>
@@ -250,8 +321,9 @@ export const LandingSettingsView: React.FC<LandingSettingsViewProps> = ({ showTo
             <button
               key={item.len}
               type="button"
+              disabled={isSaving || isUpdating}
               onClick={() => handleSetMaxUsernameLength(item.len)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border disabled:opacity-50 disabled:cursor-not-allowed ${
                 Number(form.maxUsernameLength) === item.len
                   ? 'bg-purple-600 text-white border-purple-700 shadow-xs scale-102'
                   : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-purple-50 hover:border-purple-300'
@@ -431,10 +503,11 @@ export const LandingSettingsView: React.FC<LandingSettingsViewProps> = ({ showTo
           <div className="pt-2 flex justify-end">
             <button
               type="submit"
-              className="px-5 py-2.5 bg-[#00aeeF] hover:bg-[#0284c7] text-white text-xs font-black rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition-all active:scale-95"
+              disabled={isSaving || isUpdating}
+              className="px-5 py-2.5 bg-[#00aeeF] hover:bg-[#0284c7] text-white text-xs font-black rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Save className="w-4 h-4" />
-              <span>حفظ جميع إعدادات الواجهة الرئيسية 💾</span>
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              <span>{isSaving ? 'جاري حفظ الإعدادات...' : 'حفظ جميع إعدادات الواجهة الرئيسية 💾'}</span>
             </button>
           </div>
         </form>
