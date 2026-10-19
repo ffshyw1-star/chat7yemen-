@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useChat } from '../../context/ChatContext';
 import {
-  Check, X, RotateCcw, Save, Key, Loader2
+  Check, X, RotateCcw, Save, Key, Loader2, ShieldAlert, CheckCircle2, Sparkles, Lock
 } from 'lucide-react';
 import { UserRole } from '../../types';
 import { PERMISSIONS_LIST, DEFAULT_PERMISSIONS } from '../../utils/permissions';
@@ -180,6 +180,106 @@ export const PermissionsView: React.FC<{ showToast: (msg: string) => void }> = (
             {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
             <span>{isSaving ? 'جاري الحفظ...' : 'حفظ الصلاحيات 💾'}</span>
           </button>
+        </div>
+      </div>
+
+      {/* MASTER SETTINGS PANEL: خيار تغيير اسم المستخدم للأعضاء (المالك الرئيسي فقط) */}
+      <div className="bg-gradient-to-r from-amber-500/10 via-amber-50/80 to-white rounded-2xl border-2 border-amber-300 p-4 shadow-sm space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-200/80 pb-3">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">👑</span>
+              <h4 className="text-xs font-black text-amber-950">
+                لوحة إعدادات خاصة للمالك الرئيسي: خيار 'تغيير اسم المستخدم' للأعضاء
+              </h4>
+              <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${
+                siteSettings?.allowChangeUsernameForMembers !== false && !siteSettings?.disableUsernameChangeAll
+                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                  : 'bg-rose-100 text-rose-800 border border-rose-300'
+              }`}>
+                {siteSettings?.allowChangeUsernameForMembers !== false && !siteSettings?.disableUsernameChangeAll
+                  ? 'الميزة مفعلة للأعضاء ✅'
+                  : 'الميزة معطلة كلياً 🚫'}
+              </span>
+            </div>
+            <p className="text-[11px] text-amber-900/85 leading-relaxed font-bold">
+              التحكم السيادي في إمكانية تغيير الاسم المستعار: عند التعطيل، يتم إخفاء الأزرار برمجياً من الملف الشخصي والإعدادات، ويرفض السيرفر معالجة أي طلب.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            disabled={isSaving || isUpdating}
+            onClick={async () => {
+              const isEnabled = siteSettings?.allowChangeUsernameForMembers !== false && !siteSettings?.disableUsernameChangeAll;
+              const nextState = !isEnabled;
+              try {
+                await updateSiteSettings({
+                  allowChangeUsernameForMembers: nextState,
+                  disableUsernameChangeAll: !nextState
+                });
+                showToast(
+                  nextState
+                    ? 'تم تفعيل خيار تغيير اسم المستخدم للأعضاء وإظهار الأزرار ✅'
+                    : 'تم تعطيل خيار تغيير اسم المستخدم للأعضاء وإخفاء الأزرار برمجياً 🚫'
+                );
+              } catch (e) {
+                showToast('⚠️ فشل حفظ الإعداد في السيرفر');
+              }
+            }}
+            className={`px-4 py-2.5 rounded-xl font-black text-xs shrink-0 cursor-pointer shadow-sm transition-all flex items-center gap-2 border ${
+              siteSettings?.allowChangeUsernameForMembers !== false && !siteSettings?.disableUsernameChangeAll
+                ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-700'
+                : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700'
+            }`}
+          >
+            {siteSettings?.allowChangeUsernameForMembers !== false && !siteSettings?.disableUsernameChangeAll ? (
+              <>
+                <Lock className="w-3.5 h-3.5" />
+                <span>تعطيل تغيير الاسم للأعضاء 🚫</span>
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>تفعيل تغيير الاسم للأعضاء ✅</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Quick Role Status row */}
+        <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] font-bold text-slate-700">
+          <span className="text-slate-500 font-bold">حالة الرتب الحالية:</span>
+          {ROLES.slice(0, 6).map(r => {
+            const hasPerm = (rolePermissions[r.key] || DEFAULT_PERMISSIONS[r.key] || []).includes('change_username');
+            const isGloballyOff = siteSettings?.allowChangeUsernameForMembers === false || siteSettings?.disableUsernameChangeAll;
+            const effectiveStatus = r.key === 'owner' ? true : (!isGloballyOff && hasPerm);
+            return (
+              <span
+                key={r.key}
+                className={`px-2 py-0.5 rounded-lg border text-[10px] font-black flex items-center gap-1 ${
+                  effectiveStatus
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                    : 'bg-slate-100 text-slate-500 border-slate-200'
+                }`}
+              >
+                <span>{r.badge}</span>
+                <span>{r.name}</span>
+                <span>{effectiveStatus ? '✅' : '🔒'}</span>
+              </span>
+            );
+          })}
+        </div>
+
+        {/* Forbidden Names Note Banner */}
+        <div className="mt-2.5 pt-2 border-t border-amber-200/60 flex items-center justify-between text-[11px] font-bold text-amber-950">
+          <span className="flex items-center gap-1.5">
+            <span className="text-base">🛡️</span>
+            <span>قائمة الأسماء المحظورة والمحجوزة: تمنع أي عضو من انتحال أسماء الإدارة أو استخدام أسماء محظورة عند التغيير.</span>
+          </span>
+          <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded-lg text-[10px] font-black border border-amber-300">
+            {(siteSettings?.forbiddenUsernames || []).length} اسم محظور نشط
+          </span>
         </div>
       </div>
 

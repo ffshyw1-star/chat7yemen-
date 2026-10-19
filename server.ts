@@ -7,10 +7,27 @@ import initSqlJs, { Database } from "sql.js";
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer as createViteServer } from "vite";
 import { INITIAL_USERS, INITIAL_MESSAGES, INITIAL_ROOMS, INITIAL_NOTIFICATIONS, INITIAL_SITE_SETTINGS, INITIAL_CUSTOM_EMOJIS, INITIAL_NEWS, INITIAL_WALL_POSTS } from "./src/data/initialData";
-import { Message, RoomEvent, PrivateMessage, User, Room, IPModerationRecord, FriendRequest, Notification, SiteSettings, CustomEmojiItem, NewsPost, WallPost, GuestBanRecord, ProxyVpnInspectionStats } from "./src/types";
+import { Message, RoomEvent, PrivateMessage, User, Room, IPModerationRecord, FriendRequest, Notification, SiteSettings, CustomEmojiItem, NewsPost, WallPost, GuestBanRecord, ProxyVpnInspectionStats, ModLogEntry, AdminAuditLog } from "./src/types";
+import { ServerPermissionManager } from "./src/server/permissionManager";
+import { filterProfanity } from "./src/utils/profanityFilter";
 import { initializeApp as initClientFirebase, getApps as getClientApps } from "firebase/app";
 import { getFirestore as getClientFirestore, doc as fsDoc, setDoc as fsSetDoc, deleteDoc as fsDeleteDoc, serverTimestamp as fsServerTimestamp } from "firebase/firestore";
 import firebaseConfig from "./firebase-applet-config.json";
+
+// Centralized server-side Firestore instance with mandatory firestoreDatabaseId
+let firestoreInstance: any = null;
+function getFirestoreDb() {
+  if (!firestoreInstance) {
+    try {
+      const clientApp = getClientApps().length > 0 ? getClientApps()[0] : initClientFirebase(firebaseConfig);
+      const dbId = (firebaseConfig as any).firestoreDatabaseId;
+      firestoreInstance = getClientFirestore(clientApp, dbId);
+    } catch (e) {
+      console.warn("Firestore server init warning:", e);
+    }
+  }
+  return firestoreInstance;
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -74,6 +91,7 @@ let serverNews: NewsPost[] = [...INITIAL_NEWS];
 let serverWallPosts: WallPost[] = [...INITIAL_WALL_POSTS];
 let serverSiteSettings: SiteSettings = { ...INITIAL_SITE_SETTINGS };
 let serverGuestBans: GuestBanRecord[] = [];
+let serverModLogs: ModLogEntry[] = [];
 
 // Unified Date/Time Format in English numerals: DD/MM/YYYY HH:mm
 function formatServerDateTime(date: Date = new Date()): string {
@@ -112,11 +130,61 @@ function isPrimaryOwner(userOrId?: any): boolean {
   }
   return Boolean(
     userOrId.id === PRIMARY_OWNER_ID ||
+    userOrId.uid === PRIMARY_OWNER_ID ||
     userOrId.isPrimaryOwner === true ||
     userOrId.is_primary_owner === true ||
-    userOrId.email === PRIMARY_OWNER_EMAIL ||
-    (userOrId.role === 'owner' && (userOrId.username === 'Owner' || userOrId.username === 'صاحب الموقع'))
+    (userOrId.email && userOrId.email.toLowerCase() === PRIMARY_OWNER_EMAIL.toLowerCase())
   );
+}
+
+// Admin & Dispute Audit Log In-Memory Storage
+let serverAuditLogs: AdminAuditLog[] = [];
+
+function recordAdminAuditLog(log: Omit<AdminAuditLog, 'id' | 'timestamp' | 'formattedTime'>) {
+  const now = Date.now();
+  const entry: AdminAuditLog = {
+    id: `audit-${now}-${Math.floor(Math.random() * 10000)}`,
+    timestamp: now,
+    formattedTime: new Date(now).toLocaleString('ar-EG', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    }),
+    ...log
+  };
+  serverAuditLogs.unshift(entry);
+  if (serverAuditLogs.length > 1000) {
+    serverAuditLogs.pop();
+  }
+  try {
+    if (db) {
+      const stmt = db.prepare("INSERT OR REPLACE INTO audit_logs (id, data, timestamp) VALUES (?, ?, ?)");
+      stmt.run([entry.id, JSON.stringify(entry), now]);
+      stmt.free();
+      saveD1ToDisk();
+    }
+  } catch (e) {
+    console.warn("Failed to persist audit log to D1:", e);
+  }
+
+  // Real-time synchronization to Firestore for persistent dispute records
+  try {
+    const fdb = getFirestoreDb();
+    if (fdb) {
+      const auditDocRef = fsDoc(fdb, "audit_logs", entry.id);
+      fsSetDoc(auditDocRef, {
+        ...entry,
+        createdAt: fsServerTimestamp()
+      }).catch((fsErr: any) => {
+        console.warn("Firestore audit log write notice:", fsErr?.message || fsErr);
+      });
+    }
+  } catch (fsErr) {}
+
+  broadcast({ type: "ADMIN_AUDIT_LOG_ADDED", payload: entry });
 }
 
 // Proxy/VPN/Tor/Datacenter Inspection Live Stats
@@ -555,6 +623,22 @@ async function initD1Database() {
         identifiers TEXT,
         data TEXT
       );
+      CREATE TABLE IF NOT EXISTS mod_logs (
+        id TEXT PRIMARY KEY,
+        targetUserId TEXT,
+        targetUsername TEXT,
+        actionBy TEXT,
+        actionType TEXT,
+        reason TEXT,
+        durationMinutes INTEGER,
+        timestamp TEXT,
+        data TEXT
+      );
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id TEXT PRIMARY KEY,
+        data TEXT,
+        timestamp INTEGER
+      );
     `);
 
     // Check if owner is already present and matches the requested clean state
@@ -895,6 +979,30 @@ async function initD1Database() {
     serverWallPosts = [...INITIAL_WALL_POSTS];
   }
 
+  // 12. Mod Logs
+  try {
+    const modLogRows = db.exec("SELECT data FROM mod_logs ORDER BY rowid DESC LIMIT 500");
+    if (modLogRows.length > 0 && modLogRows[0].values.length > 0) {
+      serverModLogs = modLogRows[0].values.map((v) => JSON.parse(v[0] as string));
+    } else {
+      serverModLogs = [];
+    }
+  } catch (e) {
+    serverModLogs = [];
+  }
+
+  // 13. Admin Audit Logs
+  try {
+    const auditRows = db.exec("SELECT data FROM audit_logs ORDER BY timestamp DESC LIMIT 500");
+    if (auditRows.length > 0 && auditRows[0].values.length > 0) {
+      serverAuditLogs = auditRows[0].values.map((v) => JSON.parse(v[0] as string));
+    } else {
+      serverAuditLogs = [];
+    }
+  } catch (e) {
+    serverAuditLogs = [];
+  }
+
   saveD1ToDisk();
 }
 
@@ -1111,6 +1219,27 @@ function deleteGuestBanFromD1(id: string) {
   }
 }
 
+function saveModLogToD1(log: ModLogEntry) {
+  try {
+    const stmt = db.prepare("INSERT OR REPLACE INTO mod_logs (id, targetUserId, targetUsername, actionBy, actionType, reason, durationMinutes, timestamp, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    stmt.run([
+      log.id,
+      log.targetUserId,
+      log.targetUsername,
+      log.actionBy,
+      log.actionType,
+      log.reason,
+      log.durationMinutes || null,
+      log.timestamp,
+      JSON.stringify(log)
+    ]);
+    stmt.free();
+    saveD1ToDisk();
+  } catch (e) {
+    console.error("D1 saveModLog error:", e);
+  }
+}
+
 function saveNotificationToD1(notif: Notification) {
   try {
     const stmt = db.prepare("INSERT OR REPLACE INTO notifications (id, userId, timestamp, data) VALUES (?, ?, ?, ?)");
@@ -1191,6 +1320,42 @@ app.post("/api/messages/send", (req, res) => {
   const { message } = req.body || {};
   if (message && message.id) {
     if (!serverMessages.some((m) => m.id === message.id)) {
+      // Server-side Profanity Filter check on public message
+      if (
+        message.text &&
+        serverSiteSettings.enableProfanityFilter !== false &&
+        (serverSiteSettings.profanityFilterScope === "both" ||
+          serverSiteSettings.profanityFilterScope === "public_only" ||
+          !serverSiteSettings.profanityFilterScope)
+      ) {
+        const sender = serverUsers.find((u) => u.id === message.senderId);
+        const isStaff = sender && ["owner", "admin", "management", "moderator"].includes(sender.role);
+        const exemptStaff = serverSiteSettings.profanityExemptStaff !== false;
+        if (!isStaff || !exemptStaff) {
+          const combinedList = [
+            ...(serverSiteSettings.customBadWordsList || []),
+            ...(serverSiteSettings.forbiddenUsernames || [])
+          ];
+          const profResult = filterProfanity(
+            message.text,
+            combinedList,
+            serverSiteSettings.profanityMatchMode || "flexible"
+          );
+          if (profResult.hasProfanity) {
+            const filterAction = serverSiteSettings.profanityFilterAction || "block";
+            if (filterAction === "block") {
+              return res.status(400).json({
+                success: false,
+                error: `🚫 تم منع إرسال الرسالة لاحتوائها على كلمات بذيئة ومحظورة: (${profResult.badWordsFound.join(", ")})`,
+                badWords: profResult.badWordsFound
+              });
+            } else {
+              message.text = profResult.cleanText;
+            }
+          }
+        }
+      }
+
       serverMessages.push(message);
       saveMessageToD1(message);
       broadcast({ type: "NEW_MESSAGE", payload: message });
@@ -1284,6 +1449,42 @@ app.post("/api/private-messages/send", (req, res) => {
   const { privateMessage } = req.body || {};
   if (privateMessage && privateMessage.id) {
     if (!serverPrivateMessages.some((pm) => pm.id === privateMessage.id)) {
+      // Server-side Profanity Filter check on private message
+      if (
+        privateMessage.text &&
+        serverSiteSettings.enableProfanityFilter !== false &&
+        (serverSiteSettings.profanityFilterScope === "both" ||
+          serverSiteSettings.profanityFilterScope === "private_only" ||
+          !serverSiteSettings.profanityFilterScope)
+      ) {
+        const sender = serverUsers.find((u) => u.id === privateMessage.senderId);
+        const isStaff = sender && ["owner", "admin", "management", "moderator"].includes(sender.role);
+        const exemptStaff = serverSiteSettings.profanityExemptStaff !== false;
+        if (!isStaff || !exemptStaff) {
+          const combinedList = [
+            ...(serverSiteSettings.customBadWordsList || []),
+            ...(serverSiteSettings.forbiddenUsernames || [])
+          ];
+          const profResult = filterProfanity(
+            privateMessage.text,
+            combinedList,
+            serverSiteSettings.profanityMatchMode || "flexible"
+          );
+          if (profResult.hasProfanity) {
+            const filterAction = serverSiteSettings.profanityFilterAction || "block";
+            if (filterAction === "block") {
+              return res.status(400).json({
+                success: false,
+                error: `🚫 تم منع إرسال الرسالة الخاصة لاحتوائها على كلمات بذيئة ومحظورة: (${profResult.badWordsFound.join(", ")})`,
+                badWords: profResult.badWordsFound
+              });
+            } else {
+              privateMessage.text = profResult.cleanText;
+            }
+          }
+        }
+      }
+
       serverPrivateMessages.push(privateMessage);
       savePrivateMessageToD1(privateMessage);
       broadcast({ type: "NEW_PRIVATE_MESSAGE", payload: privateMessage });
@@ -1493,16 +1694,16 @@ app.get("/api/geo/lookup", (req, res) => {
 
 // Server-authoritative Guest Validation endpoint
 app.post("/api/auth/guest-validate", (req, res) => {
-  const { username, gender, age, deviceId, browserFingerprint } = req.body || {};
+  const { username, gender, age, deviceId, browserFingerprint, existingGuestId, existingSessionId } = req.body || {};
   const clientIp = getClientIp(req);
   const now = Date.now();
 
   const cleanUsername = (username || '').trim();
   if (!cleanUsername) {
-    return res.status(400).json({ allowed: false, reason: "يرجى كتابة اسم مستعار صالح للدخول كزائر" });
+    return res.status(400).json({ success: false, allowed: false, error: "يرجى كتابة اسم مستعار صالح للدخول كزائر", reason: "يرجى كتابة اسم مستعار صالح للدخول كزائر" });
   }
   if (cleanUsername.length > 30) {
-    return res.status(400).json({ allowed: false, reason: "الاسم المستعار طويل جداً (الحد الأقصى 30 حرفاً)" });
+    return res.status(400).json({ success: false, allowed: false, error: "الاسم المستعار طويل جداً (الحد الأقصى 30 حرفاً)", reason: "الاسم المستعار طويل جداً (الحد الأقصى 30 حرفاً)" });
   }
 
   // 1. Check if name is taken by a registered member or system
@@ -1511,21 +1712,26 @@ app.post("/api/auth/guest-validate", (req, res) => {
   );
   if (reservedUser) {
     return res.status(409).json({
+      success: false,
       allowed: false,
+      error: `الاسم "${cleanUsername}" مسجل لعضو أو رتبة إدارية. يرجى تسجيل الدخول بحسابك أو اختيار اسم آخر للزوار.`,
       reason: `الاسم "${cleanUsername}" مسجل لعضو أو رتبة إدارية. يرجى تسجيل الدخول بحسابك أو اختيار اسم آخر للزوار.`
     });
   }
 
-  // Check if visitor with same name is currently active online
+  // Check if visitor with same name is currently active online (excluding self if reconnecting/reusing session)
   const duplicateOnlineVisitor = serverUsers.find(
     u => u.username.toLowerCase() === cleanUsername.toLowerCase() &&
          u.role === 'visitor' &&
          u.onlineStatus === 'online' &&
-         presenceManager.isUserOnline(u.id)
+         presenceManager.isUserOnline(u.id) &&
+         (!existingGuestId || u.id !== existingGuestId)
   );
   if (duplicateOnlineVisitor) {
     return res.status(409).json({
+      success: false,
       allowed: false,
+      error: `يوجد زائر متصل حالياً بنفس هذا الاسم "${cleanUsername}". يرجى اختيار اسم مستعار مختلف.`,
       reason: `يوجد زائر متصل حالياً بنفس هذا الاسم "${cleanUsername}". يرجى اختيار اسم مستعار مختلف.`
     });
   }
@@ -1541,9 +1747,12 @@ app.post("/api/auth/guest-validate", (req, res) => {
   const activeKick = activeIpMods.find(r => r.type === 'kick');
   if (activeKick) {
     recordInspectionCheck(clientIp, 'Normal connection', 'blocked', cleanUsername, activeKick.reason || 'طرد مؤقت');
+    const kickReason = activeKick.reason ? `تم طردك مؤقتاً: ${activeKick.reason}` : 'تم طردك مؤقتاً لمخالفة التعليمات. يرجى الانتظار حتى انتهاء مدة الطرد.';
     return res.status(403).json({
+      success: false,
       allowed: false,
-      reason: activeKick.reason ? `تم طردك مؤقتاً: ${activeKick.reason}` : 'تم طردك مؤقتاً لمخالفة التعليمات. يرجى الانتظار حتى انتهاء مدة الطرد.'
+      error: kickReason,
+      reason: kickReason
     });
   }
 
@@ -1560,9 +1769,12 @@ app.post("/api/auth/guest-validate", (req, res) => {
 
   if (activeGuestBan) {
     recordInspectionCheck(clientIp, 'Normal connection', 'blocked', cleanUsername, activeGuestBan.reason);
+    const banReason = activeGuestBan.reason || 'تم حظر جهازك أو عنوان شبكتك كزائر لمخالفة القوانين.';
     return res.status(403).json({
+      success: false,
       allowed: false,
-      reason: activeGuestBan.reason || 'تم حظر جهازك أو عنوان شبكتك كزائر لمخالفة القوانين.'
+      error: banReason,
+      reason: banReason
     });
   }
 
@@ -1570,9 +1782,12 @@ app.post("/api/auth/guest-validate", (req, res) => {
   const isIpBanned = activeIpMods.some(r => r.type === 'ban');
   if (isIpBanned) {
     recordInspectionCheck(clientIp, 'Normal connection', 'blocked', cleanUsername, 'IP Ban');
+    const ipBanReason = 'لقد تم حظر عنوان IP الخاص بك من الدردشة لمخالفة الشروط والأحكام.';
     return res.status(403).json({
+      success: false,
       allowed: false,
-      reason: 'لقد تم حظر عنوان IP الخاص بك من الدردشة لمخالفة الشروط والأحكام.'
+      error: ipBanReason,
+      reason: ipBanReason
     });
   }
 
@@ -1583,9 +1798,12 @@ app.post("/api/auth/guest-validate", (req, res) => {
     );
     if (isDeviceBanned) {
       recordInspectionCheck(clientIp, 'Normal connection', 'blocked', cleanUsername, 'Device Ban');
+      const devBanReason = 'تم حظر هذا الجهاز من الدخول إلى الدردشة بناءً على تعليمات الإدارة.';
       return res.status(403).json({
+        success: false,
         allowed: false,
-        reason: 'تم حظر هذا الجهاز من الدخول إلى الدردشة بناءً على تعليمات الإدارة.'
+        error: devBanReason,
+        reason: devBanReason
       });
     }
   }
@@ -1597,9 +1815,12 @@ app.post("/api/auth/guest-validate", (req, res) => {
     );
     if (isBrowserBanned) {
       recordInspectionCheck(clientIp, 'Normal connection', 'blocked', cleanUsername, 'Browser Ban');
+      const browserBanReason = 'تم حظر المتصفح المستخدم من الدخول إلى الدردشة.';
       return res.status(403).json({
+        success: false,
         allowed: false,
-        reason: 'تم حظر المتصفح المستخدم من الدخول إلى الدردشة.'
+        error: browserBanReason,
+        reason: browserBanReason
       });
     }
   }
@@ -1611,33 +1832,45 @@ app.post("/api/auth/guest-validate", (req, res) => {
   if (enableDetection) {
     if (inspection.isTor && serverSiteSettings.blockTor) {
       recordInspectionCheck(clientIp, 'Tor detected', 'blocked', cleanUsername, 'حظر شبكة Tor');
+      const torReason = '🚫 تم حظر الاتصال عبر شبكة Tor وفق إعدادات الأمان الخاصة بالدردشة.';
       return res.status(403).json({
+        success: false,
         allowed: false,
-        reason: '🚫 تم حظر الاتصال عبر شبكة Tor وفق إعدادات الأمان الخاصة بالدردشة.'
+        error: torReason,
+        reason: torReason
       });
     }
 
     if (inspection.isVpn && serverSiteSettings.blockProxyVpn) {
       recordInspectionCheck(clientIp, 'VPN detected', 'blocked', cleanUsername, 'حظر شبكات الـ VPN');
+      const vpnReason = '🚫 تم حظر الاتصال عبر شبكات الـ VPN وفق إعدادات الأمان الخاصة بالدردشة.';
       return res.status(403).json({
+        success: false,
         allowed: false,
-        reason: '🚫 تم حظر الاتصال عبر شبكات الـ VPN وفق إعدادات الأمان الخاصة بالدردشة.'
+        error: vpnReason,
+        reason: vpnReason
       });
     }
 
     if (inspection.isProxy && serverSiteSettings.blockProxyVpn) {
       recordInspectionCheck(clientIp, 'Proxy detected', 'blocked', cleanUsername, 'حظر البروكسي (Proxy)');
+      const proxyReason = '🚫 تم حظر الاتصال عبر البروكسي (Proxy) وفق إعدادات الأمان الخاصة بالدردشة.';
       return res.status(403).json({
+        success: false,
         allowed: false,
-        reason: '🚫 تم حظر الاتصال عبر البروكسي (Proxy) وفق إعدادات الأمان الخاصة بالدردشة.'
+        error: proxyReason,
+        reason: proxyReason
       });
     }
 
     if (inspection.isDatacenter && serverSiteSettings.blockDatacenterIp) {
       recordInspectionCheck(clientIp, 'Datacenter IP', 'blocked', cleanUsername, 'حظر مراكز البيانات (Datacenter IP)');
+      const dcReason = '🚫 تم حظر الاتصال من مراكز البيانات والخدمات السحابية وفق إعدادات الأمان.';
       return res.status(403).json({
+        success: false,
         allowed: false,
-        reason: '🚫 تم حظر الاتصال من مراكز البيانات والخدمات السحابية وفق إعدادات الأمان.'
+        error: dcReason,
+        reason: dcReason
       });
     }
   }
@@ -1657,50 +1890,93 @@ app.post("/api/auth/guest-validate", (req, res) => {
       typeof c === 'string' ? (c === countryCode || c === resolvedCountry.name) : (c.code === countryCode || c.name === resolvedCountry.name)
     );
     if (isCountryBanned) {
+      const countryReason = `الدخول محجوب من دولتك (${resolvedCountry.name}) وفق إعدادات الموقع.`;
       return res.status(403).json({
+        success: false,
         allowed: false,
-        reason: `الدخول محجوب من دولتك (${resolvedCountry.name}) وفق إعدادات الموقع.`
+        error: countryReason,
+        reason: countryReason
       });
     }
   }
 
-  // 6. Construct Visitor User and Persist to SQLite D1
-  const visitorId = `visitor-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  // 6. Handle New vs Existing Valid Visitor Session
   const nowObj = new Date();
-  const visitor: User = {
-    id: visitorId,
-    username: cleanUsername,
-    role: 'visitor',
-    gender: gender === 'female' ? 'female' : 'male',
-    age: Number(age) || 20,
-    avatar: gender === 'female' ? '/default_female.svg' : '/default_male.svg',
-    country: resolvedCountry.name,
-    countryFlag: resolvedCountry.flag,
-    joinedDate: formatServerDate(nowObj),
-    joinedTimestamp: nowObj.getTime(),
-    lastSeen: formatServerDateTime(nowObj),
-    lastSeenTimestamp: nowObj.getTime(),
-    coins: 0,
-    likes: 0,
-    privatePrivacy: 'everyone',
-    onlineStatus: 'online',
-    isOnline: true,
-    ip: clientIp,
-    deviceId: deviceId || undefined,
-    browserFingerprint: browserFingerprint || undefined,
-    currentRoomId: 'room-general'
-  };
+  let visitor: User;
+  let isNewGuest = true;
+  let guestSessionId = existingSessionId;
 
-  serverUsers.push(visitor);
-  saveUserToD1(visitor);
+  if (existingGuestId) {
+    let foundExisting = serverUsers.find(u => u.id === existingGuestId && u.role === 'visitor');
+    if (!foundExisting) {
+      try {
+        const rows = db.exec(`SELECT data FROM users WHERE id = '${existingGuestId.replace(/'/g, "''")}' AND role = 'visitor'`);
+        if (rows.length > 0 && rows[0].values.length > 0) {
+          foundExisting = JSON.parse(rows[0].values[0][0] as string);
+          if (foundExisting) {
+            serverUsers.push(foundExisting);
+          }
+        }
+      } catch (e) {}
+    }
+    if (foundExisting) {
+      visitor = foundExisting;
+      isNewGuest = false;
+      visitor.username = cleanUsername;
+      visitor.gender = gender === 'female' ? 'female' : (gender === 'other' ? 'other' : 'male');
+      visitor.age = Number(age) || visitor.age || 20;
+      visitor.avatar = gender === 'female' ? '/default_female.svg' : (gender === 'other' ? '/default_guest.svg' : '/default_male.svg');
+      visitor.country = resolvedCountry.name;
+      visitor.countryFlag = resolvedCountry.flag;
+      visitor.lastSeen = formatServerDateTime(nowObj);
+      visitor.lastSeenTimestamp = nowObj.getTime();
+      visitor.onlineStatus = 'online';
+      visitor.isOnline = true;
+      visitor.ip = clientIp;
+      if (deviceId) visitor.deviceId = deviceId;
+      if (browserFingerprint) visitor.browserFingerprint = browserFingerprint;
+      saveUserToD1(visitor);
+    }
+  }
+
+  if (isNewGuest) {
+    const visitorId = `visitor-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+    visitor = {
+      id: visitorId,
+      username: cleanUsername,
+      role: 'visitor',
+      gender: gender === 'female' ? 'female' : (gender === 'other' ? 'other' : 'male'),
+      age: Number(age) || 20,
+      avatar: gender === 'female' ? '/default_female.svg' : (gender === 'other' ? '/default_guest.svg' : '/default_male.svg'),
+      country: resolvedCountry.name,
+      countryFlag: resolvedCountry.flag,
+      joinedDate: formatServerDate(nowObj),
+      joinedTimestamp: nowObj.getTime(),
+      lastSeen: formatServerDateTime(nowObj),
+      lastSeenTimestamp: nowObj.getTime(),
+      coins: 0,
+      likes: 0,
+      privatePrivacy: 'everyone',
+      onlineStatus: 'online',
+      isOnline: true,
+      ip: clientIp,
+      deviceId: deviceId || undefined,
+      browserFingerprint: browserFingerprint || undefined,
+      currentRoomId: 'room-general'
+    };
+    serverUsers.push(visitor);
+    saveUserToD1(visitor);
+    guestSessionId = `gsess-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+  }
+
   broadcast({ type: "SYNC_USERS", payload: serverUsers });
 
-  const guestSessionId = `gsess-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-
-  res.json({
+  return res.json({
+    success: true,
     allowed: true,
+    isNewGuest,
     user: visitor,
-    guestSessionId,
+    guestSessionId: guestSessionId || `gsess-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
     country: resolvedCountry.name,
     countryFlag: resolvedCountry.flag
   });
@@ -1741,6 +2017,291 @@ app.post("/api/moderation/guest-action", (req, res) => {
 
   broadcast({ type: "GUEST_MODERATION_ACTION", payload: gban });
   res.json({ success: true, guestBan: gban });
+});
+
+// Unified Server-Authoritative Moderation Endpoint (Mute, Kick, Ban, Delete, Room Options)
+app.post("/api/moderation/execute-action", (req, res) => {
+  const {
+    actorId,
+    targetUserId,
+    actionType,
+    durationMinutes,
+    reason,
+    banType,
+    roomId
+  } = req.body || {};
+
+  if (!actorId || !targetUserId || !actionType) {
+    return res.status(400).json({ success: false, message: "بيانات الإجراء غير مكتملة" });
+  }
+
+  const actor = serverUsers.find(u => u.id === actorId);
+  if (!actor) {
+    return res.status(401).json({ success: false, message: "المشرف أو الإداري غير مسجل" });
+  }
+
+  const targetUser = serverUsers.find(u => u.id === targetUserId);
+  if (!targetUser && actionType !== 'unban') {
+    return res.status(404).json({ success: false, message: "المستخدم المستهدف غير موجود" });
+  }
+
+  // Centralized Permission Check via ServerPermissionManager (الإدارة والإشراف)
+  const modCheck = ServerPermissionManager.canModerate(actor, targetUser, actionType);
+  if (!modCheck.allowed) {
+    return res.status(modCheck.statusCode || 403).json({
+      success: false,
+      message: modCheck.reason || "🚫 ليس لديك الصلاحية الإدارية لتنفيذ هذا الإجراء!"
+    });
+  }
+
+  const cleanReason = reason && typeof reason === 'string' && reason.trim().length > 0
+    ? reason.trim()
+    : 'لا يوجد سبب مقدم';
+
+  let notificationMsg = '';
+
+  switch (actionType) {
+    case 'mute': {
+      const mins = Number(durationMinutes) || 5;
+      const expiresAt = new Date(Date.now() + mins * 60 * 1000).toISOString();
+      targetUser!.isMuted = true;
+      targetUser!.muteUntil = expiresAt;
+      saveUserToD1(targetUser!);
+
+      const ipRecord: IPModerationRecord = {
+        id: `ip-mute-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        ip: targetUser!.ip || '127.0.0.1',
+        type: 'mute',
+        targetUserId: targetUser!.id,
+        targetUsername: targetUser!.username,
+        actionBy: actor.username,
+        reason: cleanReason,
+        durationMinutes: mins,
+        expiresAt,
+        createdAt: new Date().toISOString()
+      };
+      serverIPModerations.push(ipRecord);
+      saveIPModerationToD1(ipRecord);
+      notificationMsg = `تم كتم العضو ${targetUser!.username} لمدة ${mins} دقائق بنجاح`;
+      break;
+    }
+
+    case 'unmute': {
+      targetUser!.isMuted = false;
+      targetUser!.muteUntil = undefined;
+      saveUserToD1(targetUser!);
+      serverIPModerations = serverIPModerations.filter(r => !(r.type === 'mute' && (r.targetUserId === targetUser!.id || (targetUser!.ip && r.ip === targetUser!.ip))));
+      deleteIPModerationFromD1(targetUser!.id);
+      notificationMsg = `تم فك الكتم عن العضو ${targetUser!.username} بنجاح`;
+      break;
+    }
+
+    case 'kick': {
+      const mins = Number(durationMinutes) || 60;
+      const expiresAt = new Date(Date.now() + mins * 60 * 1000).toISOString();
+      targetUser!.isKicked = true;
+      targetUser!.kickUntil = expiresAt;
+      targetUser!.kickReason = cleanReason;
+      targetUser!.onlineStatus = 'offline';
+      saveUserToD1(targetUser!);
+
+      const ipRecord: IPModerationRecord = {
+        id: `ip-kick-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        ip: targetUser!.ip || '127.0.0.1',
+        type: 'kick',
+        targetUserId: targetUser!.id,
+        targetUsername: targetUser!.username,
+        actionBy: actor.username,
+        reason: cleanReason,
+        durationMinutes: mins,
+        expiresAt,
+        createdAt: new Date().toISOString()
+      };
+      serverIPModerations.push(ipRecord);
+      saveIPModerationToD1(ipRecord);
+      notificationMsg = `تم طرد العضو ${targetUser!.username} من الموقع لمدة ${mins} دقيقة بنجاح`;
+      break;
+    }
+
+    case 'unkick': {
+      targetUser!.isKicked = false;
+      targetUser!.kickUntil = undefined;
+      targetUser!.kickReason = undefined;
+      saveUserToD1(targetUser!);
+      serverIPModerations = serverIPModerations.filter(r => !(r.type === 'kick' && (r.targetUserId === targetUser!.id || (targetUser!.ip && r.ip === targetUser!.ip))));
+      deleteIPModerationFromD1(targetUser!.id);
+      notificationMsg = `تم فك الطرد عن العضو ${targetUser!.username} بنجاح`;
+      break;
+    }
+
+    case 'ban': {
+      const isTemp = banType === 'temporary';
+      const mins = Number(durationMinutes) || 60;
+      const expiresAt = isTemp ? new Date(Date.now() + mins * 60 * 1000).toISOString() : undefined;
+      targetUser!.isBanned = true;
+      targetUser!.banType = isTemp ? 'temporary' : 'permanent';
+      targetUser!.banUntil = expiresAt;
+      targetUser!.banReason = cleanReason;
+      targetUser!.onlineStatus = 'offline';
+      saveUserToD1(targetUser!);
+
+      const ipRecord: IPModerationRecord = {
+        id: `ip-ban-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        ip: targetUser!.ip || '127.0.0.1',
+        deviceId: targetUser!.deviceId,
+        type: 'ban',
+        targetUserId: targetUser!.id,
+        targetUsername: targetUser!.username,
+        actionBy: actor.username,
+        reason: cleanReason,
+        durationMinutes: isTemp ? mins : undefined,
+        expiresAt,
+        createdAt: new Date().toISOString()
+      };
+      serverIPModerations.push(ipRecord);
+      saveIPModerationToD1(ipRecord);
+      notificationMsg = `تم حظر العضو ${targetUser!.username} بنجاح`;
+      break;
+    }
+
+    case 'unban': {
+      if (targetUser) {
+        targetUser.isBanned = false;
+        targetUser.banType = undefined;
+        targetUser.banUntil = undefined;
+        targetUser.banReason = undefined;
+        saveUserToD1(targetUser);
+      }
+      serverIPModerations = serverIPModerations.filter(r => !(r.type === 'ban' && (r.targetUserId === targetUserId || (targetUser?.ip && r.ip === targetUser.ip))));
+      deleteIPModerationFromD1(targetUserId);
+      notificationMsg = `تم فك الحظر بنجاح`;
+      break;
+    }
+
+    case 'delete_account': {
+      handleUserDeleted(targetUserId);
+      notificationMsg = `تم حذف عضوية المستخدم نهائياً بنجاح`;
+      break;
+    }
+
+    case 'room_mute': {
+      const room = serverRooms.find(r => r.id === (roomId || targetUser!.currentRoomId));
+      if (room) {
+        const muted = Array.isArray(room.mutedUsers) ? room.mutedUsers : [];
+        if (!muted.includes(targetUserId)) {
+          room.mutedUsers = [...muted, targetUserId];
+          saveRoomsToD1(serverRooms);
+        }
+      }
+      notificationMsg = `تم كتم العضو ${targetUser!.username} في هذه الغرفة بنجاح`;
+      break;
+    }
+
+    case 'room_unmute': {
+      const room = serverRooms.find(r => r.id === (roomId || targetUser!.currentRoomId));
+      if (room) {
+        room.mutedUsers = (room.mutedUsers || []).filter(uid => uid !== targetUserId);
+        saveRoomsToD1(serverRooms);
+      }
+      notificationMsg = `تم فك كتم العضو ${targetUser!.username} من هذه الغرفة بنجاح`;
+      break;
+    }
+
+    case 'room_kick': {
+      const currentTargetRoomId = roomId || targetUser!.currentRoomId;
+      const room = serverRooms.find(r => r.id === currentTargetRoomId);
+      if (room) {
+        const kicked = Array.isArray(room.kickedUsers) ? room.kickedUsers : [];
+        if (!kicked.includes(targetUserId)) {
+          room.kickedUsers = [...kicked, targetUserId];
+          saveRoomsToD1(serverRooms);
+        }
+      }
+      if (targetUser!.currentRoomId === currentTargetRoomId) {
+        targetUser!.currentRoomId = 'room-general';
+        saveUserToD1(targetUser!);
+      }
+      notificationMsg = `تم طرد العضو ${targetUser!.username} من الغرفة فوراً بنجاح`;
+      break;
+    }
+
+    case 'room_unkick': {
+      const room = serverRooms.find(r => r.id === (roomId || targetUser!.currentRoomId));
+      if (room) {
+        room.kickedUsers = (room.kickedUsers || []).filter(uid => uid !== targetUserId);
+        saveRoomsToD1(serverRooms);
+      }
+      notificationMsg = `تم فك طرد العضو ${targetUser!.username} من الغرفة بنجاح`;
+      break;
+    }
+
+    default:
+      return res.status(400).json({ success: false, message: "إجراء إداري غير معروف" });
+  }
+
+  // Audit log entry
+  const modLog: ModLogEntry = {
+    id: `modlog-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    targetUserId,
+    targetUsername: targetUser?.username || 'مستخدم',
+    actionBy: actor.username,
+    actionType: actionType as any,
+    reason: cleanReason,
+    durationMinutes: Number(durationMinutes) || undefined,
+    timestamp: new Date().toISOString()
+  };
+  serverModLogs.unshift(modLog);
+  if (serverModLogs.length > 500) serverModLogs.pop();
+  saveModLogToD1(modLog);
+
+  // Sync to Centralized Dispute & Audit Logs
+  recordAdminAuditLog({
+    performedById: actor.id,
+    performedByUsername: actor.username,
+    performedByRole: actor.role,
+    targetUserId,
+    targetUsername: targetUser?.username || targetUserId,
+    targetUserRole: targetUser?.role,
+    action: 'MODERATION_ACTION',
+    actionTitle: `إجراء إداري: ${actionType}`,
+    oldValue: 'نشط',
+    newValue: actionType,
+    category: 'moderation',
+    notes: cleanReason,
+    ip: (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || ''
+  });
+
+  // Broadcast to all active clients
+  broadcast({
+    type: "MODERATION_ACTION_APPLIED",
+    payload: {
+      actionType,
+      targetUserId,
+      targetUser: actionType === 'delete_account' ? null : targetUser,
+      roomId: roomId || targetUser?.currentRoomId,
+      reason: cleanReason,
+      actor: { id: actor.id, username: actor.username, role: actor.role }
+    }
+  });
+  broadcast({ type: "SYNC_USERS", payload: serverUsers });
+  broadcast({ type: "SYNC_ROOMS", payload: serverRooms });
+  broadcast({ type: "SYNC_IP_MODERATIONS", payload: serverIPModerations });
+  broadcast({ type: "SYNC_MOD_LOGS", payload: serverModLogs });
+
+  if (['kick', 'ban', 'delete_account'].includes(actionType)) {
+    try {
+      presenceManager.disconnectUser(targetUserId, 4003, cleanReason);
+    } catch (e) {
+      console.error("Error disconnecting user on moderation action:", e);
+    }
+  }
+
+  return res.json({
+    success: true,
+    message: notificationMsg,
+    actionType,
+    user: actionType === 'delete_account' ? null : targetUser
+  });
 });
 
 function parseMessageTimestamp(m: Message): number {
@@ -1821,6 +2382,190 @@ app.get("/api/messages/history", (req, res) => {
   });
 });
 
+// REST Endpoint to check username availability & permissions before saving
+app.post("/api/users/check-username", (req, res) => {
+  const { newUsername, targetUserId, requesterId } = req.body || {};
+  if (!newUsername || typeof newUsername !== 'string') {
+    return res.status(400).json({ available: false, error: 'الرجاء إدخال اسم مستخدم صالح' });
+  }
+
+  const trimmed = newUsername.trim();
+  const maxLen = Number(serverSiteSettings?.maxUsernameLength) || 20;
+
+  if (trimmed.length < 2) {
+    return res.status(400).json({ available: false, error: 'يجب أن يتكون الاسم من حرفين على الأقل' });
+  }
+
+  if (trimmed.length > maxLen) {
+    return res.status(400).json({ available: false, error: `الحد الأقصى لاسم المستخدم هو ${maxLen} حرفاً` });
+  }
+
+  const requester = requesterId ? serverUsers.find(u => u.id === requesterId) : null;
+  const targetUser = targetUserId ? serverUsers.find(u => u.id === targetUserId) : requester;
+
+  // 1. Permission check via ServerPermissionManager
+  const permCheck = ServerPermissionManager.canChangeUsername(requester, targetUser, serverSiteSettings);
+  if (!permCheck.allowed) {
+    return res.status(permCheck.statusCode || 403).json({
+      available: false,
+      error: permCheck.reason || '🚫 ميزة تغيير اسم المستخدم معطلة حالياً من قِبل إدارة الموقع'
+    });
+  }
+
+  // 2. Check forbidden words & reserved usernames via ServerPermissionManager
+  const forbiddenCheck = ServerPermissionManager.isForbiddenUsername(
+    trimmed,
+    serverSiteSettings,
+    ServerPermissionManager.isPrimaryOwner(requester)
+  );
+  if (forbiddenCheck.forbidden) {
+    return res.status(400).json({
+      available: false,
+      error: forbiddenCheck.reason || '🚫 هذا الاسم محظور أو محجوز للإدارة'
+    });
+  }
+
+  // 3. Duplicate username check
+  const duplicate = serverUsers.find(
+    (u) => u.id !== targetUserId && u.username.trim().toLowerCase() === trimmed.toLowerCase()
+  );
+
+  if (duplicate) {
+    return res.status(400).json({ available: false, error: `الاسم "${trimmed}" مستخدم بالفعل لعضو آخر` });
+  }
+
+  return res.json({ available: true, message: 'الاسم متاح للاستخدام ✅' });
+});
+
+// REST Endpoint to securely change username with validation & real-time sync
+app.post("/api/users/change-username", async (req, res) => {
+  try {
+    const { userId, newUsername, requesterId } = req.body || {};
+    if (!userId || !newUsername || typeof newUsername !== 'string') {
+      return res.status(400).json({ success: false, error: 'بيانات غير مكتملة' });
+    }
+
+    const trimmed = newUsername.trim();
+    const requester = requesterId ? serverUsers.find(u => u.id === requesterId) : null;
+    const targetIdx = serverUsers.findIndex(u => u.id === userId);
+
+    if (targetIdx === -1) {
+      return res.status(404).json({ success: false, error: 'المستخدم غير موجود' });
+    }
+    const targetUser = serverUsers[targetIdx];
+
+    // 1. Centralized Permission Check via ServerPermissionManager
+    const permCheck = ServerPermissionManager.canChangeUsername(requester, targetUser, serverSiteSettings);
+    if (!permCheck.allowed) {
+      return res.status(permCheck.statusCode || 403).json({
+        success: false,
+        error: permCheck.reason || '🚫 ميزة تغيير اسم المستخدم معطلة حالياً من قِبل إدارة الموقع'
+      });
+    }
+
+    // 2. Length check
+    const maxLen = Number(serverSiteSettings?.maxUsernameLength) || 20;
+    if (trimmed.length < 2 || trimmed.length > maxLen) {
+      return res.status(400).json({
+        success: false,
+        error: `يجب أن يتراوح طول الاسم بين 2 و ${maxLen} حرفاً`
+      });
+    }
+
+    // 3. Duplicate check
+    const isDuplicate = serverUsers.some(
+      u => u.id !== userId && u.username.trim().toLowerCase() === trimmed.toLowerCase()
+    );
+    if (isDuplicate) {
+      return res.status(400).json({
+        success: false,
+        error: `الاسم "${trimmed}" مستخدم بالفعل لعضو آخر، يرجى اختيار اسم مختلف`
+      });
+    }
+
+    // 4. Forbidden words & reserved usernames check via ServerPermissionManager
+    const forbiddenCheck = ServerPermissionManager.isForbiddenUsername(
+      trimmed,
+      serverSiteSettings,
+      ServerPermissionManager.isPrimaryOwner(requester)
+    );
+    if (forbiddenCheck.forbidden) {
+      return res.status(400).json({
+        success: false,
+        error: forbiddenCheck.reason || '🚫 هذا الاسم محظور أو محجوز للإدارة'
+      });
+    }
+
+    const oldUsername = targetUser.username;
+    targetUser.username = trimmed;
+    serverUsers[targetIdx] = targetUser;
+
+    // Save to SQLite D1
+    saveUserToD1(targetUser);
+
+    // Sync to Firestore
+    try {
+      const dbClient = getFirestoreDb();
+      if (dbClient) {
+        const uDocRef = fsDoc(dbClient, "users", userId);
+        await fsSetDoc(uDocRef, {
+          username: trimmed,
+          updatedAt: fsServerTimestamp()
+        }, { merge: true });
+      }
+    } catch (fsErr) {
+      console.warn("Firestore username sync warning:", fsErr);
+    }
+
+    // Comprehensive Dispute Audit Log: Log EVERY username change
+    const isSelf = (requester?.id || '') === userId;
+    const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || '';
+    const clientUa = (req.headers['user-agent'] as string) || '';
+
+    recordAdminAuditLog({
+      performedById: requester ? requester.id : userId,
+      performedByUsername: requester ? requester.username : oldUsername,
+      performedByRole: requester ? requester.role : targetUser.role,
+      targetUserId: targetUser.id,
+      targetUsername: trimmed,
+      targetUserRole: targetUser.role,
+      action: 'USERNAME_CHANGE',
+      actionTitle: 'تغيير اسم المستخدم',
+      oldValue: oldUsername,
+      newValue: trimmed,
+      ip: clientIp,
+      userAgent: clientUa,
+      category: 'username',
+      notes: isSelf
+        ? `قام المستخدم بتغيير اسمه بنفسه من (${oldUsername}) إلى (${trimmed})`
+        : `تم تغيير اسم المستخدم للعضو من (${oldUsername}) إلى (${trimmed}) بواسطة (${requester?.username || 'الإدارة'})`,
+      disputeData: {
+        previousName: oldUsername,
+        newName: trimmed,
+        changedAt: new Date().toISOString(),
+        targetUserId: targetUser.id,
+        performerId: requester ? requester.id : userId,
+        ipAddress: clientIp,
+        userAgent: clientUa,
+        reason: req.body?.reason || 'طلب تغيير الاسم'
+      }
+    });
+
+    // Broadcast instant update to all connected WebSocket clients
+    broadcast({ type: "USER_UPDATED", payload: targetUser });
+    broadcast({ type: "SYNC_USERS", payload: serverUsers });
+
+    return res.json({
+      success: true,
+      user: targetUser,
+      message: `تم تغيير اسم المستخدم إلى (${trimmed}) بنجاح`
+    });
+  } catch (error: any) {
+    console.error("Change username error:", error);
+    return res.status(500).json({ success: false, error: error?.message || 'حدث خطأ في السيرفر' });
+  }
+});
+
 // REST Endpoint to update user profile, avatar, username, coins, roles
 app.post("/api/users/update", (req, res) => {
   const { user, requesterId } = req.body || {};
@@ -1855,7 +2600,116 @@ app.post("/api/users/update", (req, res) => {
     }
 
     const existingIdx = serverUsers.findIndex((u) => u.id === user.id);
+    const requester = serverUsers.find((u) => u.id === requesterId);
+
     if (existingIdx !== -1) {
+      const existing = serverUsers[existingIdx];
+
+      // Centralized permission validation via ServerPermissionManager
+      const permCheck = ServerPermissionManager.canEditProfileData(requester, existing, user, serverSiteSettings);
+      if (!permCheck.allowed) {
+        return res.status(permCheck.statusCode || 403).json({
+          success: false,
+          error: permCheck.reason || '🚫 غير مصرح بتعديل هذه البيانات'
+        });
+      }
+
+      // If username changed, strictly check canChangeUsername and forbiddenUsernames
+      if (user.username && existing.username && user.username.trim() !== existing.username.trim()) {
+        const trimmedNewName = user.username.trim();
+        const nameCheck = ServerPermissionManager.canChangeUsername(requester, existing, serverSiteSettings);
+        if (!nameCheck.allowed) {
+          user.username = existing.username;
+          return res.status(nameCheck.statusCode || 403).json({
+            success: false,
+            error: nameCheck.reason || '🚫 ميزة تغيير اسم المستخدم معطلة حالياً'
+          });
+        }
+        const forbiddenCheck = ServerPermissionManager.isForbiddenUsername(
+          trimmedNewName,
+          serverSiteSettings,
+          ServerPermissionManager.isPrimaryOwner(requester)
+        );
+        if (forbiddenCheck.forbidden) {
+          user.username = existing.username;
+          return res.status(400).json({
+            success: false,
+            error: forbiddenCheck.reason || '🚫 هذا الاسم محظور أو محجوز للإدارة'
+          });
+        }
+        // Record dispute audit log
+        recordAdminAuditLog({
+          performedById: requester ? requester.id : user.id,
+          performedByUsername: requester ? requester.username : existing.username,
+          performedByRole: requester ? requester.role : existing.role,
+          targetUserId: existing.id,
+          targetUsername: trimmedNewName,
+          targetUserRole: existing.role,
+          action: 'USERNAME_CHANGE',
+          actionTitle: 'تغيير اسم المستخدم',
+          oldValue: existing.username,
+          newValue: trimmedNewName,
+          ip: (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || '',
+          userAgent: (req.headers['user-agent'] as string) || '',
+          category: 'username',
+          notes: requester?.id === user.id ? 'تعديل الملف الشخصي' : `تعديل بواسطة (${requester?.username || 'الإدارة'})`,
+          disputeData: {
+            previousName: existing.username,
+            newName: trimmedNewName,
+            changedAt: new Date().toISOString()
+          }
+        });
+      }
+
+      // If photos changed, strictly check canEditPhotos via ServerPermissionManager
+      if ((user.avatar && existing.avatar && user.avatar !== existing.avatar) || (user.wallCover && existing.wallCover && user.wallCover !== existing.wallCover)) {
+        const photoCheck = ServerPermissionManager.canEditPhotos(requester, existing);
+        if (!photoCheck.allowed) {
+          user.avatar = existing.avatar;
+          user.wallCover = existing.wallCover;
+          return res.status(photoCheck.statusCode || 403).json({
+            success: false,
+            error: photoCheck.reason || '🚫 غير مصرح بتعديل صور هذا العضو'
+          });
+        }
+      }
+
+      // Role modifications are strictly checked via ServerPermissionManager.canChangeRank
+      if (user.role && user.role !== existing.role) {
+        const rankCheck = ServerPermissionManager.canChangeRank(requester, existing);
+        if (!rankCheck.allowed) {
+          user.role = existing.role;
+          user.membership = existing.membership;
+          return res.status(rankCheck.statusCode || 403).json({
+            success: false,
+            error: rankCheck.reason || '🚫 رفع وتنزيل الرتب محصور بالمالك الرئيسي فقط'
+          });
+        } else {
+          recordAdminAuditLog({
+            performedById: requester ? requester.id : PRIMARY_OWNER_ID,
+            performedByUsername: requester ? requester.username : 'PRIMARY_OWNER',
+            targetUserId: existing.id,
+            targetUsername: existing.username,
+            action: 'CHANGE_RANK',
+            actionTitle: 'تعديل رتبة المستخدم',
+            oldValue: existing.role,
+            newValue: user.role,
+            notes: `تغيير رتبة العضو (${existing.username}) من (${existing.role}) إلى (${user.role})`
+          });
+        }
+      }
+
+      // Password modifications for another user are strictly restricted to PRIMARY_OWNER
+      if (user.password && user.password !== existing.password && requesterId !== user.id) {
+        const passCheck = ServerPermissionManager.canChangePassword(requester, existing);
+        if (!passCheck.allowed) {
+          delete user.password;
+          return res.status(passCheck.statusCode || 403).json({
+            success: false,
+            error: passCheck.reason || '🚫 غير مصرح بتغيير كلمة المرور'
+          });
+        }
+      }
       serverUsers[existingIdx] = { ...serverUsers[existingIdx], ...user };
     } else {
       serverUsers.push(user);
@@ -1871,41 +2725,72 @@ app.post("/api/users/update", (req, res) => {
   res.status(400).json({ success: false, error: "Invalid user data" });
 });
 
-// REST Endpoint to delete user account
+// REST Endpoint to securely view user profile with ServerPermissionManager validation
+app.get("/api/users/:id/profile", (req, res) => {
+  const targetId = req.params.id;
+  const requesterId = req.query.requesterId as string;
+
+  const target = serverUsers.find((u) => u.id === targetId);
+  if (!target) {
+    return res.status(404).json({ success: false, error: "المستخدم غير موجود" });
+  }
+
+  const requester = requesterId ? serverUsers.find((u) => u.id === requesterId) : null;
+  const viewCheck = ServerPermissionManager.canViewProfile(requester, target);
+  if (!viewCheck.allowed) {
+    return res.status(viewCheck.statusCode || 403).json({
+      success: false,
+      error: viewCheck.reason || "🚫 لا تملك صلاحية مشاهدة هذا الملف الشخصي"
+    });
+  }
+
+  const safeProfile = { ...target };
+  delete (safeProfile as any).password;
+
+  // Confidential data (IP, device info) filtered out unless Primary Owner or authorized
+  if (!ServerPermissionManager.canViewConfidentialData(requester)) {
+    delete (safeProfile as any).ip;
+    delete (safeProfile as any).ipAddress;
+    delete (safeProfile as any).country;
+    delete (safeProfile as any).city;
+    delete (safeProfile as any).deviceFingerprint;
+  }
+
+  return res.json({ success: true, profile: safeProfile });
+});
+
+// REST Endpoint to delete user account (Primary Owner only)
 app.post("/api/users/delete", (req, res) => {
-  const { userId, requesterId, requesterRole } = req.body || {};
+  const { userId, requesterId } = req.body || {};
   if (!userId) {
     return res.status(400).json({ success: false, error: "Missing userId" });
   }
 
   const target = serverUsers.find((u) => u.id === userId);
+  const requester = requesterId ? serverUsers.find(u => u.id === requesterId) : null;
+  const isSelf = requesterId && requesterId === userId;
 
-  // Absolute Primary Owner Protection: NEVER allow deleting or disabling Primary Owner account
-  if (isPrimaryOwner(userId) || isPrimaryOwner(target) || userId === PRIMARY_OWNER_ID) {
-    return res.status(403).json({
+  // Centralized Permission Check via ServerPermissionManager (حذف الحسابات)
+  const delCheck = ServerPermissionManager.canDeleteUser(requester, target);
+  if (!delCheck.allowed) {
+    return res.status(delCheck.statusCode || 403).json({
       success: false,
-      error: "🚫 حساب صاحب الموقع الأساسي محمي بشكل مطلق ودائم، ولا يمكن حذفه أو تعطيله نهائياً."
+      error: delCheck.reason || "🚫 غير مصرح بحذف الحساب"
     });
   }
 
-  if (target && (target.role === 'owner' || target.is_super_admin)) {
-    // Only Primary Owner can delete a Granted Owner
-    const requester = serverUsers.find(u => u.id === requesterId);
-    if (!isPrimaryOwner(requester)) {
-      return res.status(403).json({
-        success: false,
-        error: "🚫 لا يمكن حذف أو تعطيل حساب مالك إلا بواسطة صاحب الموقع الأساسي."
-      });
-    }
-  }
-
-  // Server authorization check:
-  if (requesterId && requesterId !== userId) {
-    const foundRequester = serverUsers.find(u => u.id === requesterId);
-    const role = foundRequester ? foundRequester.role : requesterRole;
-    if (!['owner', 'admin', 'management'].includes(role || '')) {
-      return res.status(403).json({ success: false, error: "Unauthorized to delete user" });
-    }
+  if (target) {
+    recordAdminAuditLog({
+      performedById: requester ? requester.id : (isSelf ? userId : 'UNKNOWN'),
+      performedByUsername: requester ? requester.username : (isSelf ? 'المستخدم نفسه' : 'PRIMARY_OWNER'),
+      targetUserId: target.id,
+      targetUsername: target.username,
+      action: 'DELETE_ACCOUNT',
+      actionTitle: 'حذف حساب من الموقع',
+      oldValue: target.role,
+      newValue: 'DELETED',
+      notes: `تم حذف حساب العضو (${target.username}) نهائياً من الموقع`
+    });
   }
 
   handleUserDeleted(userId);
@@ -1917,29 +2802,26 @@ app.post("/api/users/delete", (req, res) => {
 app.post("/api/users/logout", (req, res) => {
   const { userId, isVisitor } = req.body || {};
   if (userId) {
+    presenceManager.clearUser(userId);
     handleUserLeaving(userId, !!isVisitor);
     return res.json({ success: true });
   }
   res.status(400).json({ success: false, error: "Missing userId" });
 });
 
-// REST Endpoint: Securely change member password by Owner with salted SHA-256
+// REST Endpoint: Securely change member password by Primary Owner with salted SHA-256
 app.post("/api/admin/change-member-password", async (req, res) => {
   try {
     const { requesterId, targetUserId, newPassword } = req.body || {};
 
     if (!requesterId) {
-      return res.status(401).json({ success: false, error: "يجب تسجيل الدخول كمالك أو إدارة لتنفيذ هذا الأمر" });
+      return res.status(401).json({ success: false, error: "يجب تحديد معرف صاحب الطلب" });
     }
 
     const requester = serverUsers.find((u) => u.id === requesterId);
-    const isOwner = requester && (requester.role === 'owner' || requester.id === 'user-owner' || requester.email === 'alzymasd9@gmail.com');
-    if (!isOwner) {
-      return res.status(403).json({ success: false, error: "🚫 غير مصرح: المالك الرئيسي فقط من يملك صلاحية تغيير كلمات المرور للأعضاء" });
-    }
 
-    if (!targetUserId || !newPassword || typeof newPassword !== 'string' || newPassword.trim().length < 5) {
-      return res.status(400).json({ success: false, error: "يجب أن تتكون كلمة المرور من 5 خانات على الأقل وغير فارغة" });
+    if (!targetUserId || !newPassword || typeof newPassword !== 'string' || newPassword.trim().length < 3) {
+      return res.status(400).json({ success: false, error: "يجب أن تتكون كلمة المرور من 3 خانات على الأقل وغير فارغة" });
     }
 
     const targetUserIdx = serverUsers.findIndex((u) => u.id === targetUserId);
@@ -1949,9 +2831,13 @@ app.post("/api/admin/change-member-password", async (req, res) => {
 
     const targetUser = serverUsers[targetUserIdx];
 
-    // Primary owner account protection
-    if (targetUser.id === 'user-owner' && requesterId !== 'user-owner') {
-      return res.status(403).json({ success: false, error: "🚫 لا يمكن تغيير كلمة مرور المالك الرئيسي إلا بواسطة المالك الرئيسي نفسه" });
+    // Centralized Permission Check via ServerPermissionManager (تغيير كلمة المرور)
+    const passCheck = ServerPermissionManager.canChangePassword(requester, targetUser);
+    if (!passCheck.allowed) {
+      return res.status(passCheck.statusCode || 403).json({
+        success: false,
+        error: passCheck.reason || "🚫 غير مصرح بتغيير كلمة المرور"
+      });
     }
 
     // Securely hash password with salted SHA-256 (Never store plain text in Firestore!)
@@ -1966,15 +2852,30 @@ app.post("/api/admin/change-member-password", async (req, res) => {
 
     // Sync to Firestore without plain text password
     try {
-      const dbClient = getClientFirestore();
-      const uDocRef = fsDoc(dbClient, "users", targetUserId);
-      await fsSetDoc(uDocRef, {
-        passwordUpdatedAt: fsServerTimestamp(),
-        updatedAt: fsServerTimestamp()
-      }, { merge: true });
+      const dbClient = getFirestoreDb();
+      if (dbClient) {
+        const uDocRef = fsDoc(dbClient, "users", targetUserId);
+        await fsSetDoc(uDocRef, {
+          passwordUpdatedAt: fsServerTimestamp(),
+          updatedAt: fsServerTimestamp()
+        }, { merge: true });
+      }
     } catch (fsErr) {
       console.warn("Firestore password update timestamp error:", fsErr);
     }
+
+    // Record audit log
+    recordAdminAuditLog({
+      performedById: requester.id,
+      performedByUsername: requester.username || 'PRIMARY_OWNER',
+      targetUserId: targetUser.id,
+      targetUsername: targetUser.username,
+      action: 'CHANGE_PASSWORD',
+      actionTitle: 'تغيير كلمة مرور عضو',
+      oldValue: '********',
+      newValue: '******** (مشفرة)',
+      notes: `تم تغيير كلمة مرور العضو (${targetUser.username}) بواسطة المالك الرئيسي`
+    });
 
     // Broadcast to update client states
     broadcast({ type: "USER_UPDATED", payload: targetUser });
@@ -1993,27 +2894,154 @@ app.post("/api/admin/change-member-password", async (req, res) => {
   }
 });
 
-// REST Endpoint to update site settings
+// REST Endpoint to update site settings (Primary Owner only)
 app.post("/api/settings/update", (req, res) => {
-  const { settings, requesterId, requesterRole } = req.body || {};
+  const { settings, requesterId } = req.body || {};
 
-  // RBAC Server-side Verification: Only owner or admin can update site settings
+  // RBAC Server-side Verification: Strictly Primary Owner only
   const requester = serverUsers.find(u => u.id === requesterId);
-  const effectiveRole = getEffectiveUserRole(requester) || requesterRole;
-  if (!['owner', 'admin'].includes(effectiveRole || '')) {
+  if (!isPrimaryOwner(requester)) {
     return res.status(403).json({
       success: false,
-      error: "Unauthorized: Only Owner or Admin can update site settings"
+      error: "🚫 غير مصرح: تعديل إعدادات الموقع ولوحة التحكم محصور بالمالك الرئيسي فقط (PRIMARY_OWNER)"
     });
   }
 
   if (settings) {
+    const isForbiddenUpdate = settings.forbiddenUsernames !== undefined;
+    const isProfanityUpdate = settings.customBadWordsList !== undefined || settings.enableProfanityFilter !== undefined || settings.profanityFilterAction !== undefined;
     serverSiteSettings = { ...serverSiteSettings, ...settings };
     saveSiteSettingsToD1(serverSiteSettings);
+
+    if (isForbiddenUpdate) {
+      recordAdminAuditLog({
+        performedById: requester.id,
+        performedByUsername: requester.username || 'PRIMARY_OWNER',
+        performedByRole: 'owner',
+        targetUserId: 'forbidden_names_list',
+        targetUsername: 'قائمة الأسماء المحظورة',
+        action: 'FORBIDDEN_NAMES_UPDATE',
+        actionTitle: 'تحديث قائمة الأسماء والكلمات المحظورة والمحجوزة',
+        oldValue: 'قائمة سابقة',
+        newValue: `${(settings.forbiddenUsernames || []).length} اسم محظور`,
+        category: 'settings',
+        notes: `تم تحديث قائمة الأسماء المحظورة من قِبل المالك الرئيسي (إجمالي: ${(settings.forbiddenUsernames || []).length} كلمة)`
+      });
+    } else if (isProfanityUpdate) {
+      recordAdminAuditLog({
+        performedById: requester.id,
+        performedByUsername: requester.username || 'PRIMARY_OWNER',
+        performedByRole: 'owner',
+        targetUserId: 'profanity_filter_config',
+        targetUsername: 'فلتر الكلمات البذيئة والرسائل',
+        action: 'PROFANITY_FILTER_UPDATE',
+        actionTitle: 'تحديث إعدادات وقائمة الكلمات البذيئة المحظورة (العام والخاص)',
+        oldValue: 'إعدادات سابقة',
+        newValue: `${(settings.customBadWordsList || serverSiteSettings.customBadWordsList || []).length} كلمة محظورة`,
+        category: 'settings',
+        notes: `قام المالك بتحديث قائمة الكلمات البذيئة المحظورة وفلترة الشات العام والخاص`
+      });
+    } else {
+      recordAdminAuditLog({
+        performedById: requester.id,
+        performedByUsername: requester.username || 'PRIMARY_OWNER',
+        performedByRole: 'owner',
+        targetUserId: 'global_settings',
+        targetUsername: 'إعدادات الموقع',
+        action: 'UPDATE_SETTINGS',
+        actionTitle: 'تعديل إعدادات الموقع',
+        oldValue: 'الإعدادات السابقة',
+        newValue: 'تحديثات الإعدادات',
+        category: 'settings',
+        notes: 'تم تحديث إعدادات الموقع بنجاح عبر المالك الرئيسي'
+      });
+    }
+
     broadcast({ type: "SYNC_SETTINGS", payload: serverSiteSettings });
     return res.json({ success: true, settings: serverSiteSettings });
   }
   res.status(400).json({ success: false, error: "Invalid settings" });
+});
+
+// REST Endpoint to fetch admin & dispute audit logs (Strictly Primary Owner only)
+app.get("/api/admin/audit-logs", (req, res) => {
+  const requesterId = (req.query.requesterId as string) || (req.headers["x-requester-id"] as string);
+  const requester = serverUsers.find((u) => u.id === requesterId);
+  if (!isPrimaryOwner(requester) && !isPrimaryOwner(requesterId)) {
+    return res.status(403).json({
+      success: false,
+      error: "🚫 غير مصرح: سجل العمليات والنزاعات الإدارية متاح للمالك الرئيسي فقط (PRIMARY_OWNER)"
+    });
+  }
+
+  const { category, action, search, limit } = req.query;
+  let filtered = [...serverAuditLogs];
+
+  if (category && typeof category === 'string' && category !== 'all') {
+    filtered = filtered.filter(l => l.category === category);
+  }
+  if (action && typeof action === 'string' && action !== 'all') {
+    filtered = filtered.filter(l => l.action === action);
+  }
+  if (search && typeof search === 'string' && search.trim()) {
+    const q = search.trim().toLowerCase();
+    filtered = filtered.filter(l =>
+      l.targetUsername?.toLowerCase().includes(q) ||
+      l.targetUserId?.toLowerCase().includes(q) ||
+      l.performedByUsername?.toLowerCase().includes(q) ||
+      (l.oldValue && l.oldValue.toLowerCase().includes(q)) ||
+      (l.newValue && l.newValue.toLowerCase().includes(q)) ||
+      (l.ip && l.ip.includes(q)) ||
+      (l.notes && l.notes.toLowerCase().includes(q))
+    );
+  }
+
+  const max = limit ? parseInt(limit as string, 10) : 500;
+  const resultLogs = filtered.slice(0, max);
+
+  const stats = {
+    totalLogs: serverAuditLogs.length,
+    usernameChanges: serverAuditLogs.filter(l => l.action === 'USERNAME_CHANGE').length,
+    adminOperations: serverAuditLogs.filter(l => l.action !== 'USERNAME_CHANGE').length,
+    recentCount24h: serverAuditLogs.filter(l => l.timestamp > Date.now() - 24 * 60 * 60 * 1000).length
+  };
+
+  return res.json({ success: true, logs: resultLogs, stats });
+});
+
+// REST Endpoint to clear or prune audit logs (Strictly Primary Owner only)
+app.post("/api/admin/audit-logs/clear", (req, res) => {
+  const { requesterId, actionFilter } = req.body || {};
+  const requester = serverUsers.find(u => u.id === requesterId);
+  if (!isPrimaryOwner(requester) && !isPrimaryOwner(requesterId)) {
+    return res.status(403).json({
+      success: false,
+      error: "🚫 غير مصرح: مسح السجلات محصور بالمالك الرئيسي فقط"
+    });
+  }
+
+  if (actionFilter && actionFilter !== 'all') {
+    serverAuditLogs = serverAuditLogs.filter(l => l.action !== actionFilter && l.category !== actionFilter);
+  } else {
+    serverAuditLogs = [];
+  }
+
+  if (db) {
+    if (actionFilter && actionFilter !== 'all') {
+      db.run("DELETE FROM audit_logs");
+      for (const log of serverAuditLogs) {
+        const stmt = db.prepare("INSERT OR REPLACE INTO audit_logs (id, data, timestamp) VALUES (?, ?, ?)");
+        stmt.run([log.id, JSON.stringify(log), log.timestamp]);
+        stmt.free();
+      }
+    } else {
+      db.run("DELETE FROM audit_logs");
+    }
+    saveD1ToDisk();
+  }
+
+  broadcast({ type: "SYNC_AUDIT_LOGS", payload: serverAuditLogs });
+  return res.json({ success: true, message: "تم مسح السجلات المحددة بنجاح" });
 });
 
 // REST Endpoint to clean up inactive users based on owner settings
@@ -2223,9 +3251,11 @@ app.post("/api/membership/upgrade", async (req, res) => {
       // Deduct coins
       targetUser.coins = (targetUser.coins || 0) - price;
     } else if (assignedBy === 'owner') {
-      const isOwner = requester && (requester.role === 'owner' || requester.id === 'user-owner' || requester.email === 'alzymasd9@gmail.com');
-      if (!isOwner) {
-        return res.status(403).json({ success: false, error: "🚫 صلاحية ترقية وتحديد العضويات من لوحة التحكم مخصصة للمالك فقط" });
+      if (!isPrimaryOwner(requester)) {
+        return res.status(403).json({
+          success: false,
+          error: "🚫 غير مصرح: رفع وتنزيل وتعديل الرتب الإدارية محصور بالمالك الرئيسي فقط (PRIMARY_OWNER)"
+        });
       }
     } else {
       return res.status(400).json({ success: false, error: "جهة الترقية غير صالحة" });
@@ -2269,11 +3299,24 @@ app.post("/api/membership/upgrade", async (req, res) => {
     };
 
     targetUser.membershipHistory.unshift(historyItem);
+    const oldRank = targetUser.role;
     targetUser.membership = newMembership;
     targetUser.role = rank;
     if (targetUser.id !== PRIMARY_OWNER_ID) {
       targetUser.isPrimaryOwner = false;
     }
+
+    recordAdminAuditLog({
+      performedById: requester ? requester.id : 'store',
+      performedByUsername: requester ? requester.username : 'متجر الشات',
+      targetUserId: targetUser.id,
+      targetUsername: targetUser.username,
+      action: 'CHANGE_RANK',
+      actionTitle: 'تغيير رتبة إدارية',
+      oldValue: oldRank,
+      newValue: rank,
+      notes: `ترقية/تعديل رتبة العضو ${targetUser.username} من (${oldRank}) إلى (${rank}) - ${isPermanent ? 'دائمة' : 'مؤقتة 30 يوم'}`
+    });
 
 
     // Persist to D1 SQLite
@@ -2319,16 +3362,18 @@ app.post("/api/membership/upgrade", async (req, res) => {
   }
 });
 
-// POST /api/membership/cancel - Cancel active membership by Owner
+// POST /api/membership/cancel - Cancel active membership by Primary Owner
 app.post("/api/membership/cancel", async (req, res) => {
   try {
     const { userId, requesterId } = req.body || {};
     if (!userId) return res.status(400).json({ success: false, error: "Missing userId" });
 
     const requester = serverUsers.find((u) => u.id === requesterId);
-    const isOwner = requester && (requester.role === 'owner' || requester.id === 'user-owner' || requester.email === 'alzymasd9@gmail.com');
-    if (!isOwner) {
-      return res.status(403).json({ success: false, error: "غير مصرح: المالك فقط من يمكنه إلغاء العضويات" });
+    if (!isPrimaryOwner(requester)) {
+      return res.status(403).json({
+        success: false,
+        error: "🚫 غير مصرح: إلغاء وتخفيض الرتب محصور بالمالك الرئيسي فقط (PRIMARY_OWNER)"
+      });
     }
 
     const targetUser = serverUsers.find((u) => u.id === userId);
@@ -2342,14 +3387,7 @@ app.post("/api/membership/cancel", async (req, res) => {
       });
     }
 
-    // Granted Owner Protection: Only Primary Owner can cancel or revoke another owner's role
-    if (targetUser.role === 'owner' && !isPrimaryOwner(requester)) {
-      return res.status(403).json({
-        success: false,
-        error: "🚫 صاحب الموقع الأساسي فقط من يملك صلاحية إلغاء رتبة مالك آخر."
-      });
-    }
-
+    const oldRole = targetUser.role;
     if (targetUser.membership) {
       targetUser.membership.status = 'expired';
     }
@@ -2359,6 +3397,18 @@ app.post("/api/membership/cancel", async (req, res) => {
       const activeItem = targetUser.membershipHistory.find((h) => h.status === 'active');
       if (activeItem) activeItem.status = 'expired';
     }
+
+    recordAdminAuditLog({
+      performedById: requester.id,
+      performedByUsername: requester.username || 'PRIMARY_OWNER',
+      targetUserId: targetUser.id,
+      targetUsername: targetUser.username,
+      action: 'DEMOTE',
+      actionTitle: 'إلغاء عضوية وتخفيض لعضو مسجل',
+      oldValue: oldRole,
+      newValue: 'member',
+      notes: `إلغاء رتبة (${oldRole}) للعضو ${targetUser.username} وتخفيضه إلى عضو مسجل`
+    });
 
     saveUserToD1(targetUser);
     syncMembershipToFirestore(targetUser.id, targetUser.membership, 'member', targetUser.membershipHistory);
@@ -2458,6 +3508,114 @@ app.post("/api/rooms/update", (req, res) => {
   res.status(400).json({ success: false, error: "Invalid rooms data" });
 });
 
+// REST Endpoint to verify room access permissions server-side
+app.post("/api/rooms/verify-access", (req, res) => {
+  const { roomId, userId, role, passwordAttempt } = req.body || {};
+  const room = serverRooms.find(r => r.id === roomId);
+  if (!room) {
+    return res.status(404).json({ success: false, error: "الغرفة غير موجودة" });
+  }
+
+  const requester = serverUsers.find(u => u.id === userId);
+  const effectiveRole = getEffectiveUserRole(requester) || role || 'visitor';
+  const isOwner = effectiveRole === 'owner' || isPrimaryOwner(userId) || userId === PRIMARY_OWNER_ID;
+  const isStaff = ['owner', 'admin', 'management'].includes(effectiveRole) || isOwner;
+
+  // 1. Check if room is locked/closed (isLocked)
+  if (room.isLocked && !isStaff) {
+    return res.status(403).json({
+      success: false,
+      reason: 'room_closed',
+      message: '🔒 هذه الغرفة مغلقة حالياً'
+    });
+  }
+
+  // 2. Check if user is kicked/banned from this room
+  if (Array.isArray(room.kickedUsers) && room.kickedUsers.includes(userId) && !isStaff) {
+    return res.status(403).json({
+      success: false,
+      reason: 'kicked',
+      message: '🚫 لا تستطيع دخول الغرفة (أنت مطرود منها)'
+    });
+  }
+
+  // 3. Check password protection
+  const hasPassword = Boolean(room.password && room.password.trim() !== '');
+  if (hasPassword && !isStaff) {
+    if (!passwordAttempt || passwordAttempt.trim() !== room.password?.trim()) {
+      return res.status(401).json({
+        success: false,
+        reason: 'password_required',
+        message: 'كلمة المرور مطلوبة أو غير صحيحة'
+      });
+    }
+  }
+
+  // 4. Check requiredRank (Hierarchy: visitor < member < vip < moderator < management < admin < owner)
+  const ROLE_LEVELS: Record<string, number> = {
+    visitor: 1,
+    member: 2,
+    vip: 3,
+    moderator: 4,
+    management: 5,
+    admin: 6,
+    owner: 7,
+    system: 8
+  };
+
+  const ROLE_LABELS: Record<string, string> = {
+    visitor: 'زائر',
+    member: 'عضو مسجل',
+    vip: 'مميز',
+    moderator: 'مشرف',
+    management: 'إدارة',
+    admin: 'أدمن',
+    owner: 'المالك',
+    system: 'النظام'
+  };
+
+  if (room.requiredRank && !isOwner) {
+    const userLevel = ROLE_LEVELS[effectiveRole] || 1;
+    const requiredLevel = ROLE_LEVELS[room.requiredRank] || 1;
+    if (userLevel < requiredLevel) {
+      const requiredLabel = ROLE_LABELS[room.requiredRank] || room.requiredRank;
+      return res.status(403).json({
+        success: false,
+        reason: 'rank_insufficient',
+        message: `ليس لديك الصلاحية لدخول هذه الغرفة (الحد الأدنى: ${requiredLabel})`
+      });
+    }
+  }
+
+  // 5. Check allowedRoles
+  if (Array.isArray(room.allowedRoles) && room.allowedRoles.length > 0 && !isOwner) {
+    if (!room.allowedRoles.includes(effectiveRole as any)) {
+      return res.status(403).json({
+        success: false,
+        reason: 'role_not_allowed',
+        message: 'ليس لديك الصلاحية لدخول هذه الغرفة'
+      });
+    }
+  }
+
+  // 6. Admin room check
+  if (room.roomType === 'admin' && !['owner', 'management', 'admin', 'moderator'].includes(effectiveRole) && !isOwner) {
+    return res.status(403).json({
+      success: false,
+      reason: 'admin_only',
+      message: 'ليس لديك الصلاحية لدخول هذه الغرفة (مخصصة للإدارة فقط)'
+    });
+  }
+
+  return res.json({ success: true, room });
+});
+
+// REST Endpoint to fetch real-time active user counts per room
+app.get("/api/rooms/counts", (req, res) => {
+  const counts = presenceManager.getRoomCounts();
+  res.json({ counts });
+});
+
 // REST Endpoints for Emojis & Stickers
 app.get("/api/emojis/list", (req, res) => {
   res.json({ emojis: serverCustomEmojis });
@@ -2526,6 +3684,7 @@ app.all("/api/cron/check-expired-memberships", (req, res) => {
 interface ConnectionSession {
   connectionId: string;
   userId: string;
+  roomId: string;
   connectedAt: number;
   lastPing: number;
   userAgent?: string;
@@ -2538,7 +3697,7 @@ class PresenceManager {
   private userSessions = new Map<string, Map<string, ConnectionSession>>();
   private socketMap = new WeakMap<WebSocket, Set<string>>();
 
-  addConnection(userId: string, connectionId: string, ws: WebSocket, userAgent?: string, ip?: string): boolean {
+  addConnection(userId: string, connectionId: string, ws: WebSocket, userAgent?: string, ip?: string, roomId: string = 'room-general'): boolean {
     if (!userId || !connectionId) return false;
     let sessions = this.userSessions.get(userId);
     if (!sessions) {
@@ -2549,6 +3708,7 @@ class PresenceManager {
     sessions.set(connectionId, {
       connectionId,
       userId,
+      roomId,
       connectedAt: Date.now(),
       lastPing: Date.now(),
       userAgent,
@@ -2566,11 +3726,71 @@ class PresenceManager {
     return !wasOnline;
   }
 
+  updateRoom(userId: string, connectionId: string | undefined, newRoomId: string) {
+    const sessions = this.userSessions.get(userId);
+    if (sessions) {
+      for (const [connId, session] of sessions.entries()) {
+        if (!connectionId || connId === connectionId) {
+          session.roomId = newRoomId;
+          session.lastPing = Date.now();
+        }
+      }
+    }
+  }
+
+  getUserRoom(userId: string): string | undefined {
+    const sessions = this.userSessions.get(userId);
+    if (!sessions || sessions.size === 0) return undefined;
+    let latest: ConnectionSession | null = null;
+    for (const s of sessions.values()) {
+      if (!latest || s.lastPing > latest.lastPing) {
+        latest = s;
+      }
+    }
+    return latest?.roomId;
+  }
+
+  getUsersInRoom(roomId: string): Set<string> {
+    const set = new Set<string>();
+    for (const [userId, sessions] of this.userSessions.entries()) {
+      for (const session of sessions.values()) {
+        if (session.roomId === roomId) {
+          set.add(userId);
+          break;
+        }
+      }
+    }
+    return set;
+  }
+
+  getRoomCounts(): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const [userId, sessions] of this.userSessions.entries()) {
+      // Avoid double counting same user with multiple tabs in the same room
+      const countedRooms = new Set<string>();
+      for (const session of sessions.values()) {
+        const rId = session.roomId || 'room-general';
+        if (!countedRooms.has(rId)) {
+          countedRooms.add(rId);
+          counts[rId] = (counts[rId] || 0) + 1;
+        }
+      }
+    }
+    return counts;
+  }
+
   recordPing(userId: string, connectionId: string) {
     const sessions = this.userSessions.get(userId);
     if (sessions && sessions.has(connectionId)) {
       sessions.get(connectionId)!.lastPing = Date.now();
     }
+  }
+
+  clearUser(userId: string): boolean {
+    const sessions = this.userSessions.get(userId);
+    const hadSessions = !!sessions && sessions.size > 0;
+    this.userSessions.delete(userId);
+    return hadSessions;
   }
 
   removeConnection(userId: string, connectionId: string): boolean {
@@ -2632,6 +3852,24 @@ class PresenceManager {
     return set;
   }
 
+  disconnectUser(userId: string, closeCode = 4001, reason = 'Kicked/Banned') {
+    const sessions = this.userSessions.get(userId);
+    if (sessions) {
+      for (const session of sessions.values()) {
+        try {
+          if (session.ws.readyState === WebSocket.OPEN) {
+            session.ws.send(JSON.stringify({
+              type: 'FORCE_DISCONNECT',
+              payload: { reason }
+            }));
+            session.ws.close(closeCode, reason);
+          }
+        } catch {}
+      }
+      this.userSessions.delete(userId);
+    }
+  }
+
   cleanupStaleConnections(timeoutMs = 60000): { userId: string; connectionId: string; becameOffline: boolean }[] {
     const now = Date.now();
     const pruned: { userId: string; connectionId: string; becameOffline: boolean }[] = [];
@@ -2673,26 +3911,15 @@ class PresenceManager {
 
 const presenceManager = new PresenceManager();
 
-// Firestore Server-side Presence Sync
-let firestoreInstance: any = null;
-function getFirestoreDb() {
-  if (!firestoreInstance) {
-    try {
-      const app = getClientApps().length > 0 ? getClientApps()[0] : initClientFirebase(firebaseConfig);
-      firestoreInstance = getClientFirestore(app, (firebaseConfig as any).firestoreDatabaseId);
-    } catch (e) {
-      console.warn("Firestore server init warning:", e);
-    }
-  }
-  return firestoreInstance;
-}
+// Firestore Server-side Presence Sync uses top-level getFirestoreDb()
 
-async function syncPresenceToFirestore(userId: string, isOnline: boolean, formattedTime?: string) {
+async function syncPresenceToFirestore(userId: string, isOnline: boolean, formattedTime?: string, roomId?: string, sessionId?: string) {
   if (!userId) return;
   const fdb = getFirestoreDb();
   if (!fdb) return;
   try {
     const userRef = fsDoc(fdb, "users", userId);
+    const presenceRef = fsDoc(fdb, "presence", userId);
     const isPrimary = userId === "user-owner";
     const primaryFields = isPrimary ? {
       role: "owner",
@@ -2700,13 +3927,26 @@ async function syncPresenceToFirestore(userId: string, isOnline: boolean, format
       is_primary_owner: true
     } : {};
 
+    const activeRoom = roomId || presenceManager.getUserRoom(userId) || "room-general";
+    const activeSession = sessionId || "session-server";
+
     if (isOnline) {
       await fsSetDoc(userRef, {
         ...primaryFields,
+        currentRoomId: activeRoom,
         isOnline: true,
         onlineStatus: "online",
         lastSeen: "الآن",
         lastSeenTimestamp: Date.now(),
+        updatedAt: fsServerTimestamp()
+      }, { merge: true });
+
+      await fsSetDoc(presenceRef, {
+        userId,
+        roomId: activeRoom,
+        sessionId: activeSession,
+        status: "online",
+        lastSeen: "الآن",
         updatedAt: fsServerTimestamp()
       }, { merge: true });
     } else {
@@ -2716,6 +3956,15 @@ async function syncPresenceToFirestore(userId: string, isOnline: boolean, format
         onlineStatus: "offline",
         lastSeen: formattedTime || "غير متصل",
         lastSeenTimestamp: Date.now(),
+        updatedAt: fsServerTimestamp()
+      }, { merge: true });
+
+      await fsSetDoc(presenceRef, {
+        userId,
+        roomId: activeRoom,
+        sessionId: activeSession,
+        status: "offline",
+        lastSeen: formattedTime || "غير متصل",
         updatedAt: fsServerTimestamp()
       }, { merge: true });
     }
@@ -3009,6 +4258,69 @@ function checkAndExpireMemberships(): number {
 // Run expiration worker every 10 seconds in server background
 setInterval(checkAndExpireMemberships, 10 * 1000);
 
+function checkAndExpireModerations() {
+  try {
+    const now = Date.now();
+    let anyChanged = false;
+
+    for (let i = 0; i < serverUsers.length; i++) {
+      const user = serverUsers[i];
+      if (!user) continue;
+
+      // Check Mute expiration
+      if (user.isMuted && user.muteUntil) {
+        const muteTime = new Date(user.muteUntil).getTime();
+        if (!isNaN(muteTime) && muteTime <= now) {
+          user.isMuted = false;
+          user.muteUntil = undefined;
+          saveUserToD1(user);
+          anyChanged = true;
+          serverIPModerations = serverIPModerations.filter(r => !(r.type === 'mute' && (r.targetUserId === user.id || (user.ip && r.ip === user.ip))));
+          deleteIPModerationFromD1(user.id);
+        }
+      }
+
+      // Check Kick expiration
+      if (user.isKicked && user.kickUntil) {
+        const kickTime = new Date(user.kickUntil).getTime();
+        if (!isNaN(kickTime) && kickTime <= now) {
+          user.isKicked = false;
+          user.kickUntil = undefined;
+          user.kickReason = undefined;
+          saveUserToD1(user);
+          anyChanged = true;
+          serverIPModerations = serverIPModerations.filter(r => !(r.type === 'kick' && (r.targetUserId === user.id || (user.ip && r.ip === user.ip))));
+          deleteIPModerationFromD1(user.id);
+        }
+      }
+
+      // Check temporary Ban expiration
+      if (user.isBanned && user.banType === 'temporary' && user.banUntil) {
+        const banTime = new Date(user.banUntil).getTime();
+        if (!isNaN(banTime) && banTime <= now) {
+          user.isBanned = false;
+          user.banType = undefined;
+          user.banUntil = undefined;
+          user.banReason = undefined;
+          saveUserToD1(user);
+          anyChanged = true;
+          serverIPModerations = serverIPModerations.filter(r => !(r.type === 'ban' && (r.targetUserId === user.id || (user.ip && r.ip === user.ip))));
+          deleteIPModerationFromD1(user.id);
+        }
+      }
+    }
+
+    if (anyChanged) {
+      broadcast({ type: "SYNC_USERS", payload: serverUsers });
+      broadcast({ type: "SYNC_IP_MODERATIONS", payload: serverIPModerations });
+    }
+  } catch (err) {
+    console.error("Error in checkAndExpireModerations:", err);
+  }
+}
+
+setInterval(checkAndExpireModerations, 10 * 1000);
+
 
 function handleUserLeaving(userId: string, isVisitor?: boolean) {
   if (!userId) return;
@@ -3105,6 +4417,7 @@ wss.on("connection", (ws: WebSocket) => {
         wallPosts: serverWallPosts,
         siteSettings: serverSiteSettings,
         guestBans: serverGuestBans,
+        modLogs: serverModLogs,
       },
     })
   );
@@ -3234,6 +4547,7 @@ wss.on("connection", (ws: WebSocket) => {
         case "USER_LOGOUT": {
           const { userId, isVisitor } = payload || {};
           if (userId) {
+            presenceManager.clearUser(userId);
             const user = serverUsers.find((u) => u.id === userId);
             if (user && user.currentRoomId) {
               const now = new Date();
@@ -3278,6 +4592,73 @@ wss.on("connection", (ws: WebSocket) => {
               break;
             }
 
+            // Server-side Profanity Filter validation for public chat
+            if (
+              msg.text &&
+              serverSiteSettings.enableProfanityFilter !== false &&
+              (serverSiteSettings.profanityFilterScope === "both" ||
+                serverSiteSettings.profanityFilterScope === "public_only" ||
+                !serverSiteSettings.profanityFilterScope)
+            ) {
+              const isStaff = sender && ["owner", "admin", "management", "moderator"].includes(sender.role);
+              const exemptStaff = serverSiteSettings.profanityExemptStaff !== false;
+              if (!isStaff || !exemptStaff) {
+                const combinedList = [
+                  ...(serverSiteSettings.customBadWordsList || []),
+                  ...(serverSiteSettings.forbiddenUsernames || [])
+                ];
+                const profResult = filterProfanity(
+                  msg.text,
+                  combinedList,
+                  serverSiteSettings.profanityMatchMode || "flexible"
+                );
+                if (profResult.hasProfanity) {
+                  const filterAction = serverSiteSettings.profanityFilterAction || "block";
+                  if (filterAction === "block") {
+                    console.warn(`[PROFANITY_BLOCKED_PUBLIC] User ${senderUserId} attempted to send profanity:`, profResult.badWordsFound);
+                    ws.send(
+                      JSON.stringify({
+                        type: "MESSAGE_BLOCKED",
+                        payload: {
+                          messageId: msg.id,
+                          reason: `🚫 تم منع نشر الرسالة لاحتوائها على كلمات بذيئة ومحظورة: (${profResult.badWordsFound.join(", ")})`,
+                          badWords: profResult.badWordsFound,
+                          isPrivate: false
+                        }
+                      })
+                    );
+
+                    // Auto-mute penalty if enabled
+                    if (serverSiteSettings.profanityAutoMute !== false && sender) {
+                      const muteMins = serverSiteSettings.profanityMuteDurationMinutes || 1;
+                      const muteExpiry = new Date(Date.now() + muteMins * 60 * 1000).toISOString();
+                      sender.isMuted = true;
+                      sender.muteUntil = muteExpiry;
+                      saveUserToD1(sender);
+                      broadcast({ type: "SYNC_USERS", payload: serverUsers });
+
+                      const sysLog: ModLogEntry = {
+                        id: `sys-log-${Date.now()}-${Math.random()}`,
+                        targetUserId: sender.id,
+                        targetUsername: sender.username,
+                        actionBy: "System",
+                        actionType: "mute",
+                        reason: `محاولة نشر ألفاظ بذيئة في العام (${profResult.badWordsFound.join(", ")}) | النص: "${msg.text}"`,
+                        durationMinutes: muteMins,
+                        timestamp: formatServerDateTime(new Date())
+                      };
+                      serverModLogs.unshift(sysLog);
+                      saveModLogToD1(sysLog);
+                      broadcast({ type: "SYNC_MOD_LOGS", payload: serverModLogs });
+                    }
+                    break;
+                  } else {
+                    msg.text = profResult.cleanText;
+                  }
+                }
+              }
+            }
+
             serverMessages.push(msg);
             saveMessageToD1(msg);
             broadcast({ type: "NEW_MESSAGE", payload: msg });
@@ -3288,6 +4669,82 @@ wss.on("connection", (ws: WebSocket) => {
         case "SEND_PRIVATE_MESSAGE": {
           const pMsg: PrivateMessage = payload;
           if (pMsg && !serverPrivateMessages.some((pm) => pm.id === pMsg.id)) {
+            const senderUserId = pMsg.senderId;
+            const sender = serverUsers.find((u) => u.id === senderUserId);
+
+            // Block message if user is globally muted
+            if (sender?.isMuted) {
+              console.warn(`[PRIVATE_MSG_BLOCKED] User ${senderUserId} is muted`);
+              break;
+            }
+
+            // Server-side Profanity Filter validation for private chat
+            if (
+              pMsg.text &&
+              serverSiteSettings.enableProfanityFilter !== false &&
+              (serverSiteSettings.profanityFilterScope === "both" ||
+                serverSiteSettings.profanityFilterScope === "private_only" ||
+                !serverSiteSettings.profanityFilterScope)
+            ) {
+              const isStaff = sender && ["owner", "admin", "management", "moderator"].includes(sender.role);
+              const exemptStaff = serverSiteSettings.profanityExemptStaff !== false;
+              if (!isStaff || !exemptStaff) {
+                const combinedList = [
+                  ...(serverSiteSettings.customBadWordsList || []),
+                  ...(serverSiteSettings.forbiddenUsernames || [])
+                ];
+                const profResult = filterProfanity(
+                  pMsg.text,
+                  combinedList,
+                  serverSiteSettings.profanityMatchMode || "flexible"
+                );
+                if (profResult.hasProfanity) {
+                  const filterAction = serverSiteSettings.profanityFilterAction || "block";
+                  if (filterAction === "block") {
+                    console.warn(`[PROFANITY_BLOCKED_PRIVATE] User ${senderUserId} attempted to send profanity in PM:`, profResult.badWordsFound);
+                    ws.send(
+                      JSON.stringify({
+                        type: "MESSAGE_BLOCKED",
+                        payload: {
+                          messageId: pMsg.id,
+                          reason: `🚫 تم منع نشر الرسالة الخاصة لاحتوائها على كلمات بذيئة ومحظورة: (${profResult.badWordsFound.join(", ")})`,
+                          badWords: profResult.badWordsFound,
+                          isPrivate: true
+                        }
+                      })
+                    );
+
+                    // Auto-mute penalty if enabled
+                    if (serverSiteSettings.profanityAutoMute !== false && sender) {
+                      const muteMins = serverSiteSettings.profanityMuteDurationMinutes || 1;
+                      const muteExpiry = new Date(Date.now() + muteMins * 60 * 1000).toISOString();
+                      sender.isMuted = true;
+                      sender.muteUntil = muteExpiry;
+                      saveUserToD1(sender);
+                      broadcast({ type: "SYNC_USERS", payload: serverUsers });
+
+                      const sysLog: ModLogEntry = {
+                        id: `sys-log-${Date.now()}-${Math.random()}`,
+                        targetUserId: sender.id,
+                        targetUsername: sender.username,
+                        actionBy: "System",
+                        actionType: "mute",
+                        reason: `محاولة نشر ألفاظ بذيئة في الخاص (${profResult.badWordsFound.join(", ")}) | النص: "${pMsg.text}"`,
+                        durationMinutes: muteMins,
+                        timestamp: formatServerDateTime(new Date())
+                      };
+                      serverModLogs.unshift(sysLog);
+                      saveModLogToD1(sysLog);
+                      broadcast({ type: "SYNC_MOD_LOGS", payload: serverModLogs });
+                    }
+                    break;
+                  } else {
+                    pMsg.text = profResult.cleanText;
+                  }
+                }
+              }
+            }
+
             serverPrivateMessages.push(pMsg);
             savePrivateMessageToD1(pMsg);
             broadcast({ type: "NEW_PRIVATE_MESSAGE", payload: pMsg });
@@ -3298,6 +4755,10 @@ wss.on("connection", (ws: WebSocket) => {
         case "UPDATE_USER": {
           const updatedUser: User = payload;
           if (updatedUser?.id) {
+            const requester = currentUserId ? serverUsers.find(u => u.id === currentUserId) : null;
+            const isReqPrimary = isPrimaryOwner(requester) || isPrimaryOwner(currentUserId);
+            const existing = serverUsers.find((u) => u.id === updatedUser.id);
+
             // Absolute Primary Owner Protection: Immutable Sovereign Role
             if (isPrimaryOwner(updatedUser.id) || updatedUser.id === PRIMARY_OWNER_ID) {
               updatedUser.id = PRIMARY_OWNER_ID;
@@ -3310,6 +4771,64 @@ wss.on("connection", (ws: WebSocket) => {
                 updatedUser.membership.status = 'active';
               }
             }
+
+            // Prevent non-primary-owner from spoofing isPrimaryOwner flag
+            if (!isReqPrimary && updatedUser.id !== PRIMARY_OWNER_ID) {
+              delete updatedUser.isPrimaryOwner;
+              delete (updatedUser as any).is_primary_owner;
+            }
+
+            if (existing) {
+              // Centralized permission validation via ServerPermissionManager
+              const permCheck = ServerPermissionManager.canEditProfileData(requester, existing, updatedUser, serverSiteSettings);
+              if (!permCheck.allowed) {
+                console.warn(`[RBAC Block] UPDATE_USER blocked: ${permCheck.reason}`);
+                break;
+              }
+
+              // Username check via ServerPermissionManager
+              if (updatedUser.username && updatedUser.username.trim() !== existing.username.trim()) {
+                const nameCheck = ServerPermissionManager.canChangeUsername(requester, existing, serverSiteSettings);
+                if (!nameCheck.allowed) {
+                  updatedUser.username = existing.username;
+                }
+              }
+
+              // Photos check via ServerPermissionManager
+              if ((updatedUser.avatar && updatedUser.avatar !== existing.avatar) || (updatedUser.wallCover && updatedUser.wallCover !== existing.wallCover)) {
+                const photoCheck = ServerPermissionManager.canEditPhotos(requester, existing);
+                if (!photoCheck.allowed) {
+                  updatedUser.avatar = existing.avatar;
+                  updatedUser.wallCover = existing.wallCover;
+                }
+              }
+            }
+
+            // Role changes are strictly restricted to PRIMARY_OWNER
+            if (existing && updatedUser.role && updatedUser.role !== existing.role) {
+              if (!isReqPrimary) {
+                updatedUser.role = existing.role;
+                updatedUser.membership = existing.membership;
+              } else {
+                recordAdminAuditLog({
+                  performedById: requester ? requester.id : PRIMARY_OWNER_ID,
+                  performedByUsername: requester ? requester.username : 'PRIMARY_OWNER',
+                  targetUserId: existing.id,
+                  targetUsername: existing.username,
+                  action: 'CHANGE_RANK',
+                  actionTitle: 'تعديل رتبة المستخدم',
+                  oldValue: existing.role,
+                  newValue: updatedUser.role,
+                  notes: `تغيير رتبة (${existing.username}) من (${existing.role}) إلى (${updatedUser.role}) عبر لوحة المالك الرئيسي`
+                });
+              }
+            }
+
+            // Password changes for other users via websocket are strictly restricted to PRIMARY_OWNER
+            if (existing && updatedUser.password && updatedUser.password !== existing.password && updatedUser.id !== currentUserId && !isReqPrimary) {
+              delete updatedUser.password;
+            }
+
             serverUsers = serverUsers.map((u) =>
               u.id === updatedUser.id ? { ...u, ...updatedUser } : u
             );
@@ -3325,12 +4844,59 @@ wss.on("connection", (ws: WebSocket) => {
         }
 
         case "CHANGE_ROOM": {
-          const { userId, fromRoomId, toRoomId } = payload || {};
+          const { userId, fromRoomId, toRoomId, passwordAttempt } = payload || {};
           if (userId && toRoomId) {
+            const targetRoom = serverRooms.find(r => r.id === toRoomId);
+            const user = serverUsers.find((u) => u.id === userId);
+            const effectiveRole = getEffectiveUserRole(user) || user?.role || 'visitor';
+            const isOwner = effectiveRole === 'owner' || isPrimaryOwner(userId) || userId === PRIMARY_OWNER_ID;
+            const isStaff = ['owner', 'admin', 'management'].includes(effectiveRole) || isOwner;
+
+            // Server-side verification before room transition
+            if (targetRoom) {
+              if (targetRoom.isLocked && !isStaff) {
+                ws.send(JSON.stringify({
+                  type: "ROOM_ACCESS_DENIED",
+                  payload: { roomId: toRoomId, message: "🔒 هذه الغرفة مغلقة حالياً" }
+                }));
+                break;
+              }
+              if (Array.isArray(targetRoom.kickedUsers) && targetRoom.kickedUsers.includes(userId) && !isStaff) {
+                ws.send(JSON.stringify({
+                  type: "ROOM_ACCESS_DENIED",
+                  payload: { roomId: toRoomId, message: "🚫 ليس لديك صلاحية دخول الغرفة" }
+                }));
+                break;
+              }
+              const ROLE_LEVELS: Record<string, number> = {
+                visitor: 1, member: 2, vip: 3, moderator: 4, management: 5, admin: 6, owner: 7, system: 8
+              };
+              if (targetRoom.requiredRank && !isOwner) {
+                const userLvl = ROLE_LEVELS[effectiveRole] || 1;
+                const reqLvl = ROLE_LEVELS[targetRoom.requiredRank] || 1;
+                if (userLvl < reqLvl) {
+                  ws.send(JSON.stringify({
+                    type: "ROOM_ACCESS_DENIED",
+                    payload: { roomId: toRoomId, message: "ليس لديك الصلاحية لدخول هذه الغرفة" }
+                  }));
+                  break;
+                }
+              }
+              if (Array.isArray(targetRoom.allowedRoles) && targetRoom.allowedRoles.length > 0 && !isOwner) {
+                if (!targetRoom.allowedRoles.includes(effectiveRole as any)) {
+                  ws.send(JSON.stringify({
+                    type: "ROOM_ACCESS_DENIED",
+                    payload: { roomId: toRoomId, message: "ليس لديك الصلاحية لدخول هذه الغرفة" }
+                  }));
+                  break;
+                }
+              }
+            }
+
             const now = new Date();
             const nowTime = formatServerDateTime(now);
-            const user = serverUsers.find((u) => u.id === userId);
 
+            // Update in-memory user
             serverUsers = serverUsers.map((u) =>
               u.id === userId ? { ...u, currentRoomId: toRoomId, onlineStatus: "online" as const, lastSeen: nowTime, lastSeenTimestamp: now.getTime() } : u
             );
@@ -3339,8 +4905,14 @@ wss.on("connection", (ws: WebSocket) => {
                saveUserToD1(found);
             }
 
-            // Server-authoritative Room leave & join events (typed room_event)
-            // Separated from chat messages, not stored in persistent messages table
+            // Update presence manager sessions with new room
+            presenceManager.updateRoom(userId, undefined, toRoomId);
+
+            // Sync to Firestore presence document
+            syncPresenceToFirestore(userId, true, nowTime, toRoomId);
+
+            // Server-authoritative Room leave & join events (strictly typed room_event)
+            // Emitted only on explicit room transitions, never on reload/refresh
             if (user && fromRoomId && fromRoomId !== toRoomId) {
               const leaveEvt: RoomEvent = {
                 id: `evt-leave-${user.id}-${fromRoomId}-${Date.now()}`,
@@ -3348,7 +4920,7 @@ wss.on("connection", (ws: WebSocket) => {
                 eventType: 'leave',
                 userId: user.id,
                 username: user.username,
-                text: `غادر المستخدم ${user.username} الغرفة`,
+                text: `${user.username} هذا المستخدم غادر الغرفة`,
                 rank: user.role,
                 roomId: fromRoomId,
                 avatar: user.avatar,
@@ -3358,7 +4930,6 @@ wss.on("connection", (ws: WebSocket) => {
                 timestamp: nowTime
               };
               broadcast({ type: "ROOM_EVENT", payload: leaveEvt });
-              broadcast({ type: "NEW_MESSAGE", payload: leaveEvt });
             }
 
             if (user && toRoomId && fromRoomId !== toRoomId) {
@@ -3368,7 +4939,7 @@ wss.on("connection", (ws: WebSocket) => {
                 eventType: 'join',
                 userId: user.id,
                 username: user.username,
-                text: `انظم المستخدم ${user.username} الى الغرفة`,
+                text: `${user.username} هذا المستخدم انضم للغرفة`,
                 rank: user.role,
                 roomId: toRoomId,
                 avatar: user.avatar,
@@ -3378,9 +4949,7 @@ wss.on("connection", (ws: WebSocket) => {
                 timestamp: nowTime
               };
               broadcast({ type: "ROOM_EVENT", payload: joinEvt });
-              broadcast({ type: "NEW_MESSAGE", payload: joinEvt });
             }
-
 
             broadcast({ type: "USER_ROOM_CHANGED", payload: { userId, fromRoomId, toRoomId } });
             broadcast({ type: "SYNC_USERS", payload: serverUsers });
@@ -3498,7 +5067,7 @@ wss.on("connection", (ws: WebSocket) => {
 
           const targetRoom = serverRooms.find(r => r.id === roomId);
           const isRoomMaster = targetRoom && requester && targetRoom.createdBy === requester.id;
-          const isStaff = requester && ["owner", "admin", "management", "moderator"].includes(getEffectiveUserRole(requester));
+          const isStaff = requester && ["owner", "admin", "management"].includes(getEffectiveUserRole(requester));
           if (!isStaff && !isRoomMaster) {
             console.warn(`[RBAC Block] Unauthorized kick attempt by ${requester?.id}`);
             break;
@@ -3542,7 +5111,7 @@ wss.on("connection", (ws: WebSocket) => {
 
           const targetRoom = serverRooms.find(r => r.id === roomId);
           const isRoomMaster = targetRoom && requester && targetRoom.createdBy === requester.id;
-          const isStaff = requester && ["owner", "admin", "management", "moderator"].includes(getEffectiveUserRole(requester));
+          const isStaff = requester && ["owner", "admin", "management"].includes(getEffectiveUserRole(requester));
           if (!isStaff && !isRoomMaster) {
             console.warn(`[RBAC Block] Unauthorized mute attempt by ${requester?.id}`);
             break;
@@ -3569,7 +5138,7 @@ wss.on("connection", (ws: WebSocket) => {
           const requester = (initiatorId || currentUserId) ? serverUsers.find(u => u.id === (initiatorId || currentUserId)) : null;
           const targetRoom = serverRooms.find(r => r.id === roomId);
           const isRoomMaster = targetRoom && requester && targetRoom.createdBy === requester.id;
-          const isStaff = requester && ["owner", "admin", "management", "moderator"].includes(requester.role || "");
+          const isStaff = requester && ["owner", "admin", "management"].includes(getEffectiveUserRole(requester));
           if (!isStaff && !isRoomMaster) {
             console.warn(`[RBAC Block] Unauthorized unmute attempt by ${requester?.id}`);
             break;
@@ -3594,7 +5163,7 @@ wss.on("connection", (ws: WebSocket) => {
           const requester = (initiatorId || currentUserId) ? serverUsers.find(u => u.id === (initiatorId || currentUserId)) : null;
           const targetRoom = serverRooms.find(r => r.id === roomId);
           const isRoomMaster = targetRoom && requester && targetRoom.createdBy === requester.id;
-          const isStaff = requester && ["owner", "admin", "management", "moderator"].includes(requester.role || "");
+          const isStaff = requester && ["owner", "admin", "management"].includes(getEffectiveUserRole(requester));
           if (!isStaff && !isRoomMaster) {
             console.warn(`[RBAC Block] Unauthorized unkick attempt by ${requester?.id}`);
             break;
@@ -3870,29 +5439,39 @@ wss.on("connection", (ws: WebSocket) => {
         case "DELETE_USER_ACCOUNT": {
           const { userId, initiatorId } = payload || {};
           const requester = (initiatorId || currentUserId) ? serverUsers.find(u => u.id === (initiatorId || currentUserId)) : null;
+          const target = serverUsers.find((u) => u.id === userId);
           const isSelf = requester && requester.id === userId;
-          const isStaff = requester && ["owner", "admin"].includes(getEffectiveUserRole(requester));
-          if (!isSelf && !isStaff) {
-            console.warn(`[RBAC Block] Unauthorized attempt to delete account ${userId} by ${requester?.id}`);
+
+          // Centralized permission validation via ServerPermissionManager
+          const delCheck = ServerPermissionManager.canDeleteUser(requester, target);
+          if (!delCheck.allowed) {
+            console.warn(`[RBAC Block] DELETE_USER_ACCOUNT blocked: ${delCheck.reason}`);
             break;
           }
+
           if (userId) {
-            const target = serverUsers.find((u) => u.id === userId);
-            // Absolute Primary Owner Protection
-            if (isPrimaryOwner(target) || isPrimaryOwner(userId) || userId === PRIMARY_OWNER_ID) {
-              console.warn(`[RBAC Block] Blocked attempt to delete Primary Owner account ${userId}`);
-              break;
-            }
-            // Granted Owner protection: only Primary Owner can delete a Granted Owner
-            if (target && target.role === 'owner' && !isPrimaryOwner(requester)) {
-              console.warn(`[RBAC Block] Only Primary Owner can delete a Granted Owner account`);
-              break;
-            }
-            if (target && target.is_super_admin && !isPrimaryOwner(requester)) {
-              console.warn(`[RBAC Block] Cannot delete Super Admin account`);
-              break;
+            if (target) {
+              recordAdminAuditLog({
+                performedById: requester ? requester.id : (isSelf ? userId : 'UNKNOWN'),
+                performedByUsername: requester ? requester.username : (isSelf ? 'المستخدم نفسه' : 'PRIMARY_OWNER'),
+                targetUserId: target.id,
+                targetUsername: target.username,
+                action: 'DELETE_ACCOUNT',
+                actionTitle: 'حذف حساب من الموقع',
+                oldValue: target.role,
+                newValue: 'DELETED',
+                notes: `تم حذف حساب العضو (${target.username}) نهائياً من الموقع`
+              });
             }
             handleUserDeleted(userId);
+          }
+          break;
+        }
+
+        case "REQUEST_AUDIT_LOGS": {
+          const requester = currentUserId ? serverUsers.find(u => u.id === currentUserId) : null;
+          if (isPrimaryOwner(requester) || isPrimaryOwner(currentUserId)) {
+            ws.send(JSON.stringify({ type: "SYNC_AUDIT_LOGS", payload: serverAuditLogs }));
           }
           break;
         }

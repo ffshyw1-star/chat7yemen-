@@ -34,6 +34,8 @@ export const RoomSettingsModal: React.FC = () => {
   const [roomName, setRoomName] = useState('');
   const [roomPassword, setRoomPassword] = useState('');
   const [roomDescription, setRoomDescription] = useState('');
+  const [welcomeMessage, setWelcomeMessage] = useState('');
+  const [autoWelcomeEnabled, setAutoWelcomeEnabled] = useState(true);
   const [saveMessage, setSaveMessage] = useState('');
 
   // Tab 2 (المستخدمين - الرتب الفخرية) State
@@ -53,6 +55,8 @@ export const RoomSettingsModal: React.FC = () => {
       setRoomName(targetRoom.name || '');
       setRoomPassword(targetRoom.password || '');
       setRoomDescription(targetRoom.description || '');
+      setWelcomeMessage(targetRoom.welcomeMessage || '');
+      setAutoWelcomeEnabled(targetRoom.autoWelcomeEnabled !== false);
     }
   }, [selectedRoomId, targetRoom]);
 
@@ -91,10 +95,12 @@ export const RoomSettingsModal: React.FC = () => {
       name: roomName.trim(),
       password: roomPassword.trim(),
       description: roomDescription.trim(),
-      isLocked: Boolean(roomPassword.trim())
+      isLocked: Boolean(roomPassword.trim()),
+      welcomeMessage: welcomeMessage.trim() || undefined,
+      autoWelcomeEnabled
     });
 
-    setSaveMessage('تم حفظ خيارات الغرفة بنجاح ✅');
+    setSaveMessage('تم حفظ خيارات ورسالة ترحيب الغرفة بنجاح ✅');
     showTopBanner(`✅ تم حفظ إعدادات ${roomName} بنجاح`);
     setTimeout(() => setSaveMessage(''), 3000);
   };
@@ -320,9 +326,116 @@ export const RoomSettingsModal: React.FC = () => {
                   value={roomDescription}
                   onChange={(e) => setRoomDescription(e.target.value)}
                   placeholder="أهلاً وسهلاً بكم في الغرفة..."
-                  rows={4}
+                  rows={2}
                   className="w-full bg-[#f1f5f9] border border-slate-300 rounded-lg p-3 text-xs font-medium text-slate-900 focus:outline-none focus:border-[#0ea5b6] focus:bg-white transition-all text-right custom-scrollbar"
                 />
+              </div>
+
+              {/* 5. الرسالة الترحيبية التلقائية عند دخول مستخدم جديد للغرفة */}
+              <div className="space-y-2.5 p-3.5 bg-gradient-to-br from-sky-50/70 via-white to-amber-50/40 rounded-xl border border-sky-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-lg bg-sky-500/15 border border-sky-400/40 flex items-center justify-center text-xs">
+                      🤖
+                    </span>
+                    <label className="text-xs font-black text-slate-800">
+                      الرسالة الترحيبية التلقائية عند دخول مستخدم جديد للغرفة
+                    </label>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={autoWelcomeEnabled}
+                      onChange={(e) => setAutoWelcomeEnabled(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#00a6b6]"></div>
+                  </label>
+                </div>
+
+                <p className="text-[11px] text-slate-500">
+                  عند تفعيل هذا الخيار، سيقوم الروبوت بإرسال رسالة ترحيب وقوانين فور دخول أي عضو أو زائر جديد إلى الغرفة لتعزيز التفاعل والترحيب بالأعضاء.
+                </p>
+
+                {autoWelcomeEnabled && (
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-slate-600">
+                      <span>نص الرسالة الترحيبية المخصصة:</span>
+                      <div className="flex items-center gap-1 text-[10px]">
+                        <span className="text-slate-400">نماذج جاهزة:</span>
+                        <button
+                          type="button"
+                          onClick={() => setWelcomeMessage('👋 أهلاً وسهلاً بك يا {user} في غرفة {room}!\n\n📜 قوانين الغرفة:\n• الاحترام المتبادل بين الجميع وعدم الإساءة.\n• يُمنع نشر الروابط الخارجية والإعلانات.\n\n🛡️ المشرفون: {mods}\nنتمنى لك وقتاً ممتعاً 🌹✨')}
+                          className="px-1.5 py-0.5 rounded bg-sky-100 hover:bg-sky-200 text-sky-800 font-bold cursor-pointer"
+                        >
+                          قوانين 📜
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWelcomeMessage('🎉 نورت غرفة {room} يا غالي {user}!\n\n🌟 يسعدنا تواجدك معنا في شات اليمن المطور.\nنتمنى لك أروع وأجمل الأوقات معنا 🌹✨')}
+                          className="px-1.5 py-0.5 rounded bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold cursor-pointer"
+                        >
+                          ودي 🌹
+                        </button>
+                      </div>
+                    </div>
+
+                    <textarea
+                      value={welcomeMessage}
+                      onChange={(e) => setWelcomeMessage(e.target.value)}
+                      placeholder="اتركها فارغة لاستخدام رسالة النظام الافتراضية مع القوانين..."
+                      rows={3}
+                      className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-xs font-medium text-slate-900 focus:outline-none focus:border-[#0ea5b6] focus:ring-1 focus:ring-[#0ea5b6] transition-all text-right custom-scrollbar"
+                    />
+
+                    {/* Variable insertion buttons */}
+                    <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                      <span className="text-slate-400 font-bold">متغيرات ذكية:</span>
+                      <button
+                        type="button"
+                        onClick={() => setWelcomeMessage(prev => `${prev} {user}`)}
+                        className="px-2 py-0.5 rounded-md bg-white border border-slate-200 hover:border-sky-400 text-sky-700 font-mono font-bold cursor-pointer transition-colors"
+                      >
+                        {'{user}'} اسم العضو
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setWelcomeMessage(prev => `${prev} {room}`)}
+                        className="px-2 py-0.5 rounded-md bg-white border border-slate-200 hover:border-sky-400 text-sky-700 font-mono font-bold cursor-pointer transition-colors"
+                      >
+                        {'{room}'} اسم الغرفة
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setWelcomeMessage(prev => `${prev} {mods}`)}
+                        className="px-2 py-0.5 rounded-md bg-white border border-slate-200 hover:border-sky-400 text-sky-700 font-mono font-bold cursor-pointer transition-colors"
+                      >
+                        {'{mods}'} المشرفون
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setWelcomeMessage(prev => `${prev} {time}`)}
+                        className="px-2 py-0.5 rounded-md bg-white border border-slate-200 hover:border-sky-400 text-sky-700 font-mono font-bold cursor-pointer transition-colors"
+                      >
+                        {'{time}'} الوقت
+                      </button>
+                    </div>
+
+                    {/* Real-time preview */}
+                    {welcomeMessage && (
+                      <div className="p-2.5 bg-sky-50/60 rounded-lg border border-sky-100 text-[11px] text-slate-700 space-y-1">
+                        <span className="font-bold text-sky-800 text-[10px] block">معاينة نص الرسالة:</span>
+                        <p className="whitespace-pre-line leading-relaxed font-medium">
+                          {welcomeMessage
+                            .replace(/\{user\}/g, '[ اسم العضو ]')
+                            .replace(/\{room\}/g, roomName || targetRoom.name)
+                            .replace(/\{mods\}/g, 'مشرفي الغرفة')
+                            .replace(/\{time\}/g, '12:00 PM')}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Success Notification */}

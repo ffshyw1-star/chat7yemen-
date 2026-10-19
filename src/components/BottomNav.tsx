@@ -17,7 +17,7 @@ import {
   Radio
 } from 'lucide-react';
 import { t } from '../utils/translations';
-import { isStaff } from '../utils/permissions';
+import { isStaff, isPrimaryOwner } from '../utils/permissions';
 
 export const BottomNav: React.FC = () => {
   const {
@@ -261,8 +261,8 @@ export const BottomNav: React.FC = () => {
                   <span>سجل أحداث الغرفة</span>
                 </button>
 
-                {/* 4. Staff / Admin Dashboard if Staff */}
-                {isUserStaff && (
+                {/* 4. Primary Owner Dashboard */}
+                {isPrimaryOwner(currentUser) && (
                   <button
                     onClick={() => {
                       setIsOptionsMenuOpen(false);
@@ -271,7 +271,7 @@ export const BottomNav: React.FC = () => {
                     className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 transition-colors cursor-pointer text-right border border-amber-500/20"
                   >
                     <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
-                    <span>لوحة إدارة الموقع والمشرفين</span>
+                    <span>لوحة تحكم المالك الرئيسي</span>
                   </button>
                 )}
 

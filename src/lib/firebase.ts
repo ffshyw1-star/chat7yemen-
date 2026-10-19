@@ -1,10 +1,15 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import {
+  initializeFirestore,
   getFirestore,
+  setLogLevel,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   doc,
   setDoc,
   getDoc,
+  getDocFromServer,
   getDocs,
   collection,
   onSnapshot,
@@ -18,14 +23,52 @@ import {
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { User, Message, PrivateMessage, Room, MembershipHistoryItem } from '../types';
+import { isPrimaryOwner } from '../utils/permissions';
 
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-const customDbId = (firebaseConfig as any).firestoreDatabaseId;
+const customDbId: string = (firebaseConfig as any).firestoreDatabaseId || 'ai-studio-a3544386-7895-476f-80ab-d98ce99c9424';
 export const auth = getAuth(app);
-export const db = customDbId && customDbId !== '(default)'
-  ? getFirestore(app, customDbId)
-  : getFirestore(app);
+
+// Suppress transient backend unreachable warn logs
+try {
+  setLogLevel('error');
+} catch (e) {}
+
+// Force long polling to eliminate WebChannel connection timeouts and unavailable errors behind iframes & proxies
+function createFirestoreInstance() {
+  const dbId = customDbId;
+  try {
+    return initializeFirestore(app, {
+      experimentalForceLongPolling: true,
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
+    }, dbId);
+  } catch (err) {
+    try {
+      return initializeFirestore(app, {
+        experimentalForceLongPolling: true,
+      }, dbId);
+    } catch (e2) {
+      return getFirestore(app, dbId);
+    }
+  }
+}
+
+export const db = createFirestoreInstance();
+
+// Test connection on boot per Firebase guidelines
+async function testConnection() {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.error("Please check your Firebase configuration.");
+    }
+  }
+}
+testConnection();
 
 export const googleAuthProvider = new GoogleAuthProvider();
 // Essential scopes only
@@ -288,11 +331,11 @@ export const saveUserToFirestore = async (user: User): Promise<boolean> => {
   }
 };
 
-// 1b. Delete User Profile from Firestore
+// 1b. Delete User Profile from Firestore (Primary Owner only)
 export const deleteUserFromFirestore = async (userId: string, requester?: User | null): Promise<boolean> => {
   if (!userId) return false;
-  if (requester && !validateAdminMembership(requester, 'owner')) {
-    const err = new Error('صلاحية مرفوضة: يتطلب حذف الحسابات رتبة مالك وعضوية نشطة صالحة.');
+  if (requester && !isPrimaryOwner(requester)) {
+    const err = new Error('صلاحية مرفوضة: حذف الحسابات محصور بالمالك الرئيسي فقط (PRIMARY_OWNER).');
     console.warn(err.message);
     throw err;
   }

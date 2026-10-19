@@ -5,7 +5,7 @@ import {
   Crown, Eye, Users, User as UserIcon, Ban, VolumeX, Ghost, MessageSquare,
   MessagesSquare, MessageCircle, Share2, Rss, Settings, Star, Layers, Zap,
   Home, Mail, Terminal, Wrench, Filter, PlayCircle, Disc, FileText,
-  ChevronDown, ChevronLeft, ChevronRight, X, Check, Search, Shield,
+  ChevronDown, ChevronLeft, ChevronRight, X, Check, CheckCircle, Search, Shield,
   RefreshCw, Trash2, Edit, Plus, Monitor, AlertCircle, Radio, Lock, Unlock,
   Download, Upload, ExternalLink, Globe, Key, AlertTriangle, UserCheck,
   UserX, Sliders, Music, RadioTower, Database, Menu, Bell, Smile, Gem, Sparkles,
@@ -26,6 +26,8 @@ import { ActionsView } from './owner-dashboard/ActionsView';
 import { EmojisView } from './owner-dashboard/EmojisView';
 import { BlacklistView } from './owner-dashboard/BlacklistView';
 import { RoomPresenceAnalytics } from './owner-dashboard/RoomPresenceAnalytics';
+import { ForbiddenUsernamesView } from './owner-dashboard/ForbiddenUsernamesView';
+import { ProfanityFilterView } from './owner-dashboard/ProfanityFilterView';
 import { isPrimaryOwner, isGrantedOwner, canDemoteOrModifyUser } from '../utils/permissions';
 
 export const OwnerDashboardModal: React.FC = () => {
@@ -67,7 +69,7 @@ export const OwnerDashboardModal: React.FC = () => {
     cancelMembership
   } = useChat();
 
-  if (!currentUser || currentUser.role !== 'owner') {
+  if (!currentUser || !isPrimaryOwner(currentUser)) {
     return null;
   }
 
@@ -121,6 +123,12 @@ export const OwnerDashboardModal: React.FC = () => {
   const [editRoomPass, setEditRoomPass] = useState('');
   const [editRoomIcon, setEditRoomIcon] = useState('globe');
   const [editRoomIconUrl, setEditRoomIconUrl] = useState('');
+  const [editRoomWelcomeMsg, setEditRoomWelcomeMsg] = useState('');
+  const [editRoomAutoWelcome, setEditRoomAutoWelcome] = useState(true);
+
+  // New room welcome state
+  const [newRoomWelcomeMsg, setNewRoomWelcomeMsg] = useState('');
+  const [newRoomAutoWelcome, setNewRoomAutoWelcome] = useState(true);
 
   // Bad words
   const [newBadWord, setNewBadWord] = useState('');
@@ -267,7 +275,9 @@ export const OwnerDashboardModal: React.FC = () => {
       allowedRoles: allowedRolesToSave,
       customIcon: icon,
       iconUrl: newRoomIconUrl.trim() || undefined,
-      flag
+      flag,
+      welcomeMessage: newRoomWelcomeMsg.trim() || undefined,
+      autoWelcomeEnabled: newRoomAutoWelcome
     });
 
     setNewRoomName('');
@@ -275,6 +285,8 @@ export const OwnerDashboardModal: React.FC = () => {
     setNewRoomPass('');
     setNewRoomIcon('globe');
     setNewRoomIconUrl('');
+    setNewRoomWelcomeMsg('');
+    setNewRoomAutoWelcome(true);
     showToast(
       newRoomType === 'diamond'
         ? 'تم إنشاء الغرفة الماسية بنجاح 💎'
@@ -291,6 +303,8 @@ export const OwnerDashboardModal: React.FC = () => {
     setEditRoomPass(r.password || '');
     setEditRoomIcon(r.customIcon || (r.roomType === 'diamond' ? 'diamond' : r.roomType === 'admin' ? 'admin_star' : 'globe'));
     setEditRoomIconUrl(r.iconUrl || '');
+    setEditRoomWelcomeMsg(r.welcomeMessage || '');
+    setEditRoomAutoWelcome(r.autoWelcomeEnabled !== false);
   };
 
   const handleSaveEditRoom = (e: React.FormEvent) => {
@@ -307,11 +321,13 @@ export const OwnerDashboardModal: React.FC = () => {
       password: editRoomPass.trim() || undefined,
       isLocked: Boolean(editRoomPass.trim()),
       customIcon: editRoomIcon,
-      iconUrl: editRoomIconUrl.trim() || undefined
+      iconUrl: editRoomIconUrl.trim() || undefined,
+      welcomeMessage: editRoomWelcomeMsg.trim() || undefined,
+      autoWelcomeEnabled: editRoomAutoWelcome
     });
 
     setEditingRoom(null);
-    showToast('تم تحديث إعدادات وأيقونة الغرفة بنجاح ✅');
+    showToast('تم تحديث إعدادات وأيقونة ورسالة الترحيب للغرفة بنجاح ✅');
   };
 
   const handleBroadcast = (e: React.FormEvent) => {
@@ -338,7 +354,8 @@ export const OwnerDashboardModal: React.FC = () => {
       case 'addons': return 'إدارة الأضافات';
       case 'logs': return 'سجلات النظام';
       case 'tools': return 'ادوات النظام';
-      case 'filters': return 'إدارة التصفيات';
+      case 'filters': return 'فلتر الكلمات البذيئة والرسائل (الشات العام والخاص)';
+      case 'forbidden_names': return 'الأسماء المحظورة والمحجوزة';
       case 'music': return 'مشغلات الموسيقى';
       case 'dj': return 'نظام Dj';
       case 'pages': return 'الصفحات';
@@ -752,7 +769,7 @@ export const OwnerDashboardModal: React.FC = () => {
                 <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
               </button>
 
-              {/* 14. إدارة التصفيات */}
+              {/* 14. فلتر الكلمات البذيئة */}
               <button
                 onClick={() => { setActiveSection('filters'); setIsMobileSidebarOpen(false); }}
                 className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
@@ -761,8 +778,27 @@ export const OwnerDashboardModal: React.FC = () => {
               >
                 <div className="flex items-center gap-2.5">
                   <Filter className="w-4 h-4 text-rose-600" />
-                  <span>إدارة التصفيات</span>
+                  <span>فلتر الكلمات البذيئة (الشات)</span>
                 </div>
+                <span className="bg-rose-100 text-rose-800 text-[10px] font-black px-2 py-0.5 rounded-full">
+                  {(siteSettings?.customBadWordsList || customBadWords || []).length}
+                </span>
+              </button>
+
+              {/* 14.5 الأسماء المحظورة والمحجوزة */}
+              <button
+                onClick={() => { setActiveSection('forbidden_names'); setIsMobileSidebarOpen(false); }}
+                className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors cursor-pointer text-right ${
+                  activeSection === 'forbidden_names' ? 'bg-rose-50 text-rose-700 font-black border-r-4 border-rose-500' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Ban className="w-4 h-4 text-rose-600" />
+                  <span>الأسماء المحظورة والمحجوزة</span>
+                </div>
+                <span className="bg-rose-100 text-rose-800 text-[10px] font-black px-2 py-0.5 rounded-full">
+                  {(siteSettings?.forbiddenUsernames || []).length}
+                </span>
               </button>
 
               {/* 15. مشغلات الموسيقى */}
@@ -1280,77 +1316,148 @@ export const OwnerDashboardModal: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Disable Username Change by Rank Settings Card */}
-                    <div className="p-3.5 bg-purple-50/70 rounded-xl border border-purple-200 space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-xs font-bold text-purple-950 flex items-center gap-1.5">
-                            <span>🔒</span>
-                            <span>إيقاف تغيير اسم المستخدم حسب الرتبة</span>
-                          </p>
-                          <p className="text-[10px] text-purple-800/80 mt-0.5">
-                            التحكم في إمكانية تعديل الاسم المستعار للأعضاء والزوار أو قفله حسب الرتبة وتخزينه فورياً
+                    {/* Master Primary Owner Control: تفعيل/تعطيل خيار 'تغيير اسم المستخدم' للأعضاء */}
+                    <div className="p-4 bg-gradient-to-r from-amber-500/10 via-amber-50/80 to-purple-50/50 rounded-2xl border-2 border-amber-300 shadow-xs space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-200/80 pb-3">
+                        <div className="space-y-1 text-right">
+                          <div className="flex items-center gap-2">
+                            <span className="text-base">👑</span>
+                            <h4 className="text-xs font-black text-amber-950">
+                              لوحة إعدادات خاصة للمالك الرئيسي: تفعيل / تعطيل 'تغيير اسم المستخدم' للأعضاء
+                            </h4>
+                            <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${
+                              settingsForm.allowChangeUsernameForMembers !== false && !settingsForm.disableUsernameChangeAll
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : 'bg-rose-100 text-rose-800 border border-rose-300'
+                            }`}>
+                              {settingsForm.allowChangeUsernameForMembers !== false && !settingsForm.disableUsernameChangeAll
+                                ? 'الميزة مفعلة للأعضاء ✅'
+                                : 'الميزة معطلة كلياً 🚫'}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-amber-900/85 leading-relaxed font-bold">
+                            التحكم الكامل في خيار تغيير الاسم: عند التعطيل، يتم إخفاء زر التغيير برمجياً من الملف الشخصي والإعدادات لجميع الأعضاء والزوار، ويقوم السيرفر برفض ومنع معالجة أي طلب.
                           </p>
                         </div>
+
+                        {/* Master Toggle Button */}
                         <button
                           type="button"
-                          onClick={() => setActiveSection('permissions')}
-                          className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-black rounded-lg cursor-pointer transition-colors shrink-0 flex items-center gap-1 shadow-xs"
+                          disabled={isSavingSettings || isUpdatingSetting}
+                          onClick={() => {
+                            const isCurrentlyEnabled = settingsForm.allowChangeUsernameForMembers !== false && !settingsForm.disableUsernameChangeAll;
+                            const nextState = !isCurrentlyEnabled;
+                            handleUpdateSingleSetting(
+                              {
+                                allowChangeUsernameForMembers: nextState,
+                                disableUsernameChangeAll: !nextState
+                              },
+                              nextState
+                                ? 'تم تفعيل خيار تغيير اسم المستخدم للأعضاء وإظهار الأزرار ✅'
+                                : 'تم تعطيل خيار تغيير اسم المستخدم للأعضاء وإخفاء الأزرار برمجياً 🚫',
+                              'allowChangeUsernameForMembers'
+                            );
+                          }}
+                          className={`px-4 py-2.5 rounded-xl font-black text-xs shrink-0 cursor-pointer shadow-sm transition-all flex items-center gap-2 border ${
+                            settingsForm.allowChangeUsernameForMembers !== false && !settingsForm.disableUsernameChangeAll
+                              ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-700'
+                              : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700'
+                          }`}
                         >
-                          <Key className="w-3 h-3" />
-                          <span>تعديل مصفوفة الرتب ⚙️</span>
+                          {updatingSettingKey === 'allowChangeUsernameForMembers' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                          {settingsForm.allowChangeUsernameForMembers !== false && !settingsForm.disableUsernameChangeAll ? (
+                            <>
+                              <Lock className="w-3.5 h-3.5" />
+                              <span>تعطيل تغيير الاسم للأعضاء 🚫</span>
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              <span>تفعيل تغيير الاسم للأعضاء ✅</span>
+                            </>
+                          )}
                         </button>
                       </div>
 
-                      {/* Quick Role Checkboxes for Username Change */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-                        {[
-                          { key: 'visitor', name: 'الزائر 🌐' },
-                          { key: 'member', name: 'عضو مسجل 👤' },
-                          { key: 'vip', name: 'عضو VIP 💎' },
-                          { key: 'moderator', name: 'مشرف ⚡' },
-                        ].map((roleItem) => {
-                          const currentMatrix = settingsForm.rolePermissions || {};
-                          const rolePerms = currentMatrix[roleItem.key] ?? (roleItem.key === 'visitor' ? ['send_text', 'private_chat', 'change_username'] : ['send_text', 'send_media', 'send_voice', 'send_canvas', 'private_chat', 'custom_font', 'change_username']);
-                          const canChange = rolePerms.includes('change_username');
+                      {/* Granular Role Controls */}
+                      <div className="space-y-1.5 pt-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-slate-700">تخصيص الصلاحية حسب الرتب الفرعية:</span>
+                          <button
+                            type="button"
+                            onClick={() => setActiveSection('permissions')}
+                            className="text-purple-700 hover:text-purple-900 font-extrabold text-[11px] flex items-center gap-1 cursor-pointer"
+                          >
+                            <Key className="w-3 h-3" />
+                            <span>فتح جدول الأذونات الكامل ⚙️</span>
+                          </button>
+                        </div>
 
-                          return (
-                            <button
-                              key={roleItem.key}
-                              type="button"
-                              disabled={isSavingSettings || isUpdatingSetting}
-                              onClick={() => {
-                                const nextPerms = canChange
-                                  ? rolePerms.filter((p: string) => p !== 'change_username')
-                                  : [...rolePerms, 'change_username'];
-                                const updatedMatrix = { ...currentMatrix, [roleItem.key]: nextPerms };
-                                handleUpdateSingleSetting(
-                                  { rolePermissions: updatedMatrix },
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {[
+                            { key: 'visitor', name: 'الزائر 🌐' },
+                            { key: 'member', name: 'عضو مسجل 👤' },
+                            { key: 'vip', name: 'عضو VIP 💎' },
+                            { key: 'moderator', name: 'مشرف ⚡' },
+                          ].map((roleItem) => {
+                            const currentMatrix = settingsForm.rolePermissions || {};
+                            const rolePerms = currentMatrix[roleItem.key] ?? (roleItem.key === 'visitor' ? ['send_text', 'private_chat', 'change_username'] : ['send_text', 'send_media', 'send_voice', 'send_canvas', 'private_chat', 'custom_font', 'change_username']);
+                            const isMasterDisabled = settingsForm.allowChangeUsernameForMembers === false || settingsForm.disableUsernameChangeAll;
+                            const canChange = !isMasterDisabled && rolePerms.includes('change_username');
+
+                            return (
+                              <button
+                                key={roleItem.key}
+                                type="button"
+                                disabled={isSavingSettings || isUpdatingSetting || isMasterDisabled}
+                                onClick={() => {
+                                  const nextPerms = canChange
+                                    ? rolePerms.filter((p: string) => p !== 'change_username')
+                                    : [...rolePerms, 'change_username'];
+                                  const updatedMatrix = { ...currentMatrix, [roleItem.key]: nextPerms };
+                                  handleUpdateSingleSetting(
+                                    { rolePermissions: updatedMatrix },
+                                    canChange
+                                      ? `تم إيقاف تغيير الاسم لرتبة ${roleItem.name} ❌`
+                                      : `تم تفعيل تغيير الاسم لرتبة ${roleItem.name} ✅`,
+                                    `role_perm_${roleItem.key}`
+                                  );
+                                }}
+                                className={`p-2.5 rounded-xl border text-right flex items-center justify-between transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                                   canChange
-                                    ? `تم إيقاف تغيير الاسم لرتبة ${roleItem.name} ❌`
-                                    : `تم تفعيل تغيير الاسم لرتبة ${roleItem.name} ✅`,
-                                  `role_perm_${roleItem.key}`
-                                );
-                              }}
-                              className={`p-2 rounded-lg border text-right flex items-center justify-between transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                                canChange
-                                  ? 'bg-white border-purple-200 text-purple-950 font-bold'
-                                  : 'bg-rose-50 border-rose-200 text-rose-700 font-bold'
-                              }`}
-                            >
-                              <span className="text-[11px] flex items-center gap-1">
-                                {updatingSettingKey === `role_perm_${roleItem.key}` && <Loader2 className="w-3 h-3 animate-spin" />}
-                                {roleItem.name}
-                              </span>
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded-md ${
-                                canChange ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                              }`}>
-                                {canChange ? 'مسموح' : 'موقوف 🔒'}
-                              </span>
-                            </button>
-                          );
-                        })}
+                                    ? 'bg-white border-emerald-300 text-slate-900 font-bold shadow-2xs'
+                                    : 'bg-slate-50 border-slate-200 text-slate-500 font-bold'
+                                }`}
+                              >
+                                <span className="text-[11px] flex items-center gap-1">
+                                  {updatingSettingKey === `role_perm_${roleItem.key}` && <Loader2 className="w-3 h-3 animate-spin" />}
+                                  {roleItem.name}
+                                </span>
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold ${
+                                  canChange ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
+                                }`}>
+                                  {canChange ? 'مسموح ✅' : 'موقوف 🔒'}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
+
+                      {/* Shortcut to Forbidden Usernames Manager */}
+                      <button
+                        type="button"
+                        onClick={() => setActiveSection('forbidden_names')}
+                        className="w-full mt-2.5 p-2.5 bg-rose-50 hover:bg-rose-100/80 border border-rose-200 rounded-xl text-xs font-black text-rose-950 flex items-center justify-between transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Ban className="w-4 h-4 text-rose-600 shrink-0" />
+                          <span>إعداد قائمة أسماء المستخدمين المحظورة والمحجوزة للإدارة</span>
+                        </div>
+                        <span className="text-[10px] bg-rose-200 text-rose-950 px-2 py-0.5 rounded-lg font-mono font-bold">
+                          {(siteSettings?.forbiddenUsernames || []).length} اسم محظور ⚙️
+                        </span>
+                      </button>
                     </div>
 
                     {/* Hide Room Switch Notifications Toggle */}
@@ -1610,6 +1717,114 @@ export const OwnerDashboardModal: React.FC = () => {
                       onChange={(e) => setSettingsForm({ ...settingsForm, welcomeMessage: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5"
                     />
+                  </div>
+
+                  {/* Global Auto-Welcome Bot Section */}
+                  <div className="p-4 bg-gradient-to-br from-sky-50/70 via-white to-amber-50/40 rounded-xl border border-sky-200 space-y-3">
+                    <div className="flex items-center justify-between border-b border-sky-100 pb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="w-7 h-7 rounded-xl bg-sky-500/15 border border-sky-400/40 flex items-center justify-center text-sm">
+                          🤖
+                        </span>
+                        <div>
+                          <h4 className="text-xs font-black text-sky-950">إعدادات روبوت الترحيب التلقائي العام للغرف</h4>
+                          <span className="text-[10px] text-sky-700">التحكم في رسائل الترحيب وبث القوانين التلقائي لجميع الغرف</span>
+                        </div>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={settingsForm.botWelcomeEnabled !== false}
+                          onChange={(e) => setSettingsForm({ ...settingsForm, botWelcomeEnabled: e.target.checked })}
+                          className="sr-only peer"
+                        />
+                        <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#00a6b6]"></div>
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="font-bold text-slate-700 block mb-1 text-[11px]">اسم الروبوت في الشات:</label>
+                        <input
+                          type="text"
+                          value={settingsForm.welcomeBotName || 'الروبوت الآلي 🤖'}
+                          onChange={(e) => setSettingsForm({ ...settingsForm, welcomeBotName: e.target.value })}
+                          placeholder="الروبوت الآلي 🤖"
+                          className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold"
+                        />
+                      </div>
+                      <div className="flex items-center justify-between p-2.5 bg-white border border-slate-200 rounded-lg">
+                        <div>
+                          <span className="font-bold text-slate-800 text-[11px] block">إعلان انضمام الأعضاء للغرف</span>
+                          <span className="text-[10px] text-slate-500">إظهار بطاقة ترحيب عامة عند انضمام عضو جديد</span>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={settingsForm.announceUserEnterLeave !== false}
+                            onChange={(e) => setSettingsForm({ ...settingsForm, announceUserEnterLeave: e.target.checked })}
+                            className="sr-only peer"
+                          />
+                          <div className="w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500"></div>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="font-bold text-slate-700 text-[11px]">رسالة الترحيب الافتراضية عند عدم وجود رسالة مخصصة للغرفة:</label>
+                        <div className="flex items-center gap-1 text-[10px]">
+                          <button
+                            type="button"
+                            onClick={() => setSettingsForm({
+                              ...settingsForm,
+                              botWelcomeMessage: '👋 أهلاً وسهلاً بك يا {user} في غرفة {room}!\n\n📜 قوانين الغرفة:\n• الاحترام المتبادل بين الجميع وعدم الإساءة.\n• يُمنع نشر الروابط الخارجية والإعلانات.\n\n🛡️ المشرفون: {mods}\nنتمنى لك وقتاً ممتعاً 🌹✨'
+                            })}
+                            className="px-1.5 py-0.5 rounded bg-sky-100 hover:bg-sky-200 text-sky-800 font-bold cursor-pointer"
+                          >
+                            استعادة النموذج الافتراضي
+                          </button>
+                        </div>
+                      </div>
+                      <textarea
+                        value={settingsForm.botWelcomeMessage || ''}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, botWelcomeMessage: e.target.value })}
+                        placeholder="👋 أهلاً وسهلاً ومرحباً بك يا {user} في {room}..."
+                        rows={3}
+                        className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs font-medium focus:ring-1 focus:ring-sky-500 focus:outline-none"
+                      />
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[10px]">
+                        <span className="text-slate-400 font-bold">متغيرات:</span>
+                        <button
+                          type="button"
+                          onClick={() => setSettingsForm(prev => ({ ...prev, botWelcomeMessage: `${prev.botWelcomeMessage || ''} {user}` }))}
+                          className="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-sky-700 font-mono font-bold hover:bg-sky-50 cursor-pointer"
+                        >
+                          {'{user}'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSettingsForm(prev => ({ ...prev, botWelcomeMessage: `${prev.botWelcomeMessage || ''} {room}` }))}
+                          className="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-sky-700 font-mono font-bold hover:bg-sky-50 cursor-pointer"
+                        >
+                          {'{room}'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSettingsForm(prev => ({ ...prev, botWelcomeMessage: `${prev.botWelcomeMessage || ''} {mods}` }))}
+                          className="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-sky-700 font-mono font-bold hover:bg-sky-50 cursor-pointer"
+                        >
+                          {'{mods}'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSettingsForm(prev => ({ ...prev, botWelcomeMessage: `${prev.botWelcomeMessage || ''} {time}` }))}
+                          className="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-sky-700 font-mono font-bold hover:bg-sky-50 cursor-pointer"
+                        >
+                          {'{time}'}
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   <button
@@ -2165,6 +2380,68 @@ export const OwnerDashboardModal: React.FC = () => {
                       </div>
                     )}
 
+                    {/* Room Welcome Message Configuration */}
+                    <div className="p-3 bg-gradient-to-br from-sky-50/70 via-white to-amber-50/40 border border-sky-200 rounded-xl space-y-2.5 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                          <span className="w-5 h-5 rounded-md bg-sky-500/15 border border-sky-400/40 flex items-center justify-center text-[11px]">🤖</span>
+                          <span>الرسالة الترحيبية التلقائية عند دخول الغرفة:</span>
+                        </span>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={newRoomAutoWelcome}
+                            onChange={(e) => setNewRoomAutoWelcome(e.target.checked)}
+                            className="sr-only peer"
+                          />
+                          <div className="w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-[#00a6b6]"></div>
+                        </label>
+                      </div>
+
+                      {newRoomAutoWelcome && (
+                        <div className="space-y-1.5">
+                          <textarea
+                            value={newRoomWelcomeMsg}
+                            onChange={(e) => setNewRoomWelcomeMsg(e.target.value)}
+                            placeholder="اتركها فارغة لاستخدام رسالة النظام الافتراضية مع القوانين..."
+                            rows={2}
+                            className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs focus:ring-1 focus:ring-sky-500 focus:outline-none"
+                          />
+                          <div className="flex flex-wrap items-center gap-1 text-[10px]">
+                            <span className="text-slate-400">متغيرات:</span>
+                            <button
+                              type="button"
+                              onClick={() => setNewRoomWelcomeMsg(prev => `${prev} {user}`)}
+                              className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-sky-700 font-mono font-bold cursor-pointer"
+                            >
+                              {'{user}'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setNewRoomWelcomeMsg(prev => `${prev} {room}`)}
+                              className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-sky-700 font-mono font-bold cursor-pointer"
+                            >
+                              {'{room}'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setNewRoomWelcomeMsg(prev => `${prev} {mods}`)}
+                              className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-sky-700 font-mono font-bold cursor-pointer"
+                            >
+                              {'{mods}'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setNewRoomWelcomeMsg(prev => `${prev} {time}`)}
+                              className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-sky-700 font-mono font-bold cursor-pointer"
+                            >
+                              {'{time}'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="flex justify-end">
                       <button
                         type="submit"
@@ -2392,6 +2669,109 @@ export const OwnerDashboardModal: React.FC = () => {
                           </div>
                         </div>
 
+                        {/* Room Welcome Message Configuration in Edit Dialog */}
+                        <div className="p-3.5 bg-gradient-to-br from-sky-50/70 via-white to-amber-50/40 border border-sky-200 rounded-xl space-y-2.5 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                              <span className="w-5 h-5 rounded-md bg-sky-500/15 border border-sky-400/40 flex items-center justify-center text-[11px]">🤖</span>
+                              <span>الرسالة الترحيبية التلقائية عند دخول مستخدم جديد:</span>
+                            </span>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={editRoomAutoWelcome}
+                                onChange={(e) => setEditRoomAutoWelcome(e.target.checked)}
+                                className="sr-only peer"
+                              />
+                              <div className="w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-[#00a6b6]"></div>
+                            </label>
+                          </div>
+
+                          <p className="text-[11px] text-slate-500">
+                            تُرسل هذه الرسالة آلياً فور دخول المستخدم إلى الغرفة للترحيب به وعرض المشرفين والقوانين.
+                          </p>
+
+                          {editRoomAutoWelcome && (
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between text-[11px] font-bold text-slate-600">
+                                <span>نص الترحيب المخصص للغرفة:</span>
+                                <div className="flex items-center gap-1 text-[10px]">
+                                  <span className="text-slate-400">نماذج:</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditRoomWelcomeMsg('👋 أهلاً وسهلاً بك يا {user} في غرفة {room}!\n\n📜 قوانين الغرفة:\n• الاحترام المتبادل بين الجميع وعدم الإساءة.\n• يُمنع نشر الروابط الخارجية والإعلانات.\n\n🛡️ المشرفون: {mods}\nنتمنى لك وقتاً ممتعاً 🌹✨')}
+                                    className="px-1.5 py-0.5 rounded bg-sky-100 hover:bg-sky-200 text-sky-800 font-bold cursor-pointer"
+                                  >
+                                    قوانين 📜
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditRoomWelcomeMsg('🎉 نورت غرفة {room} يا غالي {user}!\n\n🌟 يسعدنا تواجدك معنا في شات اليمن المطور.\nنتمنى لك أروع وأجمل الأوقات معنا 🌹✨')}
+                                    className="px-1.5 py-0.5 rounded bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold cursor-pointer"
+                                  >
+                                    ودي 🌹
+                                  </button>
+                                </div>
+                              </div>
+
+                              <textarea
+                                value={editRoomWelcomeMsg}
+                                onChange={(e) => setEditRoomWelcomeMsg(e.target.value)}
+                                placeholder="اتركها فارغة لاستخدام رسالة النظام الافتراضية مع القوانين..."
+                                rows={3}
+                                className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs font-medium focus:ring-1 focus:ring-sky-500 focus:outline-none custom-scrollbar"
+                              />
+
+                              {/* Variable shortcuts */}
+                              <div className="flex flex-wrap items-center gap-1 text-[10px]">
+                                <span className="text-slate-400 font-bold">متغيرات:</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditRoomWelcomeMsg(prev => `${prev} {user}`)}
+                                  className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-sky-700 font-mono font-bold cursor-pointer"
+                                >
+                                  {'{user}'} العضو
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditRoomWelcomeMsg(prev => `${prev} {room}`)}
+                                  className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-sky-700 font-mono font-bold cursor-pointer"
+                                >
+                                  {'{room}'} الغرفة
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditRoomWelcomeMsg(prev => `${prev} {mods}`)}
+                                  className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-sky-700 font-mono font-bold cursor-pointer"
+                                >
+                                  {'{mods}'} المشرفون
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditRoomWelcomeMsg(prev => `${prev} {time}`)}
+                                  className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-sky-700 font-mono font-bold cursor-pointer"
+                                >
+                                  {'{time}'} الوقت
+                                </button>
+                              </div>
+
+                              {/* Preview */}
+                              {editRoomWelcomeMsg && (
+                                <div className="p-2 bg-sky-50/70 rounded-lg border border-sky-100 text-[11px] text-slate-700 space-y-0.5">
+                                  <span className="font-bold text-sky-800 text-[10px] block">معاينة نص الرسالة:</span>
+                                  <p className="whitespace-pre-line font-medium leading-relaxed">
+                                    {editRoomWelcomeMsg
+                                      .replace(/\{user\}/g, '[ اسم العضو ]')
+                                      .replace(/\{room\}/g, editRoomName || editingRoom.name)
+                                      .replace(/\{mods\}/g, 'مشرفي الغرفة')
+                                      .replace(/\{time\}/g, '12:00 PM')}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
                         {/* Action buttons */}
                         <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
                           <button
@@ -2406,7 +2786,7 @@ export const OwnerDashboardModal: React.FC = () => {
                             className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
                           >
                             <Check className="w-4 h-4" />
-                            <span>حفظ التعديلات والأيقونة</span>
+                            <span>حفظ التعديلات ورسالة الترحيب</span>
                           </button>
                         </div>
                       </form>
@@ -2431,52 +2811,14 @@ export const OwnerDashboardModal: React.FC = () => {
             )}
 
             {/* ===================================================================== */}
-            {/* VIEW 8: إدارة التصفيات (Word Filter & Blacklist) */}
+            {/* VIEW 8: نظام فلتر الكلمات البذيئة والرسائل (Profanity & Bad Words Filter) */}
             {/* ===================================================================== */}
             {activeSection === 'filters' && (
-              <div className="max-w-4xl mx-auto bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-4 shadow-2xs">
-                <h3 className="text-xs font-black text-slate-800 border-b border-slate-100 pb-2">قائمة الكلمات والعبارات المحظورة تلقائياً</h3>
-                
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="أدخل كلمة أو رقم هاتف لحظرها..."
-                    value={newBadWord}
-                    onChange={(e) => setNewBadWord(e.target.value)}
-                    className="flex-1 bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-bold"
-                  />
-                  <button
-                    onClick={() => {
-                      if (newBadWord.trim()) {
-                        addCustomBadWord(newBadWord.trim());
-                        setNewBadWord('');
-                        showToast('تمت إضافة الكلمة لقائمة الحظر 🚫');
-                      }
-                    }}
-                    className="px-4 py-2 bg-rose-600 text-white text-xs font-bold rounded-lg cursor-pointer"
-                  >
-                    إضافة للحظر 🚫
-                  </button>
-                </div>
-
-                <div className="flex flex-wrap gap-2 pt-2">
-                  {customBadWords.map((word, idx) => (
-                    <div key={idx} className="bg-rose-50 border border-rose-200 text-rose-700 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5">
-                      <span>{word}</span>
-                      <button
-                        onClick={() => removeCustomBadWord(word)}
-                        className="text-rose-400 hover:text-rose-700 cursor-pointer"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <ProfanityFilterView showToast={showToast} />
             )}
 
             {/* ===================================================================== */}
-            {/* VIEW 9: سجلات النظام (System Logs) */}
+            {/* VIEW 9: سجلات النظام والنزاعات (System & Dispute Logs) */}
             {/* ===================================================================== */}
             {activeSection === 'logs' && (
               <LogsView showToast={showToast} />
@@ -2485,6 +2827,7 @@ export const OwnerDashboardModal: React.FC = () => {
             {/* ===================================================================== */}
             {/* DEDICATED SECTIONS */}
             {/* ===================================================================== */}
+            {activeSection === 'forbidden_names' && <ForbiddenUsernamesView showToast={showToast} />}
             {activeSection === 'presence_analytics' && <RoomPresenceAnalytics />}
             {activeSection === 'dj' && <DjView showToast={showToast} />}
             {activeSection === 'permissions' && <PermissionsView showToast={showToast} />}

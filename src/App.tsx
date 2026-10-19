@@ -11,7 +11,7 @@ import { CookieConsentBanner } from './components/CookieConsentBanner';
 const MainRouter: React.FC = () => {
   const { currentUser, currentView } = useChat();
 
-  if (!currentUser) {
+  if (!currentUser || currentView === 'landing') {
     return <LandingPage />;
   }
 

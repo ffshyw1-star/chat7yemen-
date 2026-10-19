@@ -10,6 +10,7 @@ import { RoomSettingsModal } from './RoomSettingsModal';
 import { LogoutConfirmModal } from './LogoutConfirmModal';
 import { OwnerDashboardModal } from './OwnerDashboardModal';
 import { RoomPasswordModal } from './RoomPasswordModal';
+import { isPrimaryOwner } from '../utils/permissions';
 
 export const RoomsPage: React.FC = () => {
   const {
@@ -236,7 +237,7 @@ export const RoomsPage: React.FC = () => {
                     }}
                     className="w-full px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-between gap-3 cursor-pointer transition-colors"
                   >
-                    <span>{isEnglish ? 'Logout' : 'خروج'}</span>
+                    <span>{isEnglish ? 'Logout' : 'خروج من الحساب'}</span>
                     <LogOut className="w-4 h-4 text-[#00aeeF]" />
                   </button>
                 </div>
@@ -353,7 +354,7 @@ export const RoomsPage: React.FC = () => {
       </footer>
 
       {isRoomSettingsOpen && <RoomSettingsModal />}
-      {isOwnerDashboardOpen && <OwnerDashboardModal />}
+      {isOwnerDashboardOpen && isPrimaryOwner(currentUser) && <OwnerDashboardModal />}
       <LogoutConfirmModal />
       <RoomPasswordModal />
     </div>

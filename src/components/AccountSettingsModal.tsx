@@ -8,13 +8,14 @@ import { playChatSound } from '../utils/audio';
 import { COUNTRIES_LIST, getCountryFlagByName, getArabicCountryName, getEnglishCountryName } from '../utils/geoip';
 import { formatEnglishDate } from '../utils/dateUtils';
 import { applyLanguageSettings, getAppLanguage, t } from '../utils/translations';
-import { RANK_TITLES } from '../utils/permissions';
+import { RANK_TITLES, isPrimaryOwner } from '../utils/permissions';
 import { UserMembershipStatusCard } from './UserMembershipStatusCard';
+import { ChangeUsernameModal } from './ChangeUsernameModal';
 import {
   X, User, Shield, Volume2, Globe, Lock, Trash2, Check,
   Palette, Edit3, VolumeX, Camera, Upload, Link, RefreshCw, Volume1,
   UserCheck, HelpCircle, Brush, UserPlus, Ban, Monitor, MessageSquare,
-  Mail, Key, ArrowRight, ShieldCheck, Save, ChevronDown, Search
+  Mail, Key, ArrowRight, ShieldCheck, Save, ChevronDown, Search, Sparkles
 } from 'lucide-react';
 
 // All World Languages in English sorted alphabetically
@@ -351,7 +352,7 @@ export const AccountSettingsModal: React.FC = () => {
     currentUser, updateUserProfile, audioSettings, updateAudioSettings,
     setIsProfileSettingsOpen, removeFriend, users, themeMode, setThemeMode,
     toggleIgnore, toggleBlockUser, requestBlockConfirm, showTopBanner,
-    currentUserCan
+    currentUserCan, siteSettings
   } = useChat();
 
   const [activeSubMenu, setActiveSubMenu] = useState<string | null>(null);
@@ -420,6 +421,7 @@ export const AccountSettingsModal: React.FC = () => {
   const [newPass, setNewPass] = useState('');
   const [confirmPass, setConfirmPass] = useState('');
   const [saveSuccess, setSaveSuccess] = useState('');
+  const [isChangeUsernameModalOpen, setIsChangeUsernameModalOpen] = useState(false);
 
   // Refs for hidden file inputs
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -499,6 +501,10 @@ export const AccountSettingsModal: React.FC = () => {
 
   const handleSaveData = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    const newTrimmedUsername = username.trim();
+    const isUsernameChanging = Boolean(newTrimmedUsername && newTrimmedUsername !== currentUser.username);
+    const finalUsername = (isUsernameChanging && canUserChangeUsername) ? newTrimmedUsername : currentUser.username;
+
     updateUserProfile({
       age,
       gender,
@@ -508,7 +514,7 @@ export const AccountSettingsModal: React.FC = () => {
       bio: bio.trim(),
       avatar,
       wallCover,
-      username: username.trim() || currentUser.username,
+      username: finalUsername,
       email: email.trim(),
       usernameColor,
       usernameBgGradient,
@@ -553,11 +559,19 @@ export const AccountSettingsModal: React.FC = () => {
     { id: 'language', label: 'اللغة / الموقع', icon: Globe },
   ];
 
+  const canUserChangeUsername = Boolean(
+    isPrimaryOwner(currentUser) || (
+      currentUserCan('change_username') &&
+      siteSettings?.allowChangeUsernameForMembers !== false &&
+      !siteSettings?.disableUsernameChangeAll
+    )
+  );
+
   const fullMenuOptions = [
     { id: 'membership_info', label: 'معلومات العضوية والرتبة', icon: ShieldCheck },
     { id: 'profile_data', label: 'تحرير البيانات', icon: UserCheck },
     { id: 'my_info', label: 'تحرير معلوماتي', icon: HelpCircle },
-    { id: 'change_username', label: 'تغيير اسم المستخدم', icon: Edit3 },
+    ...(canUserChangeUsername ? [{ id: 'change_username', label: 'تغيير اسم المستخدم', icon: Edit3 }] : []),
     { id: 'username_color', label: 'تغيير لون اسم المستخدم', icon: Brush },
     { id: 'status', label: 'تعديل الحالة', icon: Edit3 },
     { id: 'confirm_account', label: 'تأكيد الحساب', icon: Check },
@@ -1038,40 +1052,61 @@ export const AccountSettingsModal: React.FC = () => {
                 <h3 className="text-sm font-black text-[#0b333e]">تغيير اسم المستخدم</h3>
               </div>
 
-              {!currentUserCan('change_username') ? (
+              {!canUserChangeUsername ? (
                 <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-2.5 text-right">
                   <div className="flex items-center gap-2 text-amber-900 font-black text-xs">
                     <Lock className="w-4 h-4 text-amber-600 shrink-0" />
-                    <span>ميزة تغيير اسم المستخدم معطلة لرتبتك 🔒</span>
+                    <span>ميزة تغيير اسم المستخدم معطلة حالياً 🔒</span>
                   </div>
                   <p className="text-[11px] text-amber-800 leading-relaxed font-bold">
-                    قام المالك بتعطيل إمكانية تغيير الاسم المستعار لرتبة ({currentUser?.role ? (RANK_TITLES[currentUser.role] || currentUser.role) : 'الزائر'}). لا يمكنك تعديل الاسم حالياً.
+                    قام المالك بتعطيل إمكانية تغيير الاسم المستعار للأعضاء في إعدادات الموقع. لا يمكنك تعديل الاسم حالياً.
                   </p>
                 </div>
               ) : (
-                <form onSubmit={handleSaveData} className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">اسم المستخدم الجديد:</label>
-                    <input
-                      type="text"
-                      required
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      className="w-full bg-[#f2f2f2] border border-slate-200 rounded-lg p-3 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0b333e]"
-                      placeholder="أدخل الاسم الجديد"
-                    />
-                  </div>
-
-                  <div className="flex justify-start pt-2">
+                <div className="space-y-4">
+                  {/* Quick Launch Card for Modal Verification */}
+                  <div className="bg-gradient-to-r from-sky-50 to-indigo-50 border border-sky-200 rounded-2xl p-4 space-y-3">
+                    <div className="flex items-center gap-2 text-sky-900 font-black text-xs">
+                      <Sparkles className="w-4 h-4 text-sky-600" />
+                      <span>نافذة التحقق المباشر من توفر الاسم وصلاحية الاستخدام</span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-relaxed font-bold">
+                      افتح نافذة التحقق للتأكد من أن الاسم متاح في السيرفر ولا يتعارض مع أعضاء آخرين قبل الحفظ وتحديث الواجهة لحظياً.
+                    </p>
                     <button
-                      type="submit"
-                      className="bg-[#0099c8] hover:bg-[#0088b3] text-white px-7 py-2.5 rounded-lg font-bold text-sm flex items-center gap-2 cursor-pointer shadow-sm transition-colors"
+                      type="button"
+                      onClick={() => setIsChangeUsernameModalOpen(true)}
+                      className="w-full bg-[#0099c8] hover:bg-[#0088b3] text-white py-2.5 px-4 rounded-xl font-black text-xs flex items-center justify-center gap-2 cursor-pointer shadow-sm transition-all"
                     >
-                      <Save className="w-4 h-4" />
-                      <span>حفظ</span>
+                      <Sparkles className="w-4 h-4 text-amber-300" />
+                      <span>فتح نافذة التحقق وتغيير الاسم (Modal) ⚡</span>
                     </button>
                   </div>
-                </form>
+
+                  <form onSubmit={handleSaveData} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">اسم المستخدم الجديد:</label>
+                      <input
+                        type="text"
+                        required
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        className="w-full bg-[#f2f2f2] border border-slate-200 rounded-lg p-3 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0b333e]"
+                        placeholder="أدخل الاسم الجديد"
+                      />
+                    </div>
+
+                    <div className="flex justify-start pt-2">
+                      <button
+                        type="submit"
+                        className="bg-[#0099c8] hover:bg-[#0088b3] text-white px-7 py-2.5 rounded-lg font-bold text-sm flex items-center gap-2 cursor-pointer shadow-sm transition-colors"
+                      >
+                        <Save className="w-4 h-4" />
+                        <span>حفظ</span>
+                      </button>
+                    </div>
+                  </form>
+                </div>
               )}
             </div>
           )}
@@ -2118,6 +2153,16 @@ export const AccountSettingsModal: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Change Username Verification Modal */}
+      <ChangeUsernameModal
+        isOpen={isChangeUsernameModalOpen}
+        onClose={() => setIsChangeUsernameModalOpen(false)}
+        targetUser={currentUser}
+        onSuccess={(newName) => {
+          setUsername(newName);
+          triggerSaveNotification();
+        }}
+      />
     </div>
   );
 };

@@ -1767,6 +1767,30 @@ export const INITIAL_SITE_SETTINGS: SiteSettings = {
   antiSpamLinks: true,
   antiSpamCaps: false,
   guestChatMode: 'allowed',
+  allowChangeUsernameForMembers: true,
+  disableUsernameChangeAll: false,
+  // Profanity Filter Configuration (Automatic filter for public & private chat)
+  enableProfanityFilter: true,
+  profanityFilterScope: 'both',
+  profanityFilterAction: 'block', // 'block' prevents sending bad words entirely, 'mask' censors them with ****
+  profanityMatchMode: 'flexible',
+  profanityAutoMute: true,
+  profanityMuteDurationMinutes: 1,
+  profanityExemptStaff: true,
+  customBadWordsList: [
+    'كلب', 'حمار', 'غبي', 'قذر', 'منحط', 'حقير', 'تفه', 'تافه', 'سافل',
+    'وقح', 'حيوان', 'زفت', 'جحش', 'صايع', 'فاسد', 'احتيال', 'شتيمة', 'مغفل',
+    'عاهرة', 'قحبة', 'شرموطة', 'شرموط', 'ديوث', 'عرص', 'منيك', 'منيوك', 'كسمك', 'كس اختك', 'كس امك',
+    'يلعن', 'يلعنك', 'يلعن ابوك', 'طيز', 'زب', 'نيك', 'خول', 'سفاح', 'وسخ', 'واطي', 'لوطي',
+    'شاذ', 'زاني', 'زانية', 'قواد', 'يا كلب', 'يا حمار', 'يا سافل', 'ابن الكلب', 'ابن الحرام',
+    'fuck', 'fucking', 'fucker', 'motherfucker', 'shit', 'bitch', 'asshole', 'bastard', 'crap', 'dick', 'pussy', 'slut', 'whore'
+  ],
+  forbiddenUsernames: [
+    'admin', 'administrator', 'system', 'root', 'support', 'owner',
+    'الادمن', 'المالك', 'الدعم', 'مدير الموقع', 'مشرف عام', 'مؤسس', 'بوت', 'bot',
+    'superadmin', 'إدارة', 'ادارة', 'master', 'مدير_عام', 'خدمة_العملاء'
+  ],
+  forbiddenNameMatchMode: 'contains',
   requireEmailVerification: false,
   enableCookieBan: true,
   blockedDevices: [

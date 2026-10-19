@@ -32,6 +32,7 @@ export const LandingPage: React.FC = () => {
   const [visitorGender, setVisitorGender] = useState<Gender | ''>('');
   const [visitorMode, setVisitorMode] = useState<'chat' | 'silent'>('chat');
   const [visitorError, setVisitorError] = useState('');
+  const [isVisitorLoading, setIsVisitorLoading] = useState(false);
 
   // Register form fields
   const [regName, setRegName] = useState('');
@@ -162,15 +163,22 @@ export const LandingPage: React.FC = () => {
     }
 
     const ageVal = Number(visitorAge);
-    const res = await loginAsVisitor(cleanName, ageVal, visitorGender as Gender);
-    if (res && !res.success) {
-      setVisitorError(res.error || (isEnglish ? 'Could not enter as guest' : 'تعذر الدخول كزائر'));
-      return;
+    setIsVisitorLoading(true);
+    try {
+      const res = await loginAsVisitor(cleanName, ageVal, visitorGender as Gender);
+      if (res && !res.success) {
+        setVisitorError(res.error || (isEnglish ? 'Could not enter as guest' : 'تعذر الدخول كزائر'));
+        return;
+      }
+      if (visitorMode === 'silent' || siteSettings.guestChatMode === 'silent') {
+        showTopBanner('🔇 دخلت في وضع الزائر الصامت (للمشاهدة وتصفح الغرف فقط)');
+      }
+      setActiveModal(null);
+    } catch (err: any) {
+      setVisitorError(err?.message || (isEnglish ? 'An error occurred during guest login' : 'حدث خطأ أثناء تسجيل الدخول كزائر'));
+    } finally {
+      setIsVisitorLoading(false);
     }
-    if (visitorMode === 'silent' || siteSettings.guestChatMode === 'silent') {
-      showTopBanner('🔇 دخلت في وضع الزائر الصامت (للمشاهدة وتصفح الغرف فقط)');
-    }
-    setActiveModal(null);
   };
 
   // Handle registration submit
@@ -348,23 +356,30 @@ export const LandingPage: React.FC = () => {
           {/* MAIN BUTTONS CONTAINER */}
           <div className="w-full max-w-xs sm:max-w-sm space-y-3.5 mb-6">
             
-            {/* BUTTON 1: دخول (Green Button -> Opens Member Login Modal) */}
+            {/* BUTTON 1: دخول الأعضاء (Green Button -> Opens Member Login Modal) */}
             <button
+              id="member-login-btn"
               onClick={() => {
                 setMemberError('');
+                setMemberName('');
+                setMemberPassword('');
                 setActiveModal('login');
               }}
               className="w-full bg-[#82b400] hover:bg-[#73a000] text-white font-black text-lg py-3.5 px-6 rounded-2xl shadow-lg hover:shadow-xl transition-all transform active:scale-95 flex items-center justify-center gap-2.5 cursor-pointer border border-lime-400/30"
             >
               <LogIn className="w-5 h-5" />
-              <span>{isEnglish ? 'Login' : 'دخول'}</span>
+              <span>{isEnglish ? 'Member Login' : 'دخول الأعضاء'}</span>
             </button>
 
             {/* BUTTON 2: دخول الزوار (Black Button -> Opens Visitor Modal) */}
             {!siteSettings?.hideVisitorLogin && (
               <button
+                id="visitor-login-btn"
                 onClick={() => {
                   setVisitorError('');
+                  setVisitorName('');
+                  setVisitorGender('');
+                  setVisitorAge('العمر');
                   setActiveModal('visitor');
                 }}
                 className="w-full bg-[#131b26] hover:bg-[#0f172a] text-white font-black text-lg py-3.5 px-6 rounded-2xl shadow-lg hover:shadow-xl transition-all transform active:scale-95 flex items-center justify-center gap-2.5 cursor-pointer border border-slate-700/50"
@@ -425,7 +440,14 @@ export const LandingPage: React.FC = () => {
 
               {/* CLOSE BUTTON */}
               <button
-                onClick={() => setActiveModal(null)}
+                onClick={() => {
+                  setActiveModal(null);
+                  setMemberName('');
+                  setMemberPassword('');
+                  setVisitorName('');
+                  setVisitorGender('');
+                  setVisitorAge('العمر');
+                }}
                 className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
                 title={isEnglish ? 'Close' : 'إغلاق'}
               >
@@ -638,10 +660,22 @@ export const LandingPage: React.FC = () => {
                   {/* CYAN SUBMIT BUTTON */}
                   <button
                     type="submit"
-                    className="w-full bg-[#00aeeF] hover:bg-[#0284c7] text-white font-extrabold text-base py-2.5 px-4 rounded-lg shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer mt-3 active:scale-98"
+                    disabled={isVisitorLoading}
+                    className={`w-full bg-[#00aeeF] hover:bg-[#0284c7] text-white font-extrabold text-base py-2.5 px-4 rounded-lg shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer mt-3 active:scale-98 ${
+                      isVisitorLoading ? 'opacity-75 cursor-not-allowed' : ''
+                    }`}
                   >
-                    <span>{isEnglish ? 'Enter Chat' : 'دخول الدردشة'}</span>
-                    <LogIn className={`w-4 h-4 ${isRtl ? 'rotate-180' : 'rotate-0'}`} />
+                    {isVisitorLoading ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <span>{isEnglish ? 'Verifying & Entering...' : 'جاري التحقق والدخول...'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>{isEnglish ? 'Enter Chat' : 'دخول الدردشة'}</span>
+                        <LogIn className={`w-4 h-4 ${isRtl ? 'rotate-180' : 'rotate-0'}`} />
+                      </>
+                    )}
                   </button>
                 </form>
               )}

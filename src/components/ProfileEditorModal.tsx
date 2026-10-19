@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useChat } from '../context/ChatContext';
 import { Gender } from '../types';
 import { UserAvatar } from './UserAvatar';
+import { ChangeUsernameModal } from './ChangeUsernameModal';
 import {
   X, Check, Camera, Image, Palette, User, MessageSquare,
   Sparkles, Upload, Link, AlertCircle, RefreshCw, Briefcase, Globe
@@ -98,6 +99,7 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
   const [hideCountry, setHideCountry] = useState<boolean>(currentUser?.hideCountry || false);
   const [usernameColor, setUsernameColor] = useState(currentUser?.usernameColor || '#f59e0b');
   const [usernameFontSize, setUsernameFontSize] = useState(currentUser?.usernameFontSize || '14px');
+  const [isChangeUsernameModalOpen, setIsChangeUsernameModalOpen] = useState(false);
 
   // Handle Country Change
   const handleCountryChange = (countryName: string) => {
@@ -551,12 +553,23 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
                   <User className="w-3.5 h-3.5 text-amber-400" />
                   <span>اسم العرض المستعار (Display Name):</span>
                 </label>
-                {!currentUserCan('change_username') && (
-                  <span className="text-[10px] text-amber-400 font-bold flex items-center gap-1 bg-amber-950/60 border border-amber-800/60 px-2 py-0.5 rounded-md">
-                    <Lock className="w-3 h-3" />
-                    موقوف لرتبتك
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  {!currentUserCan('change_username') ? (
+                    <span className="text-[10px] text-amber-400 font-bold flex items-center gap-1 bg-amber-950/60 border border-amber-800/60 px-2 py-0.5 rounded-md">
+                      <Lock className="w-3 h-3" />
+                      موقوف لرتبتك
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsChangeUsernameModalOpen(true)}
+                      className="text-[10px] text-sky-400 hover:text-sky-300 font-bold flex items-center gap-1 bg-sky-950/60 border border-sky-800/60 px-2 py-0.5 rounded-md cursor-pointer transition-colors"
+                    >
+                      <Sparkles className="w-3 h-3 text-amber-300" />
+                      التحقق وتغيير الاسم ⚡
+                    </button>
+                  )}
+                </div>
               </div>
               <input
                 type="text"
@@ -871,6 +884,16 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
           </form>
         </div>
       </div>
+
+      {/* Change Username Verification Modal */}
+      <ChangeUsernameModal
+        isOpen={isChangeUsernameModalOpen}
+        onClose={() => setIsChangeUsernameModalOpen(false)}
+        targetUser={currentUser}
+        onSuccess={(newName) => {
+          setUsername(newName);
+        }}
+      />
     </div>
   );
 };

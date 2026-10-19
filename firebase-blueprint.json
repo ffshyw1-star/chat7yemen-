@@ -112,6 +112,27 @@
         "createdAt": { "type": "string" }
       },
       "required": ["rank", "assignedBy", "startAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Dispute and administrative action audit record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "performedById": { "type": "string", "maxLength": 128 },
+        "performedByUsername": { "type": "string", "maxLength": 64 },
+        "targetUserId": { "type": "string", "maxLength": 128 },
+        "targetUsername": { "type": "string", "maxLength": 64 },
+        "action": { "type": "string", "maxLength": 64 },
+        "actionTitle": { "type": "string", "maxLength": 128 },
+        "oldValue": { "type": "string", "maxLength": 512 },
+        "newValue": { "type": "string", "maxLength": 512 },
+        "timestamp": { "type": "number" },
+        "formattedTime": { "type": "string", "maxLength": 64 },
+        "ip": { "type": "string", "maxLength": 64 },
+        "notes": { "type": "string", "maxLength": 1024 }
+      },
+      "required": ["performedById", "action", "timestamp"]
     }
   },
   "firestore": {
@@ -138,6 +159,10 @@
     "/settings/{settingId}": {
       "schema": "SiteSettings",
       "description": "Global site settings and moderation rules"
+    },
+    "/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Historical audit logs for dispute resolution and administration changes"
     }
   }
 }

@@ -108,7 +108,11 @@ export interface User {
   muteUntil?: string; // ISO date or string
   isKicked?: boolean;
   kickUntil?: string;
+  kickReason?: string;
   isBanned?: boolean;
+  banType?: 'permanent' | 'temporary';
+  banUntil?: string;
+  banReason?: string;
   friends?: string[]; // user IDs
   ignores?: string[]; // user IDs
   blockedUsers?: string[]; // user IDs blocked by this user
@@ -203,6 +207,7 @@ export interface Room {
   isDefault?: boolean;
   password?: string;
   isLocked?: boolean;
+  requiredRank?: UserRole; // Minimum user rank required to enter (enforced on client and server)
   roomType?: 'standard' | 'diamond' | 'admin';
   allowedRoles?: UserRole[]; // If set, only these user roles can enter
   customIcon?: 'globe' | 'diamond' | 'admin_star' | string;
@@ -503,11 +508,21 @@ export interface SiteSettings {
   allowMusicRequests?: boolean;
   djPermissionRole?: 'owner' | 'admin' | 'vip' | 'all';
   djAutoApproveSongs?: boolean;
-  customBadWordsList?: string[];
+  customBadWordsList?: string[]; // Custom forbidden bad words list configured by owner
+  enableProfanityFilter?: boolean; // System-wide auto profanity filter enabled/disabled (default: true)
+  profanityFilterScope?: 'both' | 'public_only' | 'private_only'; // Filter scope: both public and private, public only, or private only (default: 'both')
+  profanityFilterAction?: 'block' | 'mask'; // Action: 'block' = prevent sending/publishing, 'mask' = replace bad words with **** (default: 'block')
+  profanityMatchMode?: 'flexible' | 'exact'; // 'flexible' = smart normalization, 'exact' = exact word only (default: 'flexible')
+  profanityAutoMute?: boolean; // Whether offender is auto-muted upon trying to send profanity (default: true)
+  profanityMuteDurationMinutes?: number; // Auto-mute duration in minutes (default: 1)
+  profanityExemptStaff?: boolean; // Whether staff/owner are immune from profanity filter (default: true)
+  forbiddenUsernames?: string[]; // Reserved words & forbidden usernames configured by owner
+  forbiddenNameMatchMode?: 'contains' | 'exact'; // match type (contains substring vs exact name match)
   roleBadges?: RoleBadgesMap;
   rolePermissions?: Record<string, string[]>;
   disableUsernameChangeRoles?: UserRole[]; // List of roles forbidden from changing username
   disableUsernameChangeAll?: boolean; // Global toggle to freeze username changes
+  allowChangeUsernameForMembers?: boolean; // Owner setting: toggle username change for members (true by default)
   enableRegistration?: boolean;
   enableGuestLogin?: boolean;
   enableDirectChat?: boolean;
@@ -573,6 +588,7 @@ export interface IPModerationRecord {
   targetUserId?: string;
   targetUsername?: string;
   actionBy?: string;
+  durationMinutes?: number;
   createdAt: string;
   expiresAt?: string; // ISO string for temporary kick/mute, or undefined for permanent ban
 }
@@ -638,4 +654,35 @@ export function getEffectiveUserRole(user?: User | null, currentTime: number = D
     return 'member';
   }
   return user.role || 'member';
+}
+
+export interface AdminAuditLog {
+  id: string;
+  performedById: string;
+  performedByUsername: string;
+  performedByRole?: string;
+  targetUserId: string;
+  targetUsername: string;
+  targetUserRole?: string;
+  action: 'USERNAME_CHANGE' | 'CHANGE_PASSWORD' | 'CHANGE_RANK' | 'PROMOTE' | 'DEMOTE' | 'DELETE_ACCOUNT' | 'UPDATE_SETTINGS' | 'FORBIDDEN_NAMES_UPDATE' | 'PROFANITY_FILTER_UPDATE' | 'MODERATION_ACTION' | 'ROLE_PERMISSION_CHANGE';
+  actionTitle: string;
+  oldValue: string;
+  newValue: string;
+  timestamp: number;
+  formattedTime: string;
+  ip?: string;
+  userAgent?: string;
+  notes?: string;
+  category?: 'username' | 'admin' | 'settings' | 'moderation';
+  disputeData?: {
+    previousName?: string;
+    newName?: string;
+    changedAt?: string;
+    targetUserId?: string;
+    performerId?: string;
+    ipAddress?: string;
+    userAgent?: string;
+    reason?: string;
+    details?: string;
+  };
 }

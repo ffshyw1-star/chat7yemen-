@@ -95,6 +95,8 @@ export const PRIMARY_OWNER_EMAIL = 'alzymasd9@gmail.com';
 
 /**
  * Checks if a user is the Primary Site Owner (صاحب الموقع الأساسي)
+ * - Defined strictly by immutable PRIMARY_OWNER_ID or PRIMARY_OWNER_EMAIL or isPrimaryOwner flag.
+ * - Does NOT depend on username alone.
  * - Has absolute, permanent immunity
  * - Cannot be demoted, role-changed, kicked, muted, banned, or deleted
  */
@@ -105,10 +107,10 @@ export const isPrimaryOwner = (user?: User | null | string): boolean => {
   }
   return Boolean(
     user.id === PRIMARY_OWNER_ID ||
+    (user as any).uid === PRIMARY_OWNER_ID ||
     user.isPrimaryOwner === true ||
     (user as any).is_primary_owner === true ||
-    user.email === PRIMARY_OWNER_EMAIL ||
-    (user.role === 'owner' && (user.username === 'Owner' || user.username === 'صاحب الموقع'))
+    (user.email && user.email.toLowerCase() === PRIMARY_OWNER_EMAIL.toLowerCase())
   );
 };
 
@@ -131,6 +133,27 @@ export const isSiteOwner = (user?: User | null | string): boolean => {
 };
 
 /**
+ * Checks if requester has authority to change administrative ranks (رفع وتنزيل الرتب الإدارية)
+ * - Restricted STRICTLY to Primary Owner (PRIMARY_OWNER) only!
+ * - Granted Owner, Admin, Management, Moderator cannot change any user's rank.
+ */
+export const canChangeUserRank = (actor?: User | null, target?: User | null): boolean => {
+  if (!actor) return false;
+  if (target && isPrimaryOwner(target)) return false;
+  return isPrimaryOwner(actor);
+};
+
+/**
+ * Checks if requester has authority to change member password (تغيير كلمات المرور)
+ * - Restricted STRICTLY to Primary Owner (PRIMARY_OWNER) only!
+ */
+export const canChangeMemberPassword = (actor?: User | null, target?: User | null): boolean => {
+  if (!actor) return false;
+  if (target && isPrimaryOwner(target) && !isPrimaryOwner(actor)) return false;
+  return isPrimaryOwner(actor);
+};
+
+/**
  * Checks if requester has authority to demote or modify target user
  * - Target Primary Owner can NEVER be demoted or modified by anyone!
  * - Target Granted Owner can only be modified by Primary Owner
@@ -138,8 +161,23 @@ export const isSiteOwner = (user?: User | null | string): boolean => {
 export const canDemoteOrModifyUser = (requester?: User | null, target?: User | null): boolean => {
   if (!requester || !target) return false;
   if (isPrimaryOwner(target)) return false;
-  if (isGrantedOwner(target)) return isPrimaryOwner(requester);
-  return isPrimaryOwner(requester) || requester.role === 'owner';
+  return isPrimaryOwner(requester);
+};
+
+/**
+ * Checks if actor can access the Primary Owner Dashboard (لوحة تحكم المالك الرئيسي)
+ * - Restricted STRICTLY to Primary Owner (PRIMARY_OWNER) only!
+ */
+export const canAccessOwnerPanel = (actor?: User | null): boolean => {
+  return isPrimaryOwner(actor);
+};
+
+/**
+ * Checks if actor can change site owner settings (تغيير إعدادات المالك)
+ * - Restricted STRICTLY to Primary Owner (PRIMARY_OWNER) only!
+ */
+export const canChangeOwnerSettings = (actor?: User | null): boolean => {
+  return isPrimaryOwner(actor);
 };
 
 
@@ -323,16 +361,16 @@ export const canEditProfile = (actor?: User | null, target?: User | null): boole
 };
 
 /**
- * Permissions: Can perform moderation actions (kick/mute/edit name)
+ * Permissions: Can perform basic moderation actions (mute/kick)
+ * Moderator, Management, Admin, Owner can mute and kick if higher rank than target
  */
 export const canPerformModActions = (actor?: User | null, target?: User | null): boolean => {
   if (!actor || !target) return false;
   if (target.role === 'owner') return false;
   if (isSystemUser(target)) return false;
-  if (target.role === 'admin') return isSiteOwner(actor);
-  if (target.role === 'management') return isSiteOwner(actor) || isOwner(actor) || actor?.role === 'admin';
   if (isSelf(actor, target)) return false;
-  return isStaff(actor) && isHigherRank(actor, target);
+  if (!isStaff(actor)) return false;
+  return isHigherRank(actor, target);
 };
 
 /**
@@ -342,16 +380,43 @@ export const canMute = canPerformModActions;
 export const canKick = canPerformModActions;
 
 /**
- * Permissions: Can ban user permanently
+ * Permissions: Can access Room Options (خيارات الغرفة)
+ * Allowed ONLY for Management, Admin, and Owner (NOT Moderator)
+ */
+export const canAccessRoomOptions = (actor?: User | null, target?: User | null): boolean => {
+  if (!actor || !target) return false;
+  if (target.role === 'owner') return false;
+  if (isSystemUser(target)) return false;
+  if (isSelf(actor, target)) return false;
+  const isEligibleRole = ['management', 'admin', 'owner'].includes(actor.role) || isSiteOwner(actor);
+  if (!isEligibleRole) return false;
+  return isHigherRank(actor, target);
+};
+
+/**
+ * Permissions: Can ban user (حظر العضوية)
+ * Allowed ONLY for Owner (المالك)
  */
 export const canBan = (actor?: User | null, target?: User | null): boolean => {
   if (!actor || !target) return false;
   if (target.role === 'owner') return false;
   if (isSystemUser(target)) return false;
-  if (target.role === 'admin') return isSiteOwner(actor);
-  if (target.role === 'management') return isSiteOwner(actor) || isOwner(actor) || actor?.role === 'admin';
   if (isSelf(actor, target)) return false;
-  return isAdminOrOwner(actor) && isHigherRank(actor, target);
+  const isOwnerActor = actor.role === 'owner' || isSiteOwner(actor);
+  if (!isOwnerActor) return false;
+  return isHigherRank(actor, target);
+};
+
+/**
+ * Permissions: Can delete user account (حذف العضوية نهائياً)
+ * Allowed ONLY for Primary Owner (صاحب الموقع الأساسي - PRIMARY_OWNER)
+ */
+export const canDeleteAccount = (actor?: User | null, target?: User | null): boolean => {
+  if (!actor || !target) return false;
+  if (isPrimaryOwner(target)) return false;
+  if (isSystemUser(target)) return false;
+  if (isSelf(actor, target)) return false;
+  return isPrimaryOwner(actor);
 };
 
 /**

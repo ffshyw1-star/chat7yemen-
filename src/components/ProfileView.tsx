@@ -24,6 +24,7 @@ import {
   isPrimaryOwner,
   isGrantedOwner
 } from '../utils/permissions';
+import { ChangeUsernameModal } from './ChangeUsernameModal';
 
 import { getEnglishCountryName, getArabicCountryName, getCountryFlagByName, getUserFlagEmoji } from '../utils/geoip';
 import { formatEnglishNumber, toEnglishDigits, formatEnglishDate } from '../utils/dateUtils';
@@ -75,8 +76,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     modLogs, users, rooms, setIsProfileSettingsOpen, setIsStoreOpen,
     setIsRoomSettingsOpen, setIsOwnerDashboardOpen, banList, ipModerations,
     moderatorAction, muteUserInRoom, unmuteUserInRoom, kickUserFromRoom, unkickUserFromRoom, showTopBanner,
-    updateUserRole, ownerUpdateUser, adminChangeMemberPassword, updateUserProfile, reportUserMessage,
-    getMembershipStatus, cancelMembership
+    updateUserRole, ownerUpdateUser, adminChangeMemberPassword, deleteUserAccount, updateUserProfile, reportUserMessage,
+    getMembershipStatus, cancelMembership, currentUserCan, siteSettings
   } = useChat();
 
   const [activeTab, setActiveTab] = useState<'my_info' | 'friends' | 'system_info' | 'mute_log'>('my_info');
@@ -200,6 +201,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   // Role permissions checks
   const canUserEditTargetPhotos = canEditPhotos(currentUser, target);
   const canUserEditTargetName = canEditProfile(currentUser, target);
+  const canUserChangeTargetUsername = isPrimaryOwner(currentUser) || (
+    canUserEditTargetName &&
+    currentUserCan('change_username') &&
+    siteSettings?.allowChangeUsernameForMembers !== false &&
+    !siteSettings?.disableUsernameChangeAll
+  );
 
   const isTargetMuted = Boolean(
     target && !isSystemTarget && (
@@ -236,23 +243,19 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   const rolesHierarchy: UserRole[] = ['visitor', 'member', 'vip', 'moderator', 'management', 'admin', 'owner'];
 
-  // Handle direct role selection from dropdown (Owner only)
+  // Handle direct role selection from dropdown (Primary Owner only)
   const handleRoleSelectChange = (newRole: UserRole) => {
-    if (!currentUser || currentUser.role !== 'owner') return;
+    if (!isPrimaryOwner(currentUser)) {
+      alert('🚫 رفع وتنزيل وتعديل الرتب الإدارية محصور بالمالك الرئيسي فقط (PRIMARY_OWNER).');
+      showTopBanner('🚫 رفع وتنزيل وتعديل الرتب الإدارية محصور بالمالك الرئيسي فقط (PRIMARY_OWNER).');
+      return;
+    }
     if (isPrimaryOwner(target) || target.id === 'user-owner') {
       alert('🚫 رتبة صاحب الموقع الأساسي (Primary Owner) محمية بشكل دائم ومطلق، ولا يمكن تغييرها أو خفضها لأي سبب!');
       return;
     }
-    if (newRole === 'owner' && !isPrimaryOwner(currentUser)) {
-      alert('🚫 صاحب الموقع الأساسي فقط من يملك صلاحية منح رتبة مالك لمستخدمين آخرين.');
-      return;
-    }
-    if (target.role === 'owner' && !isPrimaryOwner(currentUser)) {
-      alert('🚫 صاحب الموقع الأساسي فقط من يملك صلاحية تعديل أو خفض رتبة مالك آخر.');
-      return;
-    }
     updateUserRole(target.id, newRole);
-    if (currentUser.id !== target.id) {
+    if (currentUser && currentUser.id !== target.id) {
       ownerUpdateUser(target.id, { role: newRole });
     }
     showTopBanner(`👑 تم تغيير رتبة العضو "${target.username}" إلى (${getRankTitle(newRole)})`);
@@ -262,30 +265,36 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   // Name Change Handler with Role Permissions
   const handleSaveNewName = async () => {
     if (!newNameInput.trim()) {
-      alert('الرجاء كتابة اسم صحيح');
+      showTopBanner('⚠️ الرجاء كتابة اسم صحيح');
       return;
     }
     const trimmedName = newNameInput.trim();
-    if (!canUserEditTargetName) {
-      alert('🚫 ليس لديك الصلاحية لتعديل اسم هذا العضو بحسب الرتبة!');
+    if (!canUserChangeTargetUsername) {
+      showTopBanner('🚫 ميزة تغيير اسم المستخدم معطلة أو ليس لديك الصلاحية بحسب الرتبة!');
       return;
     }
 
-    let res: { success: boolean; error?: string };
-    if (currentUser?.id === target.id) {
-      res = await updateUserProfile({ username: trimmedName });
-    } else {
-      res = await ownerUpdateUser(target.id, { username: trimmedName });
-    }
+    try {
+      const res = await fetch('/api/users/change-username', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: target.id,
+          newUsername: trimmedName,
+          requesterId: currentUser?.id
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showTopBanner(`❌ فشل تغيير الاسم: ${data.error || 'يرجى المحاولة مجدداً'}`);
+        return;
+      }
 
-    if (!res.success) {
-      showTopBanner(`❌ فشل تغيير الاسم: ${res.error || 'خطأ'}`);
-      alert(`❌ فشل تغيير الاسم: ${res.error || 'يرجى المحاولة مجدداً'}`);
-      return;
+      setIsEditingName(false);
+      showTopBanner(`✨ تم تغيير اسم العضو إلى (${trimmedName}) بنجاح وحفظه في السيرفر`);
+    } catch (e: any) {
+      showTopBanner(`❌ حدث خطأ في الاتصال بالخادم: ${e?.message || 'خطأ غير معروف'}`);
     }
-
-    setIsEditingName(false);
-    showTopBanner(`✨ تم تغيير اسم العضو إلى (${trimmedName}) بنجاح وحفظه في السيرفر`);
   };
 
   // Username Color Handler
@@ -670,17 +679,23 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     });
   };
 
-  // Delete Account (Owner)
+  // Delete Account (Primary Owner only)
   const handleDeleteAccount = () => {
-    if (target.role === 'owner') {
-      showTopBanner('🚫 لا يمكنك حذف حساب المالك الرئيسي!');
+    if (!isPrimaryOwner(currentUser)) {
+      showTopBanner('🚫 حذف الحسابات من الموقع محصور بالمالك الرئيسي فقط (PRIMARY_OWNER).');
+      alert('🚫 حذف الحسابات من الموقع محصور بالمالك الرئيسي فقط (PRIMARY_OWNER).');
       return;
     }
-    if (target.role === 'admin' && currentUser?.role !== 'owner') {
-      showTopBanner('🚫 لا يمكنك حذف حساب الأدمن! المالك فقط من يملك الصلاحية.');
+    if (isPrimaryOwner(target) || target.id === 'user-owner') {
+      showTopBanner('🚫 حساب صاحب الموقع الأساسي محمي بشكل دائم ومطلق، ولا يمكن حذفه بأي شكل!');
+      alert('🚫 حساب صاحب الموقع الأساسي محمي بشكل دائم ومطلق، ولا يمكن حذفه بأي شكل!');
       return;
     }
-    moderatorAction(target.id, 'delete_account', 0, 'حذف حساب من المالك');
+    if (!confirm(`هل أنت متأكد من رغبتك بحذف حساب (${target.username}) نهائياً من الموقع؟`)) {
+      return;
+    }
+    deleteUserAccount(target.id);
+    moderatorAction(target.id, 'delete_account', 0, 'حذف حساب من المالك الرئيسي');
     setShowCommandOverlay(false);
     handleClose();
     showTopBanner(`🗑️ تم حذف حساب العضو (${target.username}) بنجاح`);
@@ -1092,20 +1107,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                           </button>
                         )}
 
-                        {/* 7. Control Panel / Owner Dashboard (لوحة تحكم) */}
-                        <button
-                          onClick={() => {
-                            setShowHeaderMenu(false);
-                            setIsOwnerDashboardOpen(true);
-                          }}
-                          className="w-full px-4 py-3 flex items-center justify-between hover:bg-amber-50 text-amber-900 transition-colors cursor-pointer"
-                        >
-                          <span className="font-extrabold text-xs text-amber-800 flex items-center gap-1">
-                            <span>لوحة تحكم</span>
-                            <RoleBadge role="owner" size="xs" />
-                          </span>
-                          <Shield className="w-4 h-4 text-amber-600 shrink-0" />
-                        </button>
+                        {/* 7. Control Panel / Owner Dashboard (لوحة تحكم المالك الرئيسي) */}
+                        {isPrimaryOwner(currentUser) && (
+                          <button
+                            onClick={() => {
+                              setShowHeaderMenu(false);
+                              setIsOwnerDashboardOpen(true);
+                            }}
+                            className="w-full px-4 py-3 flex items-center justify-between hover:bg-amber-50 text-amber-900 transition-colors cursor-pointer"
+                          >
+                            <span className="font-extrabold text-xs text-amber-800 flex items-center gap-1">
+                              <span>لوحة تحكم المالك الرئيسي</span>
+                              <RoleBadge role="owner" size="xs" />
+                            </span>
+                            <Shield className="w-4 h-4 text-amber-600 shrink-0" />
+                          </button>
+                        )}
                       </>
                     )}
 
@@ -1923,16 +1940,19 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                             )}
                           </button>
 
-                          <button
-                            onClick={handleDeleteAccount}
-                            className="w-full bg-red-500 hover:bg-red-600 text-white rounded-2xl p-3 flex items-center justify-between text-right transition-all cursor-pointer shadow-xs"
-                          >
-                            <div className="flex flex-col text-right">
-                              <span className="font-extrabold text-xs text-white">حذف حساب العضو بالكامل 🗑️</span>
-                              <span className="text-[10px] text-red-100 font-medium">حذف نهائي للحساب من السيرفر</span>
-                            </div>
-                            <Trash2 className="w-4 h-4 text-white shrink-0" />
-                          </button>
+                          {/* Delete Account: Strictly Primary Owner Only */}
+                          {isPrimaryOwner(currentUser) && (
+                            <button
+                              onClick={handleDeleteAccount}
+                              className="w-full bg-red-500 hover:bg-red-600 text-white rounded-2xl p-3 flex items-center justify-between text-right transition-all cursor-pointer shadow-xs"
+                            >
+                              <div className="flex flex-col text-right">
+                                <span className="font-extrabold text-xs text-white">حذف حساب العضو بالكامل 🗑️</span>
+                                <span className="text-[10px] text-red-100 font-medium">حذف نهائي للحساب من السيرفر (المالك الرئيسي فقط)</span>
+                              </div>
+                              <Trash2 className="w-4 h-4 text-white shrink-0" />
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -2310,35 +2330,39 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
                     <div className="grid grid-cols-2 divide-x divide-x-reverse divide-y divide-slate-100 text-slate-800">
                       
-                      {/* Row 1, Col 1 (Right): ★ تغيير رتبة */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!isOwner) {
-                            showTopBanner('👑 تغيير الرتب متاح للمالك الرئيسي فقط');
-                            alert('👑 تغيير الرتب متاح للمالك الرئيسي فقط');
-                            return;
-                          }
-                          setShowRankChangeModal(true);
-                        }}
-                        className="p-3.5 flex items-center justify-between transition-all cursor-pointer hover:bg-slate-50"
-                      >
-                        <span className="text-amber-500 text-base font-bold">★</span>
-                        <span className="text-xs font-extrabold">تغيير رتبة</span>
-                      </button>
+                      {/* Row 1, Col 1 (Right): ★ تغيير رتبة (المالك الرئيسي فقط) */}
+                      {isPrimaryOwner(currentUser) ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowRankChangeModal(true);
+                          }}
+                          className="p-3.5 flex items-center justify-between transition-all cursor-pointer hover:bg-slate-50"
+                        >
+                          <span className="text-amber-500 text-base font-bold">★</span>
+                          <span className="text-xs font-extrabold text-slate-800">تغيير رتبة</span>
+                        </button>
+                      ) : (
+                        <div className="p-3.5 flex items-center justify-between opacity-50 bg-slate-50 cursor-not-allowed select-none">
+                          <span className="text-slate-400 text-sm">🔒</span>
+                          <span className="text-[11px] font-bold text-slate-400">تغيير رتبة (المالك فقط)</span>
+                        </div>
+                      )}
 
-                      {/* Row 1, Col 2 (Left): 📝 اسم المستخدم */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNewNameInput(target.username);
-                          setShowNameChangeModal(true);
-                        }}
-                        className="p-3.5 flex items-center justify-between transition-all cursor-pointer hover:bg-slate-50"
-                      >
-                        <span className="text-sky-600 text-base font-bold">📝</span>
-                        <span className="text-xs font-extrabold">اسم المستخدم</span>
-                      </button>
+                      {/* Row 1, Col 2 (Left): 📝 تغيير اسم المستخدم (يخفى برمجياً عند التعطيل) */}
+                      {canUserChangeTargetUsername && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewNameInput(target.username);
+                            setShowNameChangeModal(true);
+                          }}
+                          className="p-3.5 flex items-center justify-between transition-all cursor-pointer hover:bg-slate-50"
+                        >
+                          <span className="text-sky-600 text-base font-bold">📝</span>
+                          <span className="text-xs font-extrabold">تغيير اسم المستخدم</span>
+                        </button>
+                      )}
 
                       {/* Row 2, Col 1 (Right): 🖌️ تغير لون اسم المستخدم */}
                       <button
@@ -2373,8 +2397,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Owner Special Action: 🔑 تغيير باسورد العضو (يظهر فقط للمالك) */}
-                  {isOwner && (
+                  {/* Primary Owner Special Action: 🔑 تغيير باسورد العضو (يظهر حصرياً للمالك الرئيسي) */}
+                  {isPrimaryOwner(currentUser) && (
                     <div className="bg-white rounded-2xl border border-amber-200 overflow-hidden shadow-xs">
                       <button
                         type="button"
@@ -2388,8 +2412,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                           <span className="text-amber-500 text-base font-bold">🔑</span>
                           <span className="text-xs font-extrabold">تغيير باسورد العضو</span>
                         </div>
-                        <span className="text-[10px] bg-sky-100 text-sky-900 px-2 py-0.5 rounded-md font-bold flex items-center gap-1">
-                          <span>صلاحية المالك فقط</span>
+                        <span className="text-[10px] bg-amber-100 text-amber-900 px-2 py-0.5 rounded-md font-bold flex items-center gap-1">
+                          <span>المالك الرئيسي فقط</span>
                           <RoleBadge role="owner" size="xs" />
                         </span>
                       </button>
@@ -2625,77 +2649,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       )}
 
       {/* ======================================================== */}
-      {/* 1. POPUP MODAL: تعديل اسم المستخدم (MATCHING SCREENSHOT) */}
+      {/* 1. POPUP MODAL: تعديل اسم المستخدم مع التحقق من السيرفر لحظياً */}
       {/* ======================================================== */}
-      {showNameChangeModal && (
-        <div
-          onClick={() => setShowNameChangeModal(false)}
-          className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150 dir-rtl font-sans"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-2xl w-full max-w-sm sm:max-w-md overflow-hidden shadow-2xl border border-slate-200 text-right animate-in zoom-in-95 duration-150"
-          >
-            {/* Dark Teal Header Matching Screenshot */}
-            <div className="bg-[#002f34] text-white px-4 py-3 flex items-center justify-between">
-              <span className="font-black text-sm text-white">اسم المستخدم</span>
-              <button
-                type="button"
-                onClick={() => setShowNameChangeModal(false)}
-                className="text-white/80 hover:text-white transition-colors p-1 cursor-pointer"
-                title="إغلاق"
-              >
-                <X className="w-5 h-5 stroke-[2.5]" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-4 sm:p-5 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5 text-right">
-                  اسم المستخدم
-                </label>
-                <input
-                  type="text"
-                  value={newNameInput}
-                  onChange={(e) => setNewNameInput(e.target.value)}
-                  placeholder="اكتب اسم المستخدم..."
-                  className="w-full bg-[#f1f5f9] border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 text-right"
-                  autoFocus
-                />
-              </div>
-
-              {/* Action Buttons Matching Screenshot */}
-              <div className="flex items-center justify-start gap-2.5 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleSaveNewName();
-                    setShowNameChangeModal(false);
-                  }}
-                  className="bg-[#0284c7] hover:bg-[#0369a1] active:scale-95 text-white font-black text-xs px-5 py-2.5 rounded-xl transition-all cursor-pointer shadow-md flex items-center gap-1.5"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>حفظ</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowNameChangeModal(false)}
-                  className="bg-[#002f34] hover:bg-[#001f24] active:scale-95 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition-all cursor-pointer"
-                >
-                  <span>إلغاء</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <ChangeUsernameModal
+        isOpen={showNameChangeModal}
+        onClose={() => setShowNameChangeModal(false)}
+        targetUser={target}
+        onSuccess={(newName) => {
+          setNewNameInput(newName);
+        }}
+      />
 
       {/* ======================================================== */}
-      {/* 2. POPUP MODAL: تغيير رتبة المستخدم (VERTICAL LIST)     */}
+      {/* 2. POPUP MODAL: تغيير رتبة المستخدم (المالك الرئيسي فقط) */}
       {/* ======================================================== */}
-      {showRankChangeModal && (
+      {showRankChangeModal && isPrimaryOwner(currentUser) && (
         <div
           onClick={() => setShowRankChangeModal(false)}
           className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150 dir-rtl font-sans"
@@ -2797,9 +2765,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       )}
 
       {/* ======================================================== */}
-      {/* 3. POPUP MODAL: تغيير باسورد العضو (OWNER EXCLUSIVE)    */}
+      {/* 3. POPUP MODAL: تغيير باسورد العضو (PRIMARY OWNER EXCLUSIVE) */}
       {/* ======================================================== */}
-      {showPasswordChangeModal && (
+      {showPasswordChangeModal && isPrimaryOwner(currentUser) && (
         <div
           onClick={() => setShowPasswordChangeModal(false)}
           className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150 dir-rtl font-sans"

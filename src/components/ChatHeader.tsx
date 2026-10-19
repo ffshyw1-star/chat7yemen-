@@ -14,7 +14,7 @@ export const ChatHeader: React.FC = () => {
     setSelectedUserForProfile, setIsStoreOpen,
     setIsSideMenuOpen, setIsReportsOpen, setIsNotificationsOpen,
     setIsFriendRequestsOpen, setIsPrivateChatOpen, setIsRoomSettingsOpen, setIsOwnerDashboardOpen, setIsGoogleChatOpen, setCurrentView, logout, setIsLogoutConfirmOpen,
-    toggleAdminStealth, currentUserCan
+    toggleAdminStealth, currentUserCan, setIsRoomsListOpen
   } = useChat();
 
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
@@ -45,9 +45,9 @@ export const ChatHeader: React.FC = () => {
           {/* 1. Far Right: User Circular Avatar & Profile Dropdown */}
           <div className="relative">
             <button
-              onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+              onClick={() => setIsProfileMenuOpen(prev => !prev)}
               className="flex items-center gap-1 transition-transform active:scale-95 cursor-pointer p-0.5 rounded-full hover:ring-2 hover:ring-slate-700"
-              title="ملفي الشخصي"
+              title="ملفي الشخصي وقائمتي"
             >
               <UserAvatar
                 avatarUrl={currentUser.avatar}
@@ -56,19 +56,20 @@ export const ChatHeader: React.FC = () => {
                 username={currentUser.username}
                 size="sm"
                 showRankBadge
+                enableImageMenu={false}
               />
             </button>
 
-            {/* Profile Dropdown Menu */}
+            {/* Profile Dropdown Menu - Fixed positioning on mobile so it is never clipped */}
             {isProfileMenuOpen && (
               <>
                 {/* Backdrop to close on click outside */}
                 <div
-                  className="fixed inset-0 z-40 bg-transparent"
+                  className="fixed inset-0 z-[90] bg-black/40 backdrop-blur-2xs"
                   onClick={() => setIsProfileMenuOpen(false)}
                 />
 
-                <div className="absolute right-0 top-full mt-2 w-64 bg-slate-900 border border-slate-700/90 rounded-2xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-150 dir-rtl text-right ring-1 ring-black/40">
+                <div className="fixed sm:absolute top-13 right-2 sm:right-0 sm:top-full mt-1.5 w-[calc(100vw-1rem)] max-w-[280px] sm:w-72 bg-slate-900 border border-slate-700/90 rounded-2xl shadow-2xl overflow-hidden z-[100] animate-in fade-in slide-in-from-top-2 duration-150 dir-rtl text-right ring-1 ring-black/50">
                   
                   {/* User Profile Mini Header Card */}
                   <div
@@ -86,6 +87,7 @@ export const ChatHeader: React.FC = () => {
                       username={currentUser.username}
                       size="md"
                       showRankBadge
+                      enableImageMenu={false}
                     />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-1">
@@ -213,7 +215,7 @@ export const ChatHeader: React.FC = () => {
                         <div className="w-7 h-7 rounded-lg bg-red-500/15 flex items-center justify-center text-red-400">
                           <LogOut className="w-4 h-4" />
                         </div>
-                        <span>تسجيل الخروج</span>
+                        <span>خروج من الحساب</span>
                       </div>
                     </button>
                   </div>

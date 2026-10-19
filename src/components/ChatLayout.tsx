@@ -25,9 +25,11 @@ import { GoogleChatModal } from './GoogleChatModal';
 import { GoogleDriveModal } from './GoogleDriveModal';
 import { RadioPlayerModal } from './RadioPlayerModal';
 import { TextContextMenuModal, ImageContextMenuModal } from './ContextMenuModals';
+import { isPrimaryOwner } from '../utils/permissions';
 
 export const ChatLayout: React.FC = () => {
   const {
+    currentUser,
     themeMode,
     isOnlineListOpen, setIsOnlineListOpen, isRoomsListOpen, setIsRoomsListOpen, selectedUserForCard, selectedUserForProfile,
     isProfileSettingsOpen, isOwnerDashboardOpen, isStoreOpen, isSideMenuOpen, isPrivateChatOpen,
@@ -52,7 +54,7 @@ export const ChatLayout: React.FC = () => {
           <ChatInput />
         </div>
 
-        {/* Right-Aligned Drawer Panel for Online Users & Rooms (Identical Width & Height) */}
+        {/* Right-Aligned Drawer Panel for Online Users & Rooms */}
         {(isOnlineListOpen || isRoomsListOpen) && (
           <div className="absolute inset-0 z-30 flex">
             {/* Right Drawer Panel placed on the RIGHT side of the screen */}
@@ -89,7 +91,7 @@ export const ChatLayout: React.FC = () => {
       {isFriendRequestsOpen && <FriendRequestsModal />}
       {isRoomLogsOpen && <RoomLogsModal />}
       {isRoomSettingsOpen && <RoomSettingsModal />}
-      {isOwnerDashboardOpen && <OwnerDashboardModal />}
+      {isOwnerDashboardOpen && isPrimaryOwner(currentUser) && <OwnerDashboardModal />}
       <KickedOverlayModal />
       <LogoutConfirmModal />
       <RoomPasswordModal />

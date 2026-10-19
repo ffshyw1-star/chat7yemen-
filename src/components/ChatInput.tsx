@@ -278,7 +278,7 @@ export const ChatInput: React.FC = () => {
     sendMessage(title || 'مقطع من YouTube', 'youtube', ytId);
   };
 
-  const handleSend = (e?: React.FormEvent) => {
+  const handleSend = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
 
     if (isMutedInCurrentRoom) {
@@ -314,7 +314,7 @@ export const ChatInput: React.FC = () => {
 
     const trimmed = text.trim();
 
-    sendMessage(
+    const sent = await sendMessage(
       trimmed,
       'text',
       undefined,
@@ -331,9 +331,11 @@ export const ChatInput: React.FC = () => {
       targetedUserForMessage ? { id: targetedUserForMessage.userId, username: targetedUserForMessage.username } : undefined
     );
 
-    setText('');
-    setTargetedUserForMessage(null);
-    setIsEmojiOpen(false);
+    if (sent) {
+      setText('');
+      setTargetedUserForMessage(null);
+      setIsEmojiOpen(false);
+    }
   };
 
   // Start voice recording

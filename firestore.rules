@@ -55,8 +55,7 @@ service cloud.firestore {
         data.id == 'user-owner' ||
         data.isPrimaryOwner == true ||
         data.is_primary_owner == true ||
-        data.email == 'alzymasd9@gmail.com' ||
-        (data.role == 'owner' && (data.username == 'Owner' || data.username == 'صاحب الموقع'))
+        data.email == 'alzymasd9@gmail.com'
       );
     }
 
@@ -129,6 +128,11 @@ service cloud.firestore {
       allow read: if true;
       allow create, update: if true;
       allow delete: if false;
+    }
+
+    // Admin & Dispute Audit Logs System
+    match /audit_logs/{logId} {
+      allow read, write: if true;
     }
   }
 }

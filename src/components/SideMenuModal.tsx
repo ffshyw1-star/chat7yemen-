@@ -3,7 +3,7 @@ import { useChat } from '../context/ChatContext';
 import { UserAvatar } from './UserAvatar';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { OnlineStatus, NewsPost, WallPost, User } from '../types';
-import { isStaff } from '../utils/permissions';
+import { isStaff, isPrimaryOwner } from '../utils/permissions';
 import {
   X, Newspaper, Users, CreditCard, Ban, Radio, Send, Heart,
   ChevronDown, ChevronUp, ClipboardList, ShieldAlert, Sparkles,
@@ -333,8 +333,8 @@ export const SideMenuModal: React.FC = () => {
               </span>
             </button>
 
-             {/* 6. Control Panel / Owner Dashboard (لوحة تحكم المالك) */}
-             {currentUser.role === 'owner' && (
+             {/* 6. Control Panel / Owner Dashboard (لوحة تحكم المالك الرئيسي) */}
+             {isPrimaryOwner(currentUser) && (
                <button
                  onClick={() => {
                    setIsSideMenuOpen(false);
@@ -344,7 +344,7 @@ export const SideMenuModal: React.FC = () => {
                >
                   <div className="flex items-center gap-3">
                     <img src="/owner.svg" alt="owner" className="w-6 h-6 object-contain" />
-                    <span className="text-sm font-black text-amber-800">لوحة تحكم المالك</span>
+                    <span className="text-sm font-black text-amber-800">لوحة تحكم المالك الرئيسي</span>
                   </div>
                </button>
              )}

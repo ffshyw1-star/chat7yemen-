@@ -2,7 +2,15 @@ import React, { useState } from 'react';
 import { useChat } from '../context/ChatContext';
 import { UserAvatar } from './UserAvatar';
 import { UsernameDisplay } from './UsernameDisplay';
-import { canPerformModActions, canBeIgnored, isPrimaryOwner, isGrantedOwner } from '../utils/permissions';
+import {
+  canPerformModActions,
+  canAccessRoomOptions,
+  canBan,
+  canDeleteAccount,
+  canBeIgnored,
+  isPrimaryOwner,
+  isGrantedOwner
+} from '../utils/permissions';
 import { getUserFlagEmoji, getArabicCountryName, getEnglishCountryName } from '../utils/geoip';
 import { toEnglishDigits } from '../utils/dateUtils';
 import {
@@ -27,7 +35,8 @@ export const UserCardModal: React.FC = () => {
     setSelectedUserForProfile, setActivePrivateUserId, setIsPrivateChatOpen,
     setIsProfileSettingsOpen, banList, ipModerations,
     currentUser, users, currentRoom, moderatorAction, muteUserInRoom, unmuteUserInRoom,
-    kickUserFromRoom, unkickUserFromRoom, showTopBanner, requestBlockConfirm
+    kickUserFromRoom, unkickUserFromRoom, showTopBanner, requestBlockConfirm,
+    executeServerModerationAction
   } = useChat();
 
   const [showModCommands, setShowModCommands] = useState(false);
@@ -51,6 +60,9 @@ export const UserCardModal: React.FC = () => {
   const canPerformModCommands = (!isSystemTarget && !isPrimaryOwner(target) && target.id !== 'user-owner' && target.role !== 'owner')
     ? canPerformModActions(currentUser, target)
     : false;
+
+  const hasRoomOptionsAccess = canAccessRoomOptions(currentUser, target);
+  const hasBanAccess = canBan(currentUser, target);
 
 
   // Check if target is currently muted globally (checking active duration)
@@ -110,87 +122,209 @@ export const UserCardModal: React.FC = () => {
   };
 
   // Execute Global Mute from Basic Tab (shows System announcement in general chat)
-  const handleExecuteBasicMute = (duration: number = muteDuration) => {
-    moderatorAction(target.id, 'mute', duration, 'كتم من الإدارة');
-    setActionSuccessMsg('تم تنفيذ الأمر');
-    showTopBanner('تم كتم المستخدم بنجاح');
-    setTimeout(() => {
-      setActionSuccessMsg(null);
-      setSelectedUserForCard(null);
-    }, 1200);
+  const handleExecuteBasicMute = async (duration: number = muteDuration) => {
+    if (executeServerModerationAction) {
+      const res = await executeServerModerationAction({
+        targetUserId: target.id,
+        actionType: 'mute',
+        durationMinutes: duration,
+        reason: 'كتم من الإدارة'
+      });
+      if (res.success) {
+        setActionSuccessMsg('تم تنفيذ الأمر');
+        setTimeout(() => {
+          setActionSuccessMsg(null);
+          setSelectedUserForCard(null);
+        }, 1200);
+      }
+    } else {
+      moderatorAction(target.id, 'mute', duration, 'كتم من الإدارة');
+      setActionSuccessMsg('تم تنفيذ الأمر');
+      showTopBanner('تم كتم المستخدم بنجاح');
+      setTimeout(() => {
+        setActionSuccessMsg(null);
+        setSelectedUserForCard(null);
+      }, 1200);
+    }
   };
 
   // Execute Global Unmute from Basic Tab
-  const handleExecuteBasicUnmute = () => {
-    moderatorAction(target.id, 'unmute', 0, 'فك كتم من الإدارة');
-    setActionSuccessMsg('تم تنفيذ الأمر');
-    showTopBanner('تم فك الكتم بنجاح');
-    setTimeout(() => {
-      setActionSuccessMsg(null);
-      setSelectedUserForCard(null);
-    }, 1200);
+  const handleExecuteBasicUnmute = async () => {
+    if (executeServerModerationAction) {
+      const res = await executeServerModerationAction({
+        targetUserId: target.id,
+        actionType: 'unmute',
+        reason: 'فك كتم من الإدارة'
+      });
+      if (res.success) {
+        setActionSuccessMsg('تم تنفيذ الأمر');
+        setTimeout(() => {
+          setActionSuccessMsg(null);
+          setSelectedUserForCard(null);
+        }, 1200);
+      }
+    } else {
+      moderatorAction(target.id, 'unmute', 0, 'فك كتم من الإدارة');
+      setActionSuccessMsg('تم تنفيذ الأمر');
+      showTopBanner('تم فك الكتم بنجاح');
+      setTimeout(() => {
+        setActionSuccessMsg(null);
+        setSelectedUserForCard(null);
+      }, 1200);
+    }
   };
 
   // Execute Global Kick from Basic Tab (shows System announcement in general chat)
-  const handleExecuteBasicKick = () => {
-    moderatorAction(target.id, 'kick', 1440, 'طرد من الشات');
-    setActionSuccessMsg('تم تنفيذ الأمر');
-    showTopBanner('تم طرد المستخدم بنجاح');
-    setTimeout(() => {
-      setActionSuccessMsg(null);
-      setSelectedUserForCard(null);
-    }, 1200);
+  const handleExecuteBasicKick = async () => {
+    if (executeServerModerationAction) {
+      const res = await executeServerModerationAction({
+        targetUserId: target.id,
+        actionType: 'kick',
+        durationMinutes: 1440,
+        reason: 'طرد من الشات'
+      });
+      if (res.success) {
+        setActionSuccessMsg('تم تنفيذ الأمر');
+        setTimeout(() => {
+          setActionSuccessMsg(null);
+          setSelectedUserForCard(null);
+        }, 1200);
+      }
+    } else {
+      moderatorAction(target.id, 'kick', 1440, 'طرد من الشات');
+      setActionSuccessMsg('تم تنفيذ الأمر');
+      showTopBanner('تم طرد المستخدم بنجاح');
+      setTimeout(() => {
+        setActionSuccessMsg(null);
+        setSelectedUserForCard(null);
+      }, 1200);
+    }
   };
 
   // Execute Global Unkick from Basic Tab
-  const handleExecuteBasicUnkick = () => {
-    moderatorAction(target.id, 'unkick', 0, 'فك طرد من الإدارة');
-    setActionSuccessMsg('تم تنفيذ الأمر');
-    showTopBanner('تم فك الطرد بنجاح');
-    setTimeout(() => {
-      setActionSuccessMsg(null);
-      setSelectedUserForCard(null);
-    }, 1200);
+  const handleExecuteBasicUnkick = async () => {
+    if (executeServerModerationAction) {
+      const res = await executeServerModerationAction({
+        targetUserId: target.id,
+        actionType: 'unkick',
+        reason: 'فك طرد من الإدارة'
+      });
+      if (res.success) {
+        setActionSuccessMsg('تم تنفيذ الأمر');
+        setTimeout(() => {
+          setActionSuccessMsg(null);
+          setSelectedUserForCard(null);
+        }, 1200);
+      }
+    } else {
+      moderatorAction(target.id, 'unkick', 0, 'فك طرد من الإدارة');
+      setActionSuccessMsg('تم تنفيذ الأمر');
+      showTopBanner('تم فك الطرد بنجاح');
+      setTimeout(() => {
+        setActionSuccessMsg(null);
+        setSelectedUserForCard(null);
+      }, 1200);
+    }
   };
 
   // Direct Room Mute (Only in this room, NO System message in general)
-  const handleDirectRoomMute = () => {
-    muteUserInRoom(currentRoom.id, target.id);
-    setActionSuccessMsg('تم تنفيذ الأمر');
-    setTimeout(() => {
-      setActionSuccessMsg(null);
-      setSelectedUserForCard(null);
-    }, 1200);
+  const handleDirectRoomMute = async () => {
+    if (executeServerModerationAction) {
+      const res = await executeServerModerationAction({
+        targetUserId: target.id,
+        actionType: 'room_mute',
+        roomId: currentRoom.id
+      });
+      if (res.success) {
+        setActionSuccessMsg('تم تنفيذ الأمر');
+        setTimeout(() => {
+          setActionSuccessMsg(null);
+          setSelectedUserForCard(null);
+        }, 1200);
+      }
+    } else {
+      muteUserInRoom(currentRoom.id, target.id);
+      setActionSuccessMsg('تم تنفيذ الأمر');
+      setTimeout(() => {
+        setActionSuccessMsg(null);
+        setSelectedUserForCard(null);
+      }, 1200);
+    }
   };
 
   // Direct Room Unmute
-  const handleDirectRoomUnmute = () => {
-    unmuteUserInRoom(currentRoom.id, target.id);
-    setActionSuccessMsg('تم تنفيذ الأمر');
-    setTimeout(() => {
-      setActionSuccessMsg(null);
-      setSelectedUserForCard(null);
-    }, 1200);
+  const handleDirectRoomUnmute = async () => {
+    if (executeServerModerationAction) {
+      const res = await executeServerModerationAction({
+        targetUserId: target.id,
+        actionType: 'room_unmute',
+        roomId: currentRoom.id
+      });
+      if (res.success) {
+        setActionSuccessMsg('تم تنفيذ الأمر');
+        setTimeout(() => {
+          setActionSuccessMsg(null);
+          setSelectedUserForCard(null);
+        }, 1200);
+      }
+    } else {
+      unmuteUserInRoom(currentRoom.id, target.id);
+      setActionSuccessMsg('تم تنفيذ الأمر');
+      setTimeout(() => {
+        setActionSuccessMsg(null);
+        setSelectedUserForCard(null);
+      }, 1200);
+    }
   };
 
   // Direct instant kick from Room (Ejects from room, NO System message in general)
-  const handleDirectRoomKick = () => {
-    kickUserFromRoom(currentRoom.id, target.id);
-    setActionSuccessMsg('تم تنفيذ الأمر');
-    setTimeout(() => {
-      setActionSuccessMsg(null);
-      setSelectedUserForCard(null);
-    }, 1200);
+  const handleDirectRoomKick = async () => {
+    if (executeServerModerationAction) {
+      const res = await executeServerModerationAction({
+        targetUserId: target.id,
+        actionType: 'room_kick',
+        roomId: currentRoom.id
+      });
+      if (res.success) {
+        setActionSuccessMsg('تم تنفيذ الأمر');
+        setTimeout(() => {
+          setActionSuccessMsg(null);
+          setSelectedUserForCard(null);
+        }, 1200);
+      }
+    } else {
+      kickUserFromRoom(currentRoom.id, target.id);
+      setActionSuccessMsg('تم تنفيذ الأمر');
+      setTimeout(() => {
+        setActionSuccessMsg(null);
+        setSelectedUserForCard(null);
+      }, 1200);
+    }
   };
 
   // Direct Room Unkick
-  const handleDirectRoomUnkick = () => {
-    unkickUserFromRoom(currentRoom.id, target.id);
-    setActionSuccessMsg('تم تنفيذ الأمر');
-    setTimeout(() => {
-      setActionSuccessMsg(null);
-      setSelectedUserForCard(null);
-    }, 1200);
+  const handleDirectRoomUnkick = async () => {
+    if (executeServerModerationAction) {
+      const res = await executeServerModerationAction({
+        targetUserId: target.id,
+        actionType: 'room_unkick',
+        roomId: currentRoom.id
+      });
+      if (res.success) {
+        setActionSuccessMsg('تم تنفيذ الأمر');
+        setTimeout(() => {
+          setActionSuccessMsg(null);
+          setSelectedUserForCard(null);
+        }, 1200);
+      }
+    } else {
+      unkickUserFromRoom(currentRoom.id, target.id);
+      setActionSuccessMsg('تم تنفيذ الأمر');
+      setTimeout(() => {
+        setActionSuccessMsg(null);
+        setSelectedUserForCard(null);
+      }, 1200);
+    }
   };
 
   const handleClose = () => {
@@ -320,7 +454,7 @@ export const UserCardModal: React.FC = () => {
                     <button
                       onClick={() => {
                         setShowModCommands(true);
-                        setActiveTab('room_options');
+                        setActiveTab(hasRoomOptionsAccess ? 'room_options' : 'basic');
                         setActiveModAction('none');
                       }}
                       className="w-full py-3.5 px-5 hover:bg-slate-50 active:bg-slate-100 transition-colors flex items-center justify-between text-right cursor-pointer border-t border-slate-100"
@@ -384,19 +518,21 @@ export const UserCardModal: React.FC = () => {
               >
                 الأساسية
               </button>
-              <button
-                onClick={() => {
-                  setActiveTab('room_options');
-                  setActiveModAction('none');
-                }}
-                className={`py-2.5 px-5 text-center transition-colors cursor-pointer font-black ${
-                  activeTab === 'room_options'
-                    ? 'bg-[#002f34] text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                خيارات الغرفة
-              </button>
+              {hasRoomOptionsAccess && (
+                <button
+                  onClick={() => {
+                    setActiveTab('room_options');
+                    setActiveModAction('none');
+                  }}
+                  className={`py-2.5 px-5 text-center transition-colors cursor-pointer font-black ${
+                    activeTab === 'room_options'
+                      ? 'bg-[#002f34] text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  خيارات الغرفة
+                </button>
+              )}
               <div className="flex-1 bg-white border-b border-slate-200"></div>
             </div>
 
@@ -444,21 +580,31 @@ export const UserCardModal: React.FC = () => {
                             <Zap className="w-5 h-5 text-slate-800 fill-slate-800 group-hover:scale-110 transition-transform shrink-0" />
                           </button>
 
-                          {/* Button 3: حظر نهائي من الشات (للمالك والأدمن) */}
-                          {(currentUser?.role === 'owner' || currentUser?.role === 'admin') && !isPrimaryOwner(target) && target.id !== 'user-owner' && target.role !== 'owner' && (
-
+                          {/* Button 3: حظر نهائي من الشات (للمالك فقط وفقاً لصلاحيات النظام canBan) */}
+                          {hasBanAccess && (
                             <button
                               onClick={() => {
                                 const actionType = isTargetBanned ? 'unban' : 'ban';
-                                requestBlockConfirm(target, actionType, () => {
-                                  if (isTargetBanned) {
-                                    moderatorAction(target.id, 'unban', 0, 'فك حظر من الإدارة');
-                                    showTopBanner(`🔓 تم فك حظر العضو (${target.username}) بنجاح`);
+                                requestBlockConfirm(target, actionType, async () => {
+                                  if (executeServerModerationAction) {
+                                    const res = await executeServerModerationAction({
+                                      targetUserId: target.id,
+                                      actionType: isTargetBanned ? 'unban' : 'ban',
+                                      reason: isTargetBanned ? 'فك حظر من الإدارة' : 'حظر دائم من الإدارة'
+                                    });
+                                    if (res.success) {
+                                      handleClose();
+                                    }
                                   } else {
-                                    moderatorAction(target.id, 'ban', 0, 'حظر دائم من الإدارة');
-                                    showTopBanner(`🚫 تم حظر العضو (${target.username}) نهائياً من الشات`);
+                                    if (isTargetBanned) {
+                                      moderatorAction(target.id, 'unban', 0, 'فك حظر من الإدارة');
+                                      showTopBanner(`🔓 تم فك حظر العضو (${target.username}) بنجاح`);
+                                    } else {
+                                      moderatorAction(target.id, 'ban', 0, 'حظر دائم من الإدارة');
+                                      showTopBanner(`🚫 تم حظر العضو (${target.username}) نهائياً من الشات`);
+                                    }
+                                    handleClose();
                                   }
-                                  handleClose();
                                 });
                               }}
                               className={`w-full border rounded-xl p-3.5 flex items-center justify-between text-right transition-all cursor-pointer group shadow-xs ${
