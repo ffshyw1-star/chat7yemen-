@@ -163,6 +163,10 @@
     "/audit_logs/{logId}": {
       "schema": "AuditLog",
       "description": "Historical audit logs for dispute resolution and administration changes"
+    },
+    "/presence/{userId}": {
+      "schema": "UserProfile",
+      "description": "Real-time user presence and active room tracking"
     }
   }
 }

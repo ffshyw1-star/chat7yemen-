@@ -55,6 +55,7 @@ export interface User {
   id: string;
   username: string;
   isPrimaryOwner?: boolean; // حقل مؤكد لصاحب الموقع الأساسي (غير قابل للخفض أو التعديل أو الحذف)
+  is_primary_owner?: boolean;
   password?: string;
 
   passwordUpdatedAt?: number | string;
@@ -538,8 +539,19 @@ export interface SiteSettings {
   blockedDevices?: BlockedDeviceItem[];
   blockedBrowsers?: BlockedBrowserItem[];
   blockedCountries?: BlockedCountryItem[];
-  blockedXBands?: BlockedXBandItem[];
+  blockedXBands?: Array<{ range: string; reason: string; date: string; actionBy: string }>;
   backups?: BackupItem[];
+  // Dynamic SEO & Google Search Indexing Configuration
+  seoTitle?: string;
+  seoDescription?: string;
+  seoKeywords?: string;
+  seoCanonicalUrl?: string;
+  googleSiteVerification?: string;
+  bingSiteVerification?: string;
+  enableDynamicRoomSEO?: boolean;
+  sitemapAutoIncludeRooms?: boolean;
+  seoAuthor?: string;
+  seoOgImage?: string;
 }
 
 export interface GuestBanRecord {

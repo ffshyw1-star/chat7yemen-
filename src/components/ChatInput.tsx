@@ -472,7 +472,7 @@ export const ChatInput: React.FC = () => {
   };
 
   return (
-    <div className="shrink-0 z-20 bg-white border-t border-slate-200/90 p-2 sm:p-2.5 relative select-none shadow-xs dir-rtl">
+    <div id="top_chat_container" className="shrink-0 z-20 relative select-none shadow-xs dir-rtl">
       {/* Hidden Native File Inputs */}
       <input
         type="file"
@@ -704,21 +704,22 @@ export const ChatInput: React.FC = () => {
         </div>
       )}
 
-      {/* Main Input Controls Row: Send, Mic / Red Circle / Spinner, Pill Input, Emoji, Plus */}
-      <form onSubmit={handleSend} className="flex items-center gap-1.5 sm:gap-2">
-        {/* Circular Send Button (➤) on Far Right (DOM 1st in RTL) */}
+      {/* Main Input Controls Row: Send, Mic / Red Circle / Spinner, Main Input Box, Emoji, Plus */}
+      <form id="container_input" onSubmit={handleSend} className="flex items-center gap-1.5 sm:gap-2">
+        {/* Submit Button (#submit_button) on Far Right (DOM 1st in RTL) */}
         {!isRecording && (
           <button
+            id="submit_button"
             type="submit"
             disabled={isSendingVoice || (!text.trim() && !selectedFile && !recordedAudio)}
-            className={`chat-send-btn w-9 h-9 sm:w-10 sm:h-10 rounded-full font-bold transition-all shrink-0 flex items-center justify-center cursor-pointer ${
+            className={`w-[38px] h-[38px] min-w-[38px] rounded-full transition-all shrink-0 flex items-center justify-center cursor-pointer ${
               text.trim().length > 0 || selectedFile || recordedAudio
-                ? 'bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white shadow-md shadow-emerald-600/30'
-                : 'bg-slate-900 hover:bg-slate-800 active:scale-95 text-white/90 shadow-xs'
+                ? '!bg-emerald-600 hover:!bg-emerald-500 active:scale-95 text-white shadow-md shadow-emerald-600/30'
+                : '!bg-[rgb(1,40,50)] hover:!bg-[#023847] active:scale-95 text-white/90 shadow-xs'
             }`}
             title="إرسال الرسالة"
           >
-            <Send className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0 -translate-x-0.5" />
+            <i className="fa fa-paper-plane text-[15px] -translate-x-0.5"></i>
           </button>
         )}
 
@@ -730,10 +731,10 @@ export const ChatInput: React.FC = () => {
             <button
               type="button"
               disabled
-              className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-gradient-to-tr from-red-700 via-red-600 to-rose-500 text-white flex items-center justify-center shadow-lg shadow-red-500/40 border-2 border-white cursor-wait shrink-0 select-none"
+              className="w-[38px] h-[38px] min-w-[38px] rounded-full bg-gradient-to-tr from-red-700 via-red-600 to-rose-500 text-white flex items-center justify-center shadow-lg shadow-red-500/40 border-2 border-white cursor-wait shrink-0 select-none"
               title="جارٍ إرسال التسجيل الصوتي في العام..."
             >
-              <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin text-white stroke-[2.8]" />
+              <Loader2 className="w-5 h-5 animate-spin text-white stroke-[2.8]" />
             </button>
           </div>
         ) : isRecording ? (
@@ -744,7 +745,7 @@ export const ChatInput: React.FC = () => {
             <span className="absolute -inset-0.5 rounded-full bg-red-600/30 animate-pulse pointer-events-none" />
 
             {/* Circular Progress Track towards 120s */}
-            <svg className="absolute -inset-1 w-12 h-12 sm:w-13 sm:h-13 -rotate-90 pointer-events-none" viewBox="0 0 52 52">
+            <svg className="absolute -inset-1 w-11 h-11 -rotate-90 pointer-events-none" viewBox="0 0 52 52">
               <circle
                 cx="26"
                 cy="26"
@@ -770,11 +771,11 @@ export const ChatInput: React.FC = () => {
             <button
               type="button"
               onClick={handleFinishAndSendVoice}
-              className="relative z-10 w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-gradient-to-tr from-red-700 via-red-600 to-rose-500 hover:from-red-600 hover:to-rose-400 active:scale-95 text-white flex items-center justify-center shadow-lg shadow-red-600/50 border-2 border-white cursor-pointer transition-transform group"
+              className="relative z-10 w-[38px] h-[38px] min-w-[38px] rounded-full bg-gradient-to-tr from-red-700 via-red-600 to-rose-500 hover:from-red-600 hover:to-rose-400 active:scale-95 text-white flex items-center justify-center shadow-lg shadow-red-600/50 border-2 border-white cursor-pointer transition-transform group"
               title="اضغط على الدائرة الحمراء لإرسال التسجيل الصوتي في العام"
             >
               <div className="flex flex-col items-center justify-center leading-none text-white select-none">
-                <span className="text-[11px] sm:text-xs font-black font-mono tracking-tight drop-shadow-xs">
+                <span className="text-[11px] font-black font-mono tracking-tight drop-shadow-xs">
                   {recordingSeconds < 60
                     ? `${recordingSeconds}ث`
                     : `${Math.floor(recordingSeconds / 60)}:${(recordingSeconds % 60).toString().padStart(2, '0')}`
@@ -788,16 +789,16 @@ export const ChatInput: React.FC = () => {
           <button
             type="button"
             onClick={startVoiceRecording}
-            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full hover:bg-red-50 text-slate-600 hover:text-red-600 border border-transparent hover:border-red-200 transition-all shrink-0 cursor-pointer flex items-center justify-center hover:scale-105 active:scale-95"
+            className="w-[38px] h-[38px] min-w-[38px] rounded-full hover:bg-red-50 text-slate-600 hover:text-red-600 border border-transparent hover:border-red-200 transition-all shrink-0 cursor-pointer flex items-center justify-center hover:scale-105 active:scale-95"
             title="تسجيل صوتي (اضغط للتسجيل - من ثانية إلى 120 ثانية)"
           >
-            <Mic className="w-5 h-5" />
+            <i className="fa fa-microphone text-[17px]"></i>
           </button>
         )}
 
         {/* Center Field: Recording Strip with Wave & Cancel OR Sending Bar OR Regular Input */}
         {isRecording ? (
-          <div className="flex-1 bg-red-50 border border-red-200 rounded-full px-3 sm:px-4 py-1.5 sm:py-2 flex items-center justify-between gap-2 text-xs shadow-inner animate-in fade-in duration-150">
+          <div className="flex-1 bg-red-50 border border-red-200 rounded-full px-3 sm:px-4 py-1.5 flex items-center justify-between gap-2 text-xs shadow-inner animate-in fade-in duration-150 h-[38px]">
             <div className="flex items-center gap-2 text-red-700 font-bold truncate">
               {/* Sound wave animated equalizer bars */}
               <div className="flex items-center gap-0.5 shrink-0">
@@ -825,17 +826,20 @@ export const ChatInput: React.FC = () => {
             </button>
           </div>
         ) : isSendingVoice ? (
-          <div className="flex-1 bg-red-50/90 border border-red-200 rounded-full px-4 py-2 flex items-center gap-2 text-xs text-red-700 font-bold shadow-inner animate-pulse">
+          <div className="flex-1 bg-red-50/90 border border-red-200 rounded-full px-4 py-1.5 flex items-center gap-2 text-xs text-red-700 font-bold shadow-inner animate-pulse h-[38px]">
             <Loader2 className="w-4 h-4 animate-spin text-red-600 shrink-0" />
             <span className="text-xs">جارٍ إرسال التسجيل الصوتي في العام...</span>
           </div>
         ) : (
-          /* Center Pill Input Text Field */
-          <div className={`flex-1 relative flex items-center bg-slate-50 border ${
-            isMutedInCurrentRoom
-              ? 'border-dashed border-red-300 bg-slate-100/90'
-              : 'border-slate-300/90 focus-within:border-sky-500 focus-within:bg-white'
-          } rounded-full px-2.5 sm:px-3 py-1 sm:py-1.5 shadow-inner transition-colors min-h-[38px] sm:min-h-[42px]`}>
+          /* Center Input Box Container (#main_input_box) */
+          <div
+            id="main_input_box"
+            className={`flex-1 relative flex items-center bg-[#f8fafc] border ${
+              isMutedInCurrentRoom
+                ? 'border-dashed border-red-300 bg-slate-100/90'
+                : 'border-slate-300 focus-within:border-[rgb(1,40,50)] focus-within:bg-white'
+            } rounded-full px-2.5 sm:px-3 py-0 shadow-inner transition-colors h-[38px] min-h-[38px]`}
+          >
             {/* Command Suggestion Box when typing / */}
             {text.startsWith('/') && (
               <div
@@ -880,6 +884,8 @@ export const ChatInput: React.FC = () => {
             )}
 
             <input
+              id="content"
+              data-alias="main_input"
               ref={inputRef}
               type="text"
               value={text}
@@ -900,25 +906,25 @@ export const ChatInput: React.FC = () => {
                 fontFamily: currentUser?.chatFontFamily || undefined,
                 fontStyle: currentUser?.chatFontStyle === 'italic' ? 'italic' : undefined,
               }}
-              className="flex-1 bg-transparent border-0 px-1 py-1 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-0 min-w-0"
+              className="flex-1 bg-transparent border-0 px-1 py-1 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-0 min-w-0 h-full"
             />
           </div>
         )}
 
-        {/* Retro Emoticons Button (😊) */}
+        {/* Retro Emoticons Button (fa fa-smile) */}
         <button
           type="button"
           onClick={() => {
             setIsEmojiOpen(!isEmojiOpen);
             setIsMediaOpen(false);
           }}
-          className="w-9 h-9 sm:w-10 sm:h-10 rounded-full hover:bg-slate-100 text-slate-600 hover:text-amber-600 transition-colors shrink-0 cursor-pointer flex items-center justify-center"
+          className="w-[38px] h-[38px] min-w-[38px] rounded-full hover:bg-slate-100 text-slate-600 hover:text-amber-600 transition-colors shrink-0 cursor-pointer flex items-center justify-center"
           title="قائمة الإيموجي"
         >
-          <Smile className="w-5 h-5" />
+          <i className="fa fa-smile text-[18px]"></i>
         </button>
 
-        {/* Plus Media & Formatting Button (➕) on Far Left (DOM last in RTL) */}
+        {/* Plus Media & Formatting Button (fa fa-plus) on Far Left (DOM last in RTL) */}
         <button
           id="plus-main-btn"
           type="button"
@@ -926,14 +932,14 @@ export const ChatInput: React.FC = () => {
             setIsMediaOpen(!isMediaOpen);
             setIsEmojiOpen(false);
           }}
-          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full transition-all shrink-0 cursor-pointer flex items-center justify-center active:scale-95 ${
+          className={`w-[38px] h-[38px] min-w-[38px] rounded-full transition-all shrink-0 cursor-pointer flex items-center justify-center active:scale-95 ${
             isMediaOpen
-              ? 'bg-slate-900 text-white ring-2 ring-slate-400'
+              ? '!bg-[rgb(1,40,50)] text-white ring-2 ring-slate-400'
               : 'bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 hover:text-slate-900'
           }`}
           title="أدوات إضافية: الكاميرا، الوسائط، خلفية الرسالة، لوحة الرسم، يوتيوب، Drive"
         >
-          <Plus className={`w-5 h-5 transition-transform duration-150 ${isMediaOpen ? 'rotate-45' : ''}`} />
+          <i className={`fa fa-plus text-[16px] transition-transform duration-150 ${isMediaOpen ? 'rotate-45' : ''}`}></i>
         </button>
       </form>
 

@@ -49,7 +49,7 @@ export const ChatLayout: React.FC = () => {
       {/* 2. Middle Chat Area with Side Panels */}
       <div className="flex-1 flex min-h-0 overflow-hidden relative">
         {/* Central Chat Messages Box */}
-        <div className="flex-1 flex flex-col min-w-0 min-h-0 h-full relative">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 h-full relative pb-[calc(var(--footer-height,46px)+env(safe-area-inset-bottom,0px))]">
           <ChatMessages />
           <ChatInput />
         </div>
@@ -85,7 +85,7 @@ export const ChatLayout: React.FC = () => {
       {isProfileSettingsOpen && <AccountSettingsModal />}
       {isStoreOpen && <StoreModal />}
       {isSideMenuOpen && <SideMenuModal />}
-      {isPrivateChatOpen && <PrivateChatModal />}
+      <PrivateChatModal />
       {isReportsOpen && <ReportsModal />}
       {isNotificationsOpen && <NotificationsModal />}
       {isFriendRequestsOpen && <FriendRequestsModal />}

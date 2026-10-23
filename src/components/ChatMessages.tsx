@@ -216,6 +216,50 @@ export const ChatMessages: React.FC = () => {
     }
   };
 
+  // Register ArabSyemen runtime window functions
+  useEffect(() => {
+    (window as any).beautyLogs = () => {
+      const logs = document.querySelectorAll('.ch_logs');
+      logs.forEach((el, index) => {
+        el.classList.remove('log2');
+        if (index % 2 === 0) {
+          el.classList.add('log2');
+        }
+      });
+    };
+
+    (window as any).scrollIt = (fload?: boolean) => {
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+      }
+    };
+
+    (window as any).chatReload = () => {
+      console.log('chatReload() called');
+    };
+
+    (window as any).logsControl = () => {
+      console.log('logsControl() called');
+    };
+
+    (window as any).logPending = () => {
+      console.log('logPending() called');
+    };
+
+    (window as any).logMenu = (elem: any, id: string, d?: any, p?: any) => {
+      console.log('logMenu() called for id:', id);
+    };
+
+    return () => {
+      delete (window as any).beautyLogs;
+      delete (window as any).scrollIt;
+      delete (window as any).chatReload;
+      delete (window as any).logsControl;
+      delete (window as any).logPending;
+      delete (window as any).logMenu;
+    };
+  }, []);
+
   // Allowed older messages per role according to system specifications:
   // - visitor: 0 older messages (only current messages upon joining)
   // - member: up to 200 older messages
@@ -605,6 +649,7 @@ export const ChatMessages: React.FC = () => {
 
   return (
     <div
+      id="chat_logs_container"
       ref={scrollContainerRef}
       onScroll={handleScroll}
       onTouchStart={handleTouchStart}
@@ -641,8 +686,8 @@ export const ChatMessages: React.FC = () => {
         )}
       </div>
 
-      {/* Main Messages List: Starts from bottom with mt-auto */}
-      <div className="flex-1 flex flex-col justify-end mt-auto min-h-0 divide-y divide-slate-100/90">
+      {/* Main Messages List: ArabSyemen #show_chat */}
+      <ul id="show_chat" className="flex-1 flex flex-col justify-end mt-auto min-h-0 list-none m-0 p-0">
         {displayedMessages.length === 0 ? (
           renderTopicBanner()
         ) : (
@@ -669,9 +714,10 @@ export const ChatMessages: React.FC = () => {
 
               return (
                 <React.Fragment key={msg.id}>
-                  <div
+                  <li
                     id={`room-event-${msg.id}`}
-                    className="flex items-center justify-between gap-2 px-3 py-1.5 sm:px-4 sm:py-2 bg-slate-50/60 hover:bg-slate-100/70 border-y border-slate-100/90 transition-colors group relative dir-rtl my-0.5 select-none"
+                    data-id={msg.id}
+                    className={`ch_logs room__event ${msgIndex % 2 === 0 ? 'log2' : ''} flex items-center justify-between gap-2 px-3 py-1.5 sm:px-4 sm:py-2 bg-slate-50/60 hover:bg-slate-100/70 border-y border-slate-100/90 transition-colors group relative dir-rtl my-0.5 select-none`}
                   >
                     <div className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-0 flex-wrap">
                       {/* Left arrow indicator */}
@@ -726,7 +772,7 @@ export const ChatMessages: React.FC = () => {
                         {toEnglishDigits(msg.timestamp || '')}
                       </span>
                     </div>
-                  </div>
+                  </li>
                   {isAnchoredHere && renderTopicBanner()}
                 </React.Fragment>
               );
@@ -739,7 +785,7 @@ export const ChatMessages: React.FC = () => {
               if (isWelcome) {
                 return (
                   <React.Fragment key={msg.id}>
-                    <div className="py-2.5 px-3 flex justify-center bg-gradient-to-b from-sky-50/40 to-white dir-rtl">
+                    <li id={`log_${msg.id}`} data-id={msg.id} className={`ch_logs system__welcome ${msgIndex % 2 === 0 ? 'log2' : ''} py-2.5 px-3 flex justify-center bg-gradient-to-b from-sky-50/40 to-white dir-rtl list-none`}>
                       <div className="bg-gradient-to-br from-sky-50 via-white to-amber-50/40 border border-sky-200/80 rounded-2xl p-4 max-w-xl w-full shadow-xs space-y-2.5">
                         <div className="flex items-center justify-between border-b border-sky-100 pb-2">
                           <div className="flex items-center gap-2">
@@ -760,7 +806,7 @@ export const ChatMessages: React.FC = () => {
                           {cleanText}
                         </div>
                       </div>
-                    </div>
+                    </li>
                     {isAnchoredHere && renderTopicBanner()}
                   </React.Fragment>
                 );
@@ -768,11 +814,11 @@ export const ChatMessages: React.FC = () => {
 
               return (
                 <React.Fragment key={msg.id}>
-                  <div className="py-2 px-3 flex justify-center bg-slate-50/50 dir-rtl">
+                  <li id={`log_${msg.id}`} data-id={msg.id} className={`ch_logs system__notice ${msgIndex % 2 === 0 ? 'log2' : ''} py-2 px-3 flex justify-center bg-slate-50/50 dir-rtl list-none`}>
                     <div className="bg-sky-100/90 border border-sky-200 text-sky-900 text-xs sm:text-sm px-4 py-2 rounded-2xl max-w-xl text-center shadow-2xs font-medium whitespace-pre-line leading-relaxed">
                       {cleanText}
                     </div>
-                  </div>
+                  </li>
                   {isAnchoredHere && renderTopicBanner()}
                 </React.Fragment>
               );
@@ -802,8 +848,10 @@ export const ChatMessages: React.FC = () => {
 
               return (
                 <React.Fragment key={msg.id}>
-                  <div
-                    className="flex items-center justify-between gap-3 px-3 py-2.5 sm:px-4 sm:py-3 hover:bg-slate-50/70 transition-colors group relative dir-rtl"
+                  <li
+                    id={`log_${msg.id}`}
+                    data-id={msg.id}
+                    className={`ch_logs system__message ${msgIndex % 2 === 0 ? 'log2' : ''} flex items-center justify-between gap-3 px-3 py-2.5 sm:px-4 sm:py-3 hover:bg-slate-50/70 transition-colors group relative dir-rtl list-none`}
                   >
                     {/* Right Side: Alert Icon / Avatar + System & Target details */}
                     <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -869,7 +917,7 @@ export const ChatMessages: React.FC = () => {
                         {toEnglishDigits(msg.timestamp)} {toEnglishDigits(msg.date ? msg.date.substring(0, 5) : '22/08')}
                       </span>
                     </div>
-                  </div>
+                  </li>
                   {isAnchoredHere && renderTopicBanner()}
                 </React.Fragment>
               );
@@ -895,8 +943,10 @@ export const ChatMessages: React.FC = () => {
 
             return (
               <React.Fragment key={msg.id}>
-                <div
-                  className="flex items-start justify-between gap-3 px-3 py-2.5 sm:px-4 sm:py-3 hover:bg-slate-50/60 transition-colors group relative dir-rtl"
+                <li
+                  id={`log_${msg.id}`}
+                  data-id={msg.id}
+                  className={`ch_logs public__message ${msgIndex % 2 === 0 ? 'log2' : ''} flex items-start justify-between gap-3 px-3 py-2.5 sm:px-4 sm:py-3 hover:bg-slate-50/60 transition-colors group relative dir-rtl list-none`}
                 >
                 {/* 1. Right Side (RTL Start): User Avatar & Text Details */}
                 <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -918,7 +968,7 @@ export const ChatMessages: React.FC = () => {
                   {/* Text Block aligned to the Right */}
                   <div className="flex flex-col text-right min-w-0 pr-0.5">
                     {/* Line 1: Username with responsive Circular Rank Badge */}
-                    <div className="flex items-center gap-1.5 w-fit">
+                    <div className="cname flex items-center gap-1.5 w-fit">
                       <UsernameDisplay
                         username={msg.senderName}
                         role={senderRole}
@@ -943,7 +993,7 @@ export const ChatMessages: React.FC = () => {
                     </div>
 
                     {/* Line 2: Message Content or Join Badge */}
-                    <div className="mt-1">
+                    <div className="chat_message mt-1">
                       {isJoinMessage ? (
                         /* System User Join Pill/Badge matching Screenshot */
                         <div
@@ -1271,13 +1321,13 @@ export const ChatMessages: React.FC = () => {
                     {toEnglishDigits(msg.timestamp)} {toEnglishDigits(msg.date ? msg.date.substring(0, 5) : '22/08')}
                   </span>
                 </div>
-              </div>
+              </li>
               {isAnchoredHere && renderTopicBanner()}
             </React.Fragment>
           );
           })
         )}
-      </div>
+      </ul>
 
       {/* Live Typing Indicator */}
       {(() => {

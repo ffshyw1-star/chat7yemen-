@@ -1,31 +1,23 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useChat } from '../context/ChatContext';
-import { UserAvatar } from './UserAvatar';
+import { TopAvatarDropdown } from './TopAvatarDropdown';
 import {
-  Flag, Heart, UserPlus, Mail, ShoppingCart, Menu, Shield, LogOut,
-  User as UserIcon, Home, Bell, Settings, CheckCircle, Gauge, MessageSquare, MessageCircle
+  Flag, Heart, UserPlus, Mail, ShoppingBasket, Menu, Shield, LogOut,
+  User as UserIcon, Home, Settings, CheckCircle, MessageSquare, MessageCircle
 } from 'lucide-react';
-import { t } from '../utils/translations';
 
 export const ChatHeader: React.FC = () => {
   const {
     currentUser, currentRoom, siteSettings,
     reports, friendRequests, notifications, unreadPrivateCount, topBannerMessage,
-    setSelectedUserForProfile, setIsStoreOpen,
-    setIsSideMenuOpen, setIsReportsOpen, setIsNotificationsOpen,
-    setIsFriendRequestsOpen, setIsPrivateChatOpen, setIsRoomSettingsOpen, setIsOwnerDashboardOpen, setIsGoogleChatOpen, setCurrentView, logout, setIsLogoutConfirmOpen,
-    toggleAdminStealth, currentUserCan, setIsRoomsListOpen
+    setIsStoreOpen, setIsSideMenuOpen, setIsReportsOpen, setIsNotificationsOpen,
+    setIsFriendRequestsOpen, setIsPrivateChatOpen, setCurrentView,
+    currentUserCan
   } = useChat();
-
-  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
 
   if (!currentUser) return null;
 
   // Strict role check for moderation tools (White Flag 🚩)
-  // Visitor: HIDDEN
-  // Member: HIDDEN
-  // VIP: HIDDEN
-  // Owner & Management & Admins: SHOWN if role has actual moderation privilege
   const canViewReports = currentUser.role === 'owner' || (
     ['moderator', 'management', 'admin'].includes(currentUser.role) &&
     (currentUserCan('kick_user') || currentUserCan('mute_user') || currentUserCan('delete_messages'))
@@ -37,272 +29,100 @@ export const ChatHeader: React.FC = () => {
   const myFriendRequestsCount = friendRequests.filter(fr => fr.receiverId === currentUser.id).length;
 
   return (
-    <header className="app-chat-header bg-slate-950 border-b border-slate-800/80 sticky top-0 z-30 shadow-md select-none shrink-0 w-full">
-      <div className="max-w-7xl mx-auto px-1.5 sm:px-4 py-1.5 sm:py-2 flex items-center justify-between gap-1">
-        
-        {/* Right Side in RTL: Avatar, White Flag (Staff only), Heart, Friend Requests, Mail */}
-        <div className="flex items-center gap-0.5 sm:gap-1.5 shrink-0">
-          {/* 1. Far Right: User Circular Avatar & Profile Dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => setIsProfileMenuOpen(prev => !prev)}
-              className="flex items-center gap-1 transition-transform active:scale-95 cursor-pointer p-0.5 rounded-full hover:ring-2 hover:ring-slate-700"
-              title="ملفي الشخصي وقائمتي"
-            >
-              <UserAvatar
-                avatarUrl={currentUser.avatar}
-                gender={currentUser.gender}
-                role={currentUser.role}
-                username={currentUser.username}
-                size="sm"
-                showRankBadge
-                enableImageMenu={false}
-              />
-            </button>
+    <>
+      <header id="chat_head" className="select-none shadow-md" dir="rtl">
+        {/* Right Side in RTL: Avatar, Reports (Staff), Heart/Notifications, Friends, Private */}
+        <div className="flex items-center gap-0 shrink-0">
+          {/* 1. ArabSyemen Top Avatar Dropdown Menu (#main_mob_menu / #mobile_main_menu) */}
+          <TopAvatarDropdown />
 
-            {/* Profile Dropdown Menu - Fixed positioning on mobile so it is never clipped */}
-            {isProfileMenuOpen && (
-              <>
-                {/* Backdrop to close on click outside */}
-                <div
-                  className="fixed inset-0 z-[90] bg-black/40 backdrop-blur-2xs"
-                  onClick={() => setIsProfileMenuOpen(false)}
-                />
-
-                <div className="fixed sm:absolute top-13 right-2 sm:right-0 sm:top-full mt-1.5 w-[calc(100vw-1rem)] max-w-[280px] sm:w-72 bg-slate-900 border border-slate-700/90 rounded-2xl shadow-2xl overflow-hidden z-[100] animate-in fade-in slide-in-from-top-2 duration-150 dir-rtl text-right ring-1 ring-black/50">
-                  
-                  {/* User Profile Mini Header Card */}
-                  <div
-                    onClick={() => {
-                      setIsProfileMenuOpen(false);
-                      setSelectedUserForProfile(currentUser);
-                    }}
-                    className="p-3 bg-gradient-to-l from-slate-800/90 to-slate-900 border-b border-slate-700/80 cursor-pointer hover:bg-slate-800 transition-colors flex items-center gap-2.5 group"
-                    title="انقر لفتح ملفك الشخصي بالكامل"
-                  >
-                    <UserAvatar
-                      avatarUrl={currentUser.avatar}
-                      gender={currentUser.gender}
-                      role={currentUser.role}
-                      username={currentUser.username}
-                      size="md"
-                      showRankBadge
-                      enableImageMenu={false}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="font-extrabold text-sm text-white truncate group-hover:text-cyan-400 transition-colors">
-                          {currentUser.username}
-                        </span>
-                        <span className="text-[10px] text-cyan-400 font-bold bg-cyan-950/80 border border-cyan-800/60 px-1.5 py-0.5 rounded-md shrink-0">
-                          عرض الملف
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="text-[11px] text-slate-400 truncate">
-                          {currentUser.role === 'owner' ? '👑 مالك الموقع' : currentUser.role}
-                        </span>
-                        {currentUser.country && (
-                          <span className="text-[10px] text-slate-500">
-                            • {currentUser.country}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="p-1 space-y-0.5">
-                    {/* 1. Profile */}
-                    <button
-                      onClick={() => {
-                        setIsProfileMenuOpen(false);
-                        setSelectedUserForProfile(currentUser);
-                      }}
-                      className="w-full px-3 py-2.5 text-xs font-bold text-slate-200 hover:bg-slate-800 hover:text-white rounded-xl flex items-center justify-between gap-3 cursor-pointer transition-colors"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-lg bg-sky-500/15 flex items-center justify-center text-sky-400">
-                          <UserIcon className="w-4 h-4" />
-                        </div>
-                        <span>ملفي الشخصي</span>
-                      </div>
-                    </button>
-
-                    {/* 2. Rooms / List */}
-                    <button
-                      onClick={() => {
-                        setIsProfileMenuOpen(false);
-                        setCurrentView('rooms');
-                      }}
-                      className="w-full px-3 py-2.5 text-xs font-bold text-slate-200 hover:bg-slate-800 hover:text-white rounded-xl flex items-center justify-between gap-3 cursor-pointer transition-colors"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-400">
-                          <Home className="w-4 h-4" />
-                        </div>
-                        <span>قائمة الغرف</span>
-                      </div>
-                    </button>
-
-                    {/* Room Settings for Management, Admin & Owner */}
-                    {isManagementOrHigher && (
-                      <button
-                        onClick={() => {
-                          setIsProfileMenuOpen(false);
-                          setIsRoomSettingsOpen(true);
-                        }}
-                        className="w-full px-3 py-2.5 text-xs font-bold text-slate-200 hover:bg-slate-800 hover:text-white rounded-xl flex items-center justify-between gap-3 cursor-pointer transition-colors"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-7 h-7 rounded-lg bg-indigo-500/15 flex items-center justify-center text-indigo-400">
-                            <Settings className="w-4 h-4" />
-                          </div>
-                          <span>إعدادات الغرفة</span>
-                        </div>
-                      </button>
-                    )}
-
-                    {/* Google Chat Integration */}
-                    <button
-                      onClick={() => {
-                        setIsProfileMenuOpen(false);
-                        setIsGoogleChatOpen(true);
-                      }}
-                      className="w-full px-3 py-2.5 text-xs font-bold text-emerald-300 hover:bg-emerald-950/40 rounded-xl flex items-center justify-between gap-3 cursor-pointer transition-colors"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-lg bg-emerald-500/15 flex items-center justify-center text-emerald-400">
-                          <MessageSquare className="w-4 h-4" />
-                        </div>
-                        <span className="flex items-center gap-1.5">
-                          Google Chat
-                          <span className="text-[10px] bg-emerald-900/60 text-emerald-300 border border-emerald-700/60 px-1.5 py-0.2 rounded font-bold">مساحات</span>
-                        </span>
-                      </div>
-                    </button>
-
-                    {/* Stealth Mode - للمالك فقط */}
-                    {currentUser.role === 'owner' && (
-                      <button
-                        onClick={() => {
-                          setIsProfileMenuOpen(false);
-                          toggleAdminStealth();
-                        }}
-                        className="w-full px-3 py-2.5 text-xs font-bold text-slate-200 hover:bg-slate-800 hover:text-white rounded-xl flex items-center justify-between gap-3 cursor-pointer transition-colors"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div className={`w-7 h-7 rounded-lg ${currentUser.isStealth ? 'bg-purple-500/20 text-purple-400' : 'bg-slate-800 text-slate-400'} flex items-center justify-center`}>
-                            <Shield className="w-4 h-4" />
-                          </div>
-                          <span className={currentUser.isStealth ? 'text-purple-400 font-black' : ''}>
-                            {currentUser.isStealth ? 'وضع الاختفاء (مفعل 🕵️‍♂️)' : 'تفعيل وضع الاختفاء 👁️'}
-                          </span>
-                        </div>
-                      </button>
-                    )}
-
-                    <div className="h-[1px] bg-slate-800/90 my-1" />
-
-                    {/* Logout */}
-                    <button
-                      onClick={() => {
-                        setIsProfileMenuOpen(false);
-                        setIsLogoutConfirmOpen(true);
-                      }}
-                      className="w-full px-3 py-2.5 text-xs font-bold text-red-400 hover:bg-red-950/30 rounded-xl flex items-center justify-between gap-3 cursor-pointer transition-colors"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-lg bg-red-500/15 flex items-center justify-center text-red-400">
-                          <LogOut className="w-4 h-4" />
-                        </div>
-                        <span>خروج من الحساب</span>
-                      </div>
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* 2. White Flag Icon 🚩 (Reports & Moderation) - STRICTLY HIDDEN for Visitor, Member, and VIP */}
+          {/* 2. Flag Icon (fa fa-flag) - Reports & Moderation (Staff Only) */}
           {canViewReports && (
             <button
+              id="get_report"
               onClick={() => setIsReportsOpen(true)}
-              className="header-action-btn relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center text-white hover:bg-slate-800/80 transition-all cursor-pointer group active:scale-95"
+              className="head_option group"
               title={reports.length > 0 ? `البلاغات المعلقة للإدارة (${reports.length})` : 'صندوق البلاغات (الإدارة والرقابة)'}
+              type="button"
             >
-              <Flag className="header-icon w-5 h-5 text-white fill-white drop-shadow-xs group-hover:scale-110 transition-transform" />
+              <i className="fa fa-flag text-white text-[17px] group-hover:scale-110 transition-transform"></i>
               {reports.length > 0 && (
-                <>
-                  <span className="animate-ping absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-red-500 opacity-75"></span>
-                  <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-black px-1.5 min-w-[18px] h-[18px] rounded-full flex items-center justify-center border border-slate-950 shadow-md">
-                    {reports.length}
-                  </span>
-                </>
-              )}
-            </button>
-          )}
-
-          {/* 3. Likes & Notifications Icon ❤️ */}
-          <button
-            onClick={() => setIsNotificationsOpen(true)}
-            className="header-action-btn relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center text-white hover:bg-slate-800/80 transition-all cursor-pointer active:scale-95"
-            title="الإعجابات والإشعارات"
-          >
-            <Heart className="header-icon w-5 h-5 text-white fill-white stroke-[2]" />
-            {unreadNotifCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded-full flex items-center justify-center animate-pulse shadow-md border border-slate-950">
-                {unreadNotifCount}
-              </span>
-            )}
-          </button>
-
-          {/* 4. Friend Requests Icon 👤 / 👤+ - HIDDEN for Visitor, Visible for Member & VIP & Admins */}
-          {canViewFriendRequests && (
-            <button
-              onClick={() => setIsFriendRequestsOpen(true)}
-              className="header-action-btn relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center text-white hover:bg-slate-800/80 transition-all cursor-pointer active:scale-95"
-              title="طلبات الصداقة"
-            >
-              <UserPlus className={`header-icon w-5 h-5 transition-colors stroke-[2.2] ${myFriendRequestsCount > 0 ? 'text-emerald-400 animate-bounce' : 'text-white'}`} />
-              {myFriendRequestsCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-emerald-600 text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded-full flex items-center justify-center animate-pulse shadow-md border border-slate-950">
-                  {myFriendRequestsCount}
+                <span className="head_badge animate-pulse">
+                  {reports.length > 99 ? '99+' : reports.length}
                 </span>
               )}
             </button>
           )}
 
-          {/* 5. Private Messages Icon ✉️ */}
+          {/* 3. Heart Icon (fa fa-heart) - Likes & Notifications */}
           <button
-            onClick={() => setIsPrivateChatOpen(true)}
-            className="header-action-btn relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center text-white hover:bg-slate-800/80 transition-all cursor-pointer group active:scale-95"
-            title="الرسائل الخاصة"
+            id="get_notification"
+            onClick={() => setIsNotificationsOpen(true)}
+            className="head_option group"
+            title="الإعجابات والإشعارات"
+            type="button"
           >
-            <Mail className="header-icon w-5 h-5 text-white stroke-[2]" />
+            <i className="fa fa-heart text-white text-[17px] group-hover:scale-110 transition-transform"></i>
+            {unreadNotifCount > 0 && (
+              <span className="head_badge animate-pulse">
+                {unreadNotifCount > 99 ? '99+' : unreadNotifCount}
+              </span>
+            )}
+          </button>
+
+          {/* 4. User Plus Icon (fa fa-user-plus) - Friend Requests (Members and higher) */}
+          {canViewFriendRequests && (
+            <button
+              id="friend_request"
+              onClick={() => setIsFriendRequestsOpen(true)}
+              className="head_option group"
+              title="طلبات الصداقة"
+              type="button"
+            >
+              <i className={`fa fa-user-plus text-[17px] group-hover:scale-110 transition-transform ${myFriendRequestsCount > 0 ? 'text-emerald-400 animate-bounce' : 'text-white'}`}></i>
+              {myFriendRequestsCount > 0 && (
+                <span className="head_badge !bg-emerald-600 animate-pulse">
+                  {myFriendRequestsCount > 99 ? '99+' : myFriendRequestsCount}
+                </span>
+              )}
+            </button>
+          )}
+
+          {/* 5. Envelope Icon (fa fa-envelope) - Private Messages */}
+          <button
+            id="get_private"
+            onClick={() => setIsPrivateChatOpen(true)}
+            className="head_option group"
+            title="الرسائل الخاصة"
+            type="button"
+          >
+            <i className="fa fa-envelope text-white text-[17px] group-hover:scale-110 transition-transform"></i>
             {unreadPrivateCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-black px-1.5 py-0.2 rounded-md min-w-[18px] flex items-center justify-center border border-slate-950 shadow-md animate-pulse">
-                {unreadPrivateCount}
+              <span className="head_badge animate-pulse">
+                {unreadPrivateCount > 99 ? '99+' : unreadPrivateCount}
               </span>
             )}
           </button>
         </div>
 
-        {/* Left Side in RTL: Store, Site Logo, Menu Drawer ☰ */}
-        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-          {/* Store Button 🛒 with "Store." label */}
+        {/* Left Side in RTL: Store, Site Logo, Mobile Menu (fa-bars) */}
+        <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+          {/* Store Basket Icon (fa fa-shopping-basket) */}
           <button
+            id="chat_store_btn"
             onClick={() => setIsStoreOpen(true)}
-            className="header-store-btn relative flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/90 text-white text-xs font-bold transition-all active:scale-95 cursor-pointer shrink-0"
+            className="head_option group"
             title="المتجر وشراء الرتب"
+            type="button"
           >
-            <ShoppingCart className="w-4 h-4 text-white fill-white shrink-0" />
-            <span className="font-bold text-xs tracking-tight text-white hidden xs:inline">Store.</span>
+            <i className="fa fa-shopping-basket text-white text-[17px] group-hover:scale-110 transition-transform"></i>
           </button>
 
-          {/* Site Logo */}
+          {/* Main Logo Container (#main_logo) */}
           <div
-            className="flex items-center gap-1.5 px-1.5 sm:px-2 py-1 rounded-xl bg-slate-900/90 border border-slate-700/80 select-none shadow-2xs shrink-0"
+            id="main_logo"
+            className="flex items-center gap-1.5 px-2 h-[34px] rounded-lg bg-white/10 hover:bg-white/15 transition-colors cursor-pointer select-none"
+            onClick={() => setCurrentView('rooms')}
             title={siteSettings?.siteName || "شات اليمن المطور"}
           >
             {siteSettings?.siteLogo ? (
@@ -325,17 +145,18 @@ export const ChatHeader: React.FC = () => {
             )}
           </div>
 
-          {/* Menu Drawer Icon ☰ on Far Left */}
+          {/* Side Menu Drawer Button (fa fa-bars) */}
           <button
+            id="btn_side_menu"
             onClick={() => setIsSideMenuOpen(true)}
-            className="header-action-btn w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center text-slate-200 hover:text-amber-400 hover:bg-slate-800/80 transition-all active:scale-95 cursor-pointer shrink-0"
+            className="head_option group"
             title="القائمة الجانبية"
+            type="button"
           >
-            <Menu className="header-icon w-5 h-5 text-slate-200" />
+            <i className="fa fa-bars text-white text-[18px] group-hover:scale-110 transition-transform"></i>
           </button>
         </div>
-
-      </div>
+      </header>
 
       {topBannerMessage && (
         <div className="bg-emerald-600 text-white font-black text-xs py-2 px-4 text-center shadow-lg border-t border-emerald-400 flex items-center justify-center gap-2 animate-in slide-in-from-top duration-200">
@@ -343,6 +164,6 @@ export const ChatHeader: React.FC = () => {
           <span>{topBannerMessage}</span>
         </div>
       )}
-    </header>
+    </>
   );
 };

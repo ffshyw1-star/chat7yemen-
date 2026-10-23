@@ -75,7 +75,7 @@ export const UsernameDisplay: React.FC<UsernameDisplayProps> = ({
 
   if (hasBg) {
     return (
-      <span className="username-with-badge-container">
+      <span className="cname username-with-badge-container">
         {renderBadge}
         <span
           id={id}
@@ -88,7 +88,7 @@ export const UsernameDisplay: React.FC<UsernameDisplayProps> = ({
           style={{
             background: usernameBgGradient,
           }}
-          className={`username-shiny-badge username-text-wrapper px-2.5 py-0.5 group cursor-pointer transition-transform select-text ${className}`}
+          className={`username user username-shiny-badge username-text-wrapper px-2.5 py-0.5 group cursor-pointer transition-transform select-text ${className}`}
         >
           {/* Subtle sparkle corner indicator */}
           <span className="absolute top-0.5 right-1.5 text-[8px] opacity-70 pointer-events-none animate-pulse select-none z-10">
@@ -108,7 +108,7 @@ export const UsernameDisplay: React.FC<UsernameDisplayProps> = ({
   }
 
   return (
-    <span className="username-with-badge-container">
+    <span className="cname username-with-badge-container">
       {renderBadge}
       <span
         id={id}
@@ -119,7 +119,7 @@ export const UsernameDisplay: React.FC<UsernameDisplayProps> = ({
         onTouchEnd={onTouchEnd}
         onTouchCancel={onTouchCancel}
         style={textStyle}
-        className={`username-text-wrapper font-extrabold select-text transition-colors ${
+        className={`username user username-text-wrapper font-extrabold select-text transition-colors ${
           isNeon ? 'drop-shadow-sm' : ''
         } ${className}`}
       >

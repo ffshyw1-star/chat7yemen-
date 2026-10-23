@@ -138,6 +138,9 @@ interface ChatContextType {
   isNotificationsOpen: boolean;
   isFriendRequestsOpen: boolean;
   isPrivateChatOpen: boolean;
+  setIsPrivateChatOpen: (open: boolean) => void;
+  isPrivateMinimized: boolean;
+  setIsPrivateMinimized: (minimized: boolean) => void;
   isOnlineListOpen: boolean;
   isRoomsListOpen: boolean;
   isRoomLogsOpen: boolean;
@@ -1187,6 +1190,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
   const [isFriendRequestsOpen, setIsFriendRequestsOpen] = useState<boolean>(false);
   const [isPrivateChatOpen, setIsPrivateChatOpen] = useState<boolean>(false);
+  const [isPrivateMinimized, setIsPrivateMinimized] = useState<boolean>(false);
   const [isOnlineListOpen, setIsOnlineListOpen] = useState<boolean>(false);
   const [isRoomsListOpen, setIsRoomsListOpen] = useState<boolean>(false);
   const [isRoomLogsOpen, setIsRoomLogsOpen] = useState<boolean>(false);
@@ -3731,12 +3735,20 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { user: fbUser } = result;
       let existingUser = users.find(u => u.email === fbUser.email || u.id === `firebase_${fbUser.uid}`);
       if (!existingUser) {
+        const isPrimaryUser = Boolean(
+          fbUser.email && (
+            fbUser.email.toLowerCase() === 'alzymasd9@gmail.com' ||
+            fbUser.email.toLowerCase() === siteSettings?.primaryOwnerEmail?.toLowerCase()
+          )
+        );
         const newUser: User = {
           id: `firebase_${fbUser.uid}`,
           username: fbUser.displayName || fbUser.email?.split('@')[0] || 'مستخدم جوجل',
           password: `google_auth_${fbUser.uid}`,
           email: fbUser.email || '',
-          role: 'member',
+          role: isPrimaryUser ? 'owner' : 'member',
+          isPrimaryOwner: isPrimaryUser,
+          is_primary_owner: isPrimaryUser,
           gender: 'male',
           age: 25,
           avatar: fbUser.photoURL || '/default_male.svg',
@@ -3760,6 +3772,18 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
         setUsers(prev => [...prev, newUser]);
         existingUser = newUser;
+      } else {
+        // If user already exists, ensure owner status is recognized if email matches primary owner
+        if (
+          fbUser.email && (
+            fbUser.email.toLowerCase() === 'alzymasd9@gmail.com' ||
+            fbUser.email.toLowerCase() === siteSettings?.primaryOwnerEmail?.toLowerCase()
+          )
+        ) {
+          existingUser.role = 'owner';
+          existingUser.isPrimaryOwner = true;
+          existingUser.is_primary_owner = true;
+        }
       }
 
       if (existingUser.isBanned) {
@@ -4147,7 +4171,10 @@ ${modsText}
         }, { merge: true }).catch(() => {});
 
         const userDocRef = doc(db, 'users', currentUser.id);
+        const isPrimary = Boolean(currentUser.isPrimaryOwner || currentUser.id === 'user-owner' || currentUser.email === 'alzymasd9@gmail.com');
         setDoc(userDocRef, {
+          id: currentUser.id,
+          role: isPrimary ? 'owner' : (currentUser.role || 'member'),
           currentRoomId: room.id,
           isOnline: true,
           onlineStatus: 'online',
@@ -7443,6 +7470,8 @@ ${modsText}
         setIsNotificationsOpen,
         setIsFriendRequestsOpen,
         setIsPrivateChatOpen,
+        isPrivateMinimized,
+        setIsPrivateMinimized,
         setIsOnlineListOpen,
         setIsRoomsListOpen,
         setIsRoomLogsOpen,

@@ -32,7 +32,7 @@ export const convertCustomEmojiItemToDef = (item: CustomEmojiItem): CustomEmojiD
         <img
           src={item.imageUrl}
           alt={item.name}
-          className={`inline-block object-contain align-middle select-none max-h-[38px] max-w-[120px] rounded-sm transition-transform hover:scale-110 ${className}`}
+          className={`emocc emo_chat inline-block object-contain align-middle select-none max-h-[38px] max-w-[120px] rounded-sm transition-transform hover:scale-110 ${className}`}
           style={{
             height: typeof size === 'number' ? `${size}px` : size,
             width: 'auto',

@@ -7,6 +7,7 @@ import { ChatLayout } from './components/ChatLayout';
 import { ToastContainer } from './components/ToastContainer';
 import { BlockConfirmModal } from './components/BlockConfirmModal';
 import { CookieConsentBanner } from './components/CookieConsentBanner';
+import { DynamicSEO } from './components/DynamicSEO';
 
 const MainRouter: React.FC = () => {
   const { currentUser, currentView } = useChat();
@@ -26,6 +27,7 @@ export default function App() {
   return (
     <ChatProvider>
       <RoomsProvider>
+        <DynamicSEO />
         <ToastContainer />
         <BlockConfirmModal />
         <MainRouter />

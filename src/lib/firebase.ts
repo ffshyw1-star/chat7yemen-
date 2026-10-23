@@ -256,6 +256,17 @@ export function cleanUndefinedFields<T>(obj: T): T {
   if (obj === null || typeof obj !== 'object') {
     return obj;
   }
+  // Preserve Date instances and Firestore FieldValue / Timestamp objects
+  if (
+    obj instanceof Date ||
+    '_methodName' in (obj as any) ||
+    '_delegate' in (obj as any) ||
+    typeof (obj as any).toMillis === 'function' ||
+    (obj as any).constructor?.name === 'FieldValueImpl' ||
+    (obj as any).constructor?.name === 'Timestamp'
+  ) {
+    return obj;
+  }
   if (Array.isArray(obj)) {
     return obj.map(cleanUndefinedFields).filter(v => v !== undefined) as unknown as T;
   }

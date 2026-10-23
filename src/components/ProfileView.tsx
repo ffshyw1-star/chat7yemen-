@@ -146,6 +146,58 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }
   }, [target?.id, target?.role, target?.usernameColor]);
 
+  // ArabSyemen profile functions registration
+  useEffect(() => {
+    (window as any).getProfile = (userId?: string) => {
+      if (!userId) {
+        setSelectedUserForProfile(currentUser);
+      } else {
+        const found = users.find(u => u.id === userId || u.username.toLowerCase() === userId.toLowerCase());
+        if (found) {
+          setSelectedUserForProfile(found);
+        }
+      }
+    };
+
+    (window as any).changeUsername = () => {
+      setShowNameChangeModal(true);
+    };
+
+    (window as any).muteBox = (userId?: string) => {
+      setShowCommandOverlay(true);
+      setCmdAction('mute');
+    };
+
+    (window as any).showProfileReport = (userId?: string) => {
+      if (target) {
+        reportUserMessage(target.id, target.username, 'إبلاغ عن ملف شخصي - محتوى غير مناسب', 'احتيال', 'profile');
+        showTopBanner('تم إرسال إبلاغ عن الملف الشخصي للإدارة بنجاح 🚩');
+      }
+    };
+
+    (window as any).showModal = (id?: string) => {
+      console.log('showModal called for:', id);
+    };
+
+    (window as any).overModal = (content?: any) => {
+      console.log('overModal called');
+    };
+
+    (window as any).hideOver = () => {
+      console.log('hideOver called');
+    };
+
+    return () => {
+      delete (window as any).getProfile;
+      delete (window as any).changeUsername;
+      delete (window as any).muteBox;
+      delete (window as any).showProfileReport;
+      delete (window as any).showModal;
+      delete (window as any).overModal;
+      delete (window as any).hideOver;
+    };
+  }, [currentUser, users, target, setSelectedUserForProfile, reportUserMessage, showTopBanner]);
+
   // Helper to get linked / other accounts by IP
   const getOtherAccountsList = (targetUser: User): string[] => {
     const list: string[] = [];
@@ -1458,12 +1510,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
       </div>
 
-      {/* MAIN CONTENT AREA FOR TABS */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar bg-white text-slate-800 p-4 space-y-4">
+      {/* MAIN CONTENT AREA FOR TABS (#prodetails) */}
+      <div id="prodetails" className="prodetails flex-1 overflow-y-auto custom-scrollbar bg-white text-slate-800 p-4 space-y-4">
         
-        {/* TAB 1: معلوماتي (MY INFO) */}
+        {/* TAB 1: معلوماتي (#profile_info) */}
         {activeTab === 'my_info' && (
-          <div className="space-y-3.5 animate-in fade-in duration-150">
+          <div id="profile_info" className="space-y-3.5 animate-in fade-in duration-150">
             
             {/* 1. Member Balance (رصيد العضو) */}
             <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
@@ -1594,9 +1646,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
         )}
 
-        {/* TAB 2: الأصدقاء (FRIENDS) - Grid layout as in Screenshot 3 */}
+        {/* TAB 2: الأصدقاء (#profile_friends) - Grid layout as in Screenshot 3 */}
         {!isVisitorTarget && activeTab === 'friends' && (
-          <div className="space-y-3 animate-in fade-in duration-150">
+          <div id="profile_friends" className="space-y-3 animate-in fade-in duration-150">
             <div className="flex justify-between items-center pb-1">
               <p className="text-xs font-black text-slate-700">قائمة الأصدقاء ({displayFriends.length}):</p>
               <span className="text-[10px] text-slate-400 font-bold">اضغط لعرض الملف</span>

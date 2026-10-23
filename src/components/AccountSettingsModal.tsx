@@ -547,16 +547,16 @@ export const AccountSettingsModal: React.FC = () => {
 
   const isVisitor = currentUser?.role === 'visitor';
 
-  // 14 Options for Registered Users vs 8 Options for Visitor Users (Matching screenshot)
+  // 14 Options for Registered Users vs 8 Options for Visitor Users (Matching ArabSyemen inspection)
   const visitorMenuOptions = [
-    { id: 'profile_data', label: 'تحرير البيانات', icon: UserCheck },
-    { id: 'my_info', label: 'تحرير معلوماتي', icon: HelpCircle },
-    { id: 'username_color', label: 'تغير لون اسم المستخدم', icon: Brush },
-    { id: 'ignore', label: 'إدارة التجاهل', icon: Ban },
-    { id: 'sound', label: 'اعدادت الصوت', icon: Volume2 },
-    { id: 'style', label: 'إعدادات الستايل', icon: Monitor },
-    { id: 'privacy', label: 'إعدادات خاصة', icon: MessageSquare },
-    { id: 'language', label: 'اللغة / الموقع', icon: Globe },
+    { id: 'profile_data', label: 'تحرير البيانات', faIcon: 'fa-pencil', icon: UserCheck },
+    { id: 'my_info', label: 'تحرير معلوماتي', faIcon: 'fa-info-circle', icon: HelpCircle },
+    { id: 'username_color', label: 'تغير لون اسم المستخدم', faIcon: 'fa-paint-brush', icon: Brush },
+    { id: 'ignore', label: 'إدارة التجاهل', faIcon: 'fa-ban', icon: Ban },
+    { id: 'sound', label: 'إعدادات الصوت', faIcon: 'fa-volume-up', icon: Volume2 },
+    { id: 'style', label: 'إعدادات الستايل', faIcon: 'fa-desktop', icon: Monitor },
+    { id: 'privacy', label: 'إعدادات خاصة', faIcon: 'fa-envelope', icon: MessageSquare },
+    { id: 'language', label: 'اللغة / الموقع', faIcon: 'fa-globe', icon: Globe },
   ];
 
   const canUserChangeUsername = Boolean(
@@ -568,25 +568,76 @@ export const AccountSettingsModal: React.FC = () => {
   );
 
   const fullMenuOptions = [
-    { id: 'membership_info', label: 'معلومات العضوية والرتبة', icon: ShieldCheck },
-    { id: 'profile_data', label: 'تحرير البيانات', icon: UserCheck },
-    { id: 'my_info', label: 'تحرير معلوماتي', icon: HelpCircle },
-    ...(canUserChangeUsername ? [{ id: 'change_username', label: 'تغيير اسم المستخدم', icon: Edit3 }] : []),
-    { id: 'username_color', label: 'تغيير لون اسم المستخدم', icon: Brush },
-    { id: 'status', label: 'تعديل الحالة', icon: Edit3 },
-    { id: 'confirm_account', label: 'تأكيد الحساب', icon: Check },
-    { id: 'friends', label: 'إدارة أصدقاء', icon: UserPlus },
-    { id: 'ignore', label: 'إدارة التجاهل', icon: Ban },
-    { id: 'sound', label: 'اعدادت الصوت', icon: Volume2 },
-    { id: 'style', label: 'إعدادات الستايل', icon: Monitor },
-    { id: 'privacy', label: 'إعدادات خاصة', icon: MessageSquare },
-    { id: 'language', label: 'اللغة / الموقع', icon: Globe },
-    { id: 'email', label: 'تعديل البريد الإلكتروني', icon: Mail },
-    { id: 'password', label: 'تغيير الباسورد', icon: Key },
-    { id: 'delete', label: 'حذف عضوية', icon: Trash2 },
+    { id: 'membership_info', label: 'معلومات العضوية والرتبة', faIcon: 'fa-shield', icon: ShieldCheck },
+    { id: 'profile_data', label: 'تحرير البيانات', faIcon: 'fa-pencil', icon: UserCheck },
+    { id: 'my_info', label: 'تحرير معلوماتي', faIcon: 'fa-info-circle', icon: HelpCircle },
+    ...(canUserChangeUsername ? [{ id: 'change_username', label: 'تغيير اسم المستخدم', faIcon: 'fa-pencil', icon: Edit3 }] : []),
+    { id: 'username_color', label: 'تغير لون اسم المستخدم', faIcon: 'fa-paint-brush', icon: Brush },
+    { id: 'status', label: 'تعديل الحالة', faIcon: 'fa-comment', icon: Edit3 },
+    { id: 'confirm_account', label: 'تأكيد الحساب', faIcon: 'fa-check-circle', icon: Check },
+    { id: 'friends', label: 'إدارة أصدقاء', faIcon: 'fa-user-plus', icon: UserPlus },
+    { id: 'ignore', label: 'إدارة التجاهل', faIcon: 'fa-ban', icon: Ban },
+    { id: 'sound', label: 'إعدادات الصوت', faIcon: 'fa-volume-up', icon: Volume2 },
+    { id: 'style', label: 'إعدادات الستايل', faIcon: 'fa-desktop', icon: Monitor },
+    { id: 'privacy', label: 'إعدادات خاصة', faIcon: 'fa-envelope', icon: MessageSquare },
+    { id: 'language', label: 'اللغة / الموقع', faIcon: 'fa-globe', icon: Globe },
+    { id: 'email', label: 'تعديل البريد الإلكتروني', faIcon: 'fa-envelope', icon: Mail },
+    { id: 'password', label: 'تغيير الباسوورد', faIcon: 'fa-key', icon: Key },
+    { id: 'delete', label: 'حذف عضوية', faIcon: 'fa-trash', icon: Trash2 },
   ];
 
   const menuOptions = isVisitor ? visitorMenuOptions : fullMenuOptions;
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).hideModal = () => setIsProfileSettingsOpen(false);
+      (window as any).changeInfo = () => setActiveSubMenu('profile_data');
+      (window as any).changeAbout = () => setActiveSubMenu('my_info');
+      (window as any).changeColor = () => setActiveSubMenu('username_color');
+      (window as any).changeMood = () => setActiveSubMenu('status');
+      
+      // Exact function names from ArabSyemen report
+      (window as any).getVerify = () => setActiveSubMenu('confirm_account');
+      (window as any).confirmAccount = () => setActiveSubMenu('confirm_account');
+      
+      (window as any).getFriends = () => setActiveSubMenu('friends');
+      (window as any).manageFriends = () => setActiveSubMenu('friends');
+      
+      (window as any).getIgnore = () => setActiveSubMenu('ignore');
+      (window as any).manageIgnores = () => setActiveSubMenu('ignore');
+      
+      (window as any).getSoundSetting = () => setActiveSubMenu('sound');
+      (window as any).soundSettings = () => setActiveSubMenu('sound');
+      
+      (window as any).getDisplaySetting = () => setActiveSubMenu('style');
+      (window as any).styleSettings = () => setActiveSubMenu('style');
+      
+      (window as any).getPrivateSettings = () => setActiveSubMenu('privacy');
+      (window as any).privacySettings = () => setActiveSubMenu('privacy');
+      
+      (window as any).getLocation = () => setActiveSubMenu('language');
+      (window as any).languageSettings = () => setActiveSubMenu('language');
+      
+      (window as any).getEmail = () => setActiveSubMenu('email');
+      (window as any).changeEmail = () => setActiveSubMenu('email');
+      
+      (window as any).getPassword = () => setActiveSubMenu('password');
+      (window as any).changePassword = () => setActiveSubMenu('password');
+      
+      (window as any).getDeleteAccount = () => setActiveSubMenu('delete');
+      (window as any).deleteAccount = () => setActiveSubMenu('delete');
+      
+      (window as any).changeUsername = () => setActiveSubMenu('change_username');
+      (window as any).changeMyUsername = () => setIsChangeUsernameModalOpen(true);
+      (window as any).editProfile = () => {
+        setIsProfileSettingsOpen(true);
+        setActiveSubMenu(null);
+      };
+      (window as any).showEmptyModal = (content: any, width: number = 580) => {
+        setIsProfileSettingsOpen(true);
+      };
+    }
+  }, [setIsProfileSettingsOpen]);
 
   const handleModalCloseOrBack = () => {
     if (activeSubMenu !== null) {
@@ -597,7 +648,10 @@ export const AccountSettingsModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200 dir-rtl">
+    <div
+      id="large_modal"
+      className="large_modal_out fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200 dir-rtl"
+    >
       {/* Hidden File Inputs */}
       <input
         type="file"
@@ -614,7 +668,8 @@ export const AccountSettingsModal: React.FC = () => {
         className="hidden"
       />
 
-      <div className="bg-white rounded-3xl w-full max-w-md sm:max-w-lg max-h-[90vh] flex flex-col overflow-hidden shadow-2xl relative select-none border border-slate-200">
+      <div className="large_modal_in bg-white rounded-3xl w-full max-w-md sm:max-w-lg max-h-[90vh] flex flex-col overflow-hidden shadow-2xl relative select-none border border-slate-200">
+        <div id="large_modal_content" className="modal_content flex flex-col h-full max-h-[90vh] overflow-hidden">
         {/* TOP SUCCESS GREEN BAR (شريط أخضر في أعلى الشاشة في وسطه مكتوب تم الحفظ) */}
         {saveSuccess && (
           <div className="absolute top-0 inset-x-0 z-50 bg-[#4caf50] text-white py-3 px-4 font-black text-sm text-center shadow-lg animate-in slide-in-from-top duration-200 flex items-center justify-center gap-2 select-none">
@@ -835,17 +890,17 @@ export const AccountSettingsModal: React.FC = () => {
 
               <div className="divide-y divide-slate-100 bg-white rounded-2xl border border-slate-100/90 shadow-2xs overflow-hidden">
                 {menuOptions.map((opt) => {
-                  const IconComponent = opt.icon;
                   return (
                     <button
                       key={opt.id}
+                      type="button"
                       onClick={() => setActiveSubMenu(opt.id)}
-                      className="w-full flex items-center justify-between py-3.5 px-5 hover:bg-slate-50 active:bg-slate-100 transition-colors text-right cursor-pointer group"
+                      className="listing_half_element w-full flex items-center justify-between py-3.5 px-5 hover:bg-slate-50 active:bg-slate-100 transition-colors text-right cursor-pointer group border-none bg-transparent"
                     >
                       <span className="text-slate-800 font-bold text-sm group-hover:text-[#0b333e] transition-colors">
                         {opt.label}
                       </span>
-                      <IconComponent className="w-5 h-5 text-slate-700 group-hover:text-[#0b333e] transition-colors shrink-0 mr-3" />
+                      <i className={`fa ${opt.faIcon} text-[16px] text-slate-700 group-hover:text-[#0b333e] transition-colors shrink-0 mr-3`} />
                     </button>
                   );
                 })}
@@ -2103,6 +2158,7 @@ export const AccountSettingsModal: React.FC = () => {
               </div>
             </div>
           )}
+        </div>
         </div>
       </div>
       {/* POPUP: Theme Selection Modal (مطابق للصورة 2: نافذة راديو خيارات الثيم) */}

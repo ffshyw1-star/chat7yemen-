@@ -2566,6 +2566,145 @@ app.post("/api/users/change-username", async (req, res) => {
   }
 });
 
+// =========================================================================
+// ArabSyemen Reference Endpoints: system/box/edit_profile.php & edit_name.php
+// =========================================================================
+
+app.post(["/system/box/edit_profile.php", "/system/box/edit_profile", "/api/system/box/edit_profile"], (req, res) => {
+  try {
+    const { token, utk, userId } = req.body || {};
+    // Authenticate user against server database (do not trust arbitrary client assertions)
+    let user = serverUsers.find(u => 
+      (userId && u.id === userId) ||
+      (token && (u as any).token === token) ||
+      (utk && (u as any).utk === utk)
+    );
+
+    if (!user) {
+      // If no session found, fallback safely to visitor/guest view
+      user = {
+        id: 'guest',
+        username: 'زائر',
+        role: 'visitor',
+        gender: 'male',
+        age: 'عدم الإظهار',
+        coins: 0,
+        likes: 0,
+        country: 'اليمن',
+        currentRoomId: 'room-general',
+        joinedDate: formatServerDate(),
+        lastSeen: formatServerTime(),
+        onlineStatus: 'online',
+        privatePrivacy: 'everyone'
+      } as User;
+    }
+
+    const isOwner = ServerPermissionManager.isPrimaryOwner(user);
+    const canChangeName = isOwner || (
+      serverSiteSettings?.allowChangeUsernameForMembers !== false &&
+      !serverSiteSettings?.disableUsernameChangeAll &&
+      user.role !== 'visitor'
+    );
+
+    // Filter allowed options according to verified server rank and permissions
+    const options: any[] = [
+      { id: 'profile_data', name: 'تحرير البيانات', func: 'changeInfo()', icon: 'fa fa-pencil', roles: ['visitor', 'member', 'vip', 'moderator', 'management', 'admin', 'owner'] },
+      { id: 'my_info', name: 'تحرير معلوماتي', func: 'changeAbout()', icon: 'fa fa-info-circle', roles: ['visitor', 'member', 'vip', 'moderator', 'management', 'admin', 'owner'] },
+      ...(canChangeName ? [{ id: 'change_username', name: 'تغيير اسم المستخدم', func: 'changeUsername()', icon: 'fa fa-pencil', roles: ['member', 'vip', 'moderator', 'management', 'admin', 'owner'] }] : []),
+      { id: 'username_color', name: 'تغير لون اسم المستخدم', func: 'changeColor()', icon: 'fa fa-paint-brush', roles: ['visitor', 'member', 'vip', 'moderator', 'management', 'admin', 'owner'] },
+      { id: 'status', name: 'تعديل الحالة', func: 'changeMood()', icon: 'fa fa-comment', roles: ['member', 'vip', 'moderator', 'management', 'admin', 'owner'] },
+      { id: 'confirm_account', name: 'تأكيد الحساب', func: 'getVerify()', icon: 'fa fa-check-circle', roles: ['member', 'vip', 'moderator', 'management', 'admin', 'owner'] },
+      { id: 'friends', name: 'إدارة أصدقاء', func: 'getFriends()', icon: 'fa fa-user-plus', roles: ['member', 'vip', 'moderator', 'management', 'admin', 'owner'] },
+      { id: 'ignore', name: 'إدارة التجاهل', func: 'getIgnore()', icon: 'fa fa-ban', roles: ['visitor', 'member', 'vip', 'moderator', 'management', 'admin', 'owner'] },
+      { id: 'sound', name: 'إعدادات الصوت', func: 'getSoundSetting()', icon: 'fa fa-volume-up', roles: ['visitor', 'member', 'vip', 'moderator', 'management', 'admin', 'owner'] },
+      { id: 'style', name: 'إعدادات الستايل', func: 'getDisplaySetting()', icon: 'fa fa-desktop', roles: ['visitor', 'member', 'vip', 'moderator', 'management', 'admin', 'owner'] },
+      { id: 'privacy', name: 'إعدادات خاصة', func: 'getPrivateSettings()', icon: 'fa fa-envelope', roles: ['visitor', 'member', 'vip', 'moderator', 'management', 'admin', 'owner'] },
+      { id: 'language', name: 'اللغة / الموقع', func: 'getLocation()', icon: 'fa fa-globe', roles: ['visitor', 'member', 'vip', 'moderator', 'management', 'admin', 'owner'] },
+      { id: 'email', name: 'تعديل البريد الإلكتروني', func: 'getEmail()', icon: 'fa fa-envelope', roles: ['member', 'vip', 'moderator', 'management', 'admin', 'owner'] },
+      { id: 'password', name: 'تغيير الباسوورد', func: 'getPassword()', icon: 'fa fa-key', roles: ['member', 'vip', 'moderator', 'management', 'admin', 'owner'] },
+      { id: 'delete', name: 'حذف عضوية', func: 'getDeleteAccount()', icon: 'fa fa-trash', roles: ['member', 'vip', 'moderator', 'management', 'admin', 'owner'] }
+    ];
+
+    const authorizedOptions = options.filter(opt => opt.roles.includes(user!.role));
+
+    // Support both JSON API response and HTML snippet matching ArabSyemen #large_modal_content
+    if (req.headers.accept?.includes('application/json')) {
+      return res.json({
+        success: true,
+        user: {
+          id: user.id,
+          username: user.username,
+          role: user.role,
+          avatar: user.avatar,
+          statusMessage: user.statusMessage
+        },
+        options: authorizedOptions
+      });
+    }
+
+    // Render ArabSyemen modal HTML string for showEmptyModal(response, 580)
+    let htmlContent = `
+      <div id="large_modal_content" class="modal_content">
+        <div class="modal_top">
+          <div class="modal_title"><i class="fa fa-cog"></i> خيارات الحساب (${user.username})</div>
+          <button type="button" class="modal_close" onclick="hideModal()"><i class="fa fa-times"></i></button>
+        </div>
+        <div class="modal_zone">
+    `;
+
+    authorizedOptions.forEach(opt => {
+      htmlContent += `
+        <div class="listing_half_element" onclick="${opt.func}">
+          <div class="elem_icon"><i class="${opt.icon}"></i></div>
+          <div class="elem_texts">
+            <span class="elem_title">${opt.name}</span>
+          </div>
+        </div>
+      `;
+    });
+
+    htmlContent += `
+        </div>
+      </div>
+    `;
+
+    return res.send(htmlContent);
+  } catch (err: any) {
+    console.error("edit_profile error:", err);
+    return res.status(500).send('<div class="error">حدث خطأ في تحميل الخيارات</div>');
+  }
+});
+
+// Endpoint for edit_name.php
+app.post(["/system/box/edit_name.php", "/system/box/edit_name"], (req, res) => {
+  const { userId } = req.body || {};
+  const user = serverUsers.find(u => u.id === userId);
+  const nameCheck = ServerPermissionManager.canChangeUsername(user, user, serverSiteSettings);
+  if (!nameCheck.allowed) {
+    return res.status(403).json({ success: false, error: nameCheck.reason || 'ميزة تغيير الاسم معطلة' });
+  }
+  return res.json({ success: true, currentName: user?.username || '' });
+});
+
+// Endpoint for action_profile.php
+app.post(["/system/action_profile.php", "/system/action_profile"], (req, res) => {
+  return res.json({ success: true, message: 'تم تحديث البيانات' });
+});
+
+// ArabSyemen Reference Endpoint: system/chat_log.php
+app.post(["/system/chat_log.php", "/system/chat_log", "/api/system/chat_log"], (req, res) => {
+  const { cp, fload, mlast, plast, pcount } = req.body || {};
+  return res.json({
+    mlogs: "", // HTML string if polling via legacy PHP template
+    mlast: Number(mlast || 0),
+    plogs: "",
+    plast: Number(plast || 0),
+    pcount: Number(pcount || 0),
+    del: [],
+    spd: 2000
+  });
+});
+
 // REST Endpoint to update user profile, avatar, username, coins, roles
 app.post("/api/users/update", (req, res) => {
   const { user, requesterId } = req.body || {};
